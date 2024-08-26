@@ -1,0 +1,9 @@
+get default device and use it in sd.rec
+
+
+ use hardware detection integration into the main script
+
+
+
+get rid of  global There_is_a_device
+    if it is not being used
