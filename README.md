@@ -1,63 +1,124 @@
-# whisper-keyboard
+Sure! Below is a detailed `README.md` for your project.
 
-Video demo: https://www.youtube.com/watch?v=VnFtVR72jM4&feature=youtu.be
+---
 
-Smulate keyboard typing with voice commands on your computer. Use the power of OpenAI's Whisper.
+# Whisper Keyboard with Wake Word Detection
 
-Start the wkey listener. Keep a button pressed (by default: right ctrl) and speak. Your voice will be recoded locally. When the button is released, your command will be transcribed via Whisper and the text will be streamed to your keyboard.
+This project is a voice recognition system that enables dictation and transcription using wake word detection. The system listens for a specific wake word ("Hey llama") and then records and transcribes your speech. It includes functionalities such as audio volume management, clipboard handling, and seamless transcription using both local models and the Groq API.
 
-You can use your voice to write anywhere. 
+## Table of Contents
 
-You will incur costs for Whisper API. Currently, it costs $0.36 for 1 hour of transcription.
+- [Features](#features)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [Microphone Handling](#microphone-handling)
+- [Components Overview](#components-overview)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
-## Setup
+## Features
 
-Install the package.
+- **Wake Word Detection:** Uses Porcupine's custom wake word model to start recording when a specific phrase is detected.
+- **Flexible Transcription:** Automatically transcribes speech using the Groq API or a local Whisper model, depending on availability.
+- **Clipboard Management:** Automatically pastes the transcribed text into the active window.
+- **Volume Control:** Automatically adjusts the system volume during recording to minimize background noise interference.
+- **Error Handling:** Pauses wake word detection if no microphone is detected and resumes once reconnected.
 
-```shell
-pip install wkey
+## Installation
+
+### Prerequisites
+
+- Python 3.8 or higher
+- A CUDA-compatible GPU for Whisper (optional but recommended)
+- [Porcupine Access Key](https://picovoice.ai/)
+- [Groq API Key](https://groq.com/)
+
+### Dependencies
+
+Install the necessary Python packages using `pip`:
+
+```bash
+pip install numpy sounddevice pythoncom scipy pyautogui winsound clipboard pynput python-dotenv faster-whisper vosk pyaudio pvporcupine pycaw groq
 ```
 
-You will need to set two environment variables:
+You may also need to install additional system dependencies like PortAudio for `pyaudio`.
 
-- OPENAI_API_KEY: your personal OpenAI API key. You can get it by signing up here: https://platform.openai.com/
-- WKEY: the keyboard key you want to use to start recording. By default, it is set to right ctrl. You can use any key. Note that Mac and Windows might have different key codes. You can run `fkey` to find the code of the key you want to use.
+### Model Downloads
 
-You can set the environment variables in your shell:
+- **Vosk Model:** Download a small Vosk model from [here](https://alphacephei.com/vosk/models) and extract it to your desired location. Update the path in the code accordingly.
+- **Porcupine Custom Wake Word Model:** Create or download a custom wake word model from [Picovoice Console](https://console.picovoice.ai/) and update the path in the code.
 
-```shell
-export OPENAI_API_KEY=<your key>
-export WKEY=ctrl_r
-```
+## Usage
 
-Run `wkey` in a terminal window to start listening. 
+1. **Environment Variables:**
+   - Create a `.env` file in the project directory.
+   - Add the following variables:
+     ```plaintext
+     GROQ_API_KEY=your_groq_api_key_here
+     PICO_ACCESS_KEY=your_picovoice_access_key_here
+     WKEY=f24  # Customize the key used for manual recording if needed
+     ```
 
-If there are issues, check the additional requirements.
+2. **Run the Script:**
+   ```bash
+   python faster_whisper_Mother_of_all_wkey.py"
+   ```
+   The system will start listening for the wake word and allow dictation by holding down the specified key (`F24` by default).
 
-## Additional requirements
+## Configuration
 
-Requirements differ depending on your OS.
+### Environment Variables
 
-### Ubuntu
+- **GROQ_API_KEY:** Your API key for accessing Groq's transcription service.
+- **PICO_ACCESS_KEY:** Your access key for using Porcupine's wake word detection.
+- **WKEY:** The key used to manually start and stop recording.
 
-You will need to install the portaudio library. 
+### Audio Settings
 
-```shell
-sudo apt-get install portaudio19-dev 
-```
+- **Sample Rate:** The system uses an 8000 Hz sample rate by default, but you can adjust it in the script if needed.
+- **Volume Levels:** The system decreases the volume to 10% during recording to reduce background noise interference. Adjust the values in `decrease_volume_all` and `restore_volume_all` functions if needed.
 
-### Mac
-You will need to authorize your terminal to use the microphone and keyboard. Go to System Settings > Privacy and Security. Then: 
-* Select Microphone and authorize your terminal.
-* Select Accessibility and authorize your terminal.
+## Microphone Handling
 
-Restart the terminal for the changes to take effect. 
+If the system detects that no microphone is connected:
 
-Note that this might entail security risks.
+- Wake word detection will be paused.
+- The system will periodically check for a microphone and resume wake word detection once a microphone is available.
+- If you disconnect your microphone while the system is running, it will automatically pause and resume as necessary.
 
-### Windows
-Haven't tested it on Windows yet. If you do, please let me know how it goes.
+### Checking Microphone Connection
 
-## Security risks
+The script uses the `sounddevice` library to check for available input devices. If no microphone is detected, the script waits and checks again every 5 seconds.
 
-This script creates a recording with your microphone and sends the audio to the Whisper API. The Whisper API response will be automatically streamed to your keyboard and executed there. This might entail security risks. Use at your own risk. 
+## Components Overview
+
+### Core Functions
+
+- **`start_recording`:** Starts recording audio when the wake word is detected or the specified key is pressed.
+- **`stop_recording`:** Stops recording and queues the audio buffer for transcription.
+- **`transcribe_with_groq`:** Transcribes audio using the Groq API.
+- **`transcribe_with_local_model`:** Transcribes audio using a local Whisper model.
+- **`clean_transcript`:** Cleans up the transcribed text and pastes it into the active window.
+- **`is_microphone_connected`:** Checks if a microphone is connected and functional.
+
+### Threads
+
+- **Wake Word Detection:** Continuously listens for the wake word.
+- **Sound Monitoring:** Checks if any audio is playing on the system.
+- **Transcription Processing:** Handles audio transcription asynchronously.
+- **Clipboard Management:** Manages clipboard content for pasting the transcription.
+
+## Troubleshooting
+
+- **Microphone Not Detected:** Ensure your microphone is properly connected before starting the script. If disconnected during operation, the script will automatically handle reconnection.
+- **API Rate Limits:** If you hit the Groq API rate limit, the system will automatically fall back to using the local Whisper model for transcription.
+- **Volume Too Low During Playback:** The system reduces volume during recording; make sure it is restored after transcription if you notice low volume.
+
+## License
+
+This project is licensed under the MIT License. See the `LICENSE` file for more details.
+
+---
+
+This `README.md` provides comprehensive information about the project, from installation and usage to troubleshooting and license details. Adjust any specifics based on your exact implementation or requirements.
