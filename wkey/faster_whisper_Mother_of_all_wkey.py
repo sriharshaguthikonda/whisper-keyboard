@@ -309,7 +309,7 @@ def listen_for_wake_word():
                 if keyword_index >= 0:
                     print("Wake word detected!")
                     start_recording()
-                    time.sleep(2)
+                    time.sleep(5)
                     stop_recording()
             else:
                 print("Waiting for microphone...")
