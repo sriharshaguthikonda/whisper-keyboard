@@ -389,6 +389,17 @@ def clean_transcript():
             print(f"An error occurred in clean_transcript: {e}")
 
 
+
+"""
+##     ##    ###    #### ##    ## 
+###   ###   ## ##    ##  ###   ## 
+#### ####  ##   ##   ##  ####  ## 
+## ### ## ##     ##  ##  ## ## ## 
+##     ## #########  ##  ##  #### 
+##     ## ##     ##  ##  ##   ### 
+##     ## ##     ## #### ##    ## 
+"""
+
 def main():
     global stream
     print("wkey is active. Hold down", RECORD_KEY, " to start dictating.")
