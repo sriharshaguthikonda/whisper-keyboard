@@ -269,14 +269,18 @@ def monitor_microphone_availability():
         else:
             if wake_stream is None:
                 print("Microphone detected. Resuming wake word detection...")
-                wake_stream = p.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=16000,
-                    input=True,
-                    frames_per_buffer=512,
-                )
-                wake_stream.start_stream()
+                try:
+                    wake_stream = p.open(
+                        format=pyaudio.paInt16,
+                        channels=1,
+                        rate=16000,
+                        input=True,
+                        frames_per_buffer=512,
+                    )
+                    wake_stream.start_stream()
+                except OSError as e:
+                    print(f"Failed to restart wake stream: {e}")
+                    wake_stream = None
 
         time.sleep(5)  # Check every 5 seconds
 
@@ -314,22 +318,7 @@ def listen_for_wake_word():
 
             # Attempt to reinitialize the wake word detection after an error
             time.sleep(5)  # Wait before retrying to avoid rapid retry loops
-            if check_microphone():
-                try:
-                    wake_stream = p.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=16000,
-                        input=True,
-                        frames_per_buffer=512,
-                    )
-                    wake_stream.start_stream()
-                except OSError as e:
-                    print(f"Failed to restart wake stream: {e}")
-                    wake_stream = None
-            else:
-                print("Microphone still not available. Retrying...")
-                time.sleep(5)
+            # Microphone availability and wake stream initialization are now handled by monitor_microphone_availability
 
 
 def cleanup():
@@ -446,6 +435,17 @@ def clean_transcript():
 
         except Exception as e:
             print(f"An error occurred in clean_transcript: {e}")
+
+
+"""
+##     ##    ###    #### ##    ## 
+###   ###   ## ##    ##  ###   ## 
+#### ####  ##   ##   ##  ####  ## 
+## ### ## ##     ##  ##  ## ## ## 
+##     ## #########  ##  ##  #### 
+##     ## ##     ##  ##  ##   ### 
+##     ## ##     ## #### ##    ## 
+"""
 
 
 def main():
