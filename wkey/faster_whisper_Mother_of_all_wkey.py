@@ -1,11 +1,11 @@
 """
-##    ##  #######            ##     ## ####  ######
-###   ## ##     ##           ###   ###  ##  ##    ##
-####  ## ##     ##           #### ####  ##  ##
-## ## ## ##     ##   #####   ## ### ##  ##  ##
-##  #### ##     ##           ##     ##  ##  ##
-##   ### ##     ##           ##     ##  ##  ##    ##
-##    ##  #######            ##     ## ####  ######
+##     ##    ###    #### ##    ##
+###   ###   ## ##    ##  ###   ##
+#### ####  ##   ##   ##  ####  ##
+## ### ## ##     ##  ##  ## ## ##
+##     ## #########  ##  ##  ####
+##     ## ##     ##  ##  ##   ###
+##     ## ##     ## #### ##    ##
 """
 
 import os
@@ -88,13 +88,24 @@ wake_stream.start_stream()
 
 
 # Define beep sounds
-START_BEEP = (2080, 100)  # Frequency in Hz, Duration in ms
+START_BEEP = (880, 100)  # Frequency in Hz, Duration in ms
 STOP_BEEP = (440, 100)  # Lower frequency for stop
-PASTE_BEEP = (1060, 100)  # Intermediate frequency for paste
+PASTE_BEEP = (660, 100)  # Intermediate frequency for paste
 
 # Locks for synchronization
 recording_lock = threading.Lock()
 audio_data_lock = threading.Lock()
+
+
+"""
+##     ##  #######  ##             ###    ########        ## 
+##     ## ##     ## ##            ## ##   ##     ##       ## 
+##     ## ##     ## ##           ##   ##  ##     ##       ## 
+##     ## ##     ## ##          ##     ## ##     ##       ## 
+ ##   ##  ##     ## ##          ######### ##     ## ##    ## 
+  ## ##   ##     ## ##          ##     ## ##     ## ##    ## 
+   ###     #######  ########    ##     ## ########   ######  
+"""
 
 
 def get_current_volume():
@@ -257,78 +268,19 @@ def on_release(key):
 """
 
 
-def check_microphone():
-    """Check if a microphone is available."""
-    devices = sd.query_devices()
-    for device in devices:
-        if device["max_input_channels"] > 0:
-            return True
-    return False
-
-
-def monitor_microphone_availability():
-    """Monitor microphone availability and control wake word detection accordingly."""
-    global wake_stream
-    while True:
-        if not check_microphone():
-            print("No microphone detected. Pausing wake word detection...")
-            if wake_stream:
-                wake_stream.stop()
-                wake_stream.close()
-                wake_stream = None
-        else:
-            if wake_stream is None:
-                print("Microphone detected. Resuming wake word detection...")
-                try:
-                    wake_stream = p.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=16000,
-                        input=True,
-                        frames_per_buffer=512,
-                    )
-                    wake_stream.start_stream()
-                except OSError as e:
-                    print(f"Failed to restart wake stream: {e}")
-                    wake_stream = None
-
-        time.sleep(5)  # Check every 5 seconds
-
-
 def listen_for_wake_word():
-    global wake_stream
     print("Listening for wake words...")
     while True:
-        try:
-            if wake_stream:
-                data = wake_stream.read(512, exception_on_overflow=False)
-                pcm = np.frombuffer(data, dtype=np.int16)
+        data = wake_stream.read(512, exception_on_overflow=False)
+        pcm = np.frombuffer(data, dtype=np.int16)
 
-                # Check for wake word using Porcupine
-                keyword_index = porcupine.process(pcm)
-                if keyword_index >= 0:
-                    print("Wake word detected!")
-                    start_recording()
-                    time.sleep(2)
-                    stop_recording()
-            else:
-                print("Waiting for microphone...")
-                time.sleep(5)
-        except OSError as e:
-            print(f"Audio stream error: {e}")
-            if wake_stream:
-                try:
-                    if wake_stream.is_active():
-                        wake_stream.stop_stream()
-                    wake_stream.close()
-                except OSError:
-                    print("Stream already closed or failed to close.")
-
-            wake_stream = None
-
-            # Attempt to reinitialize the wake word detection after an error
-            time.sleep(5)  # Wait before retrying to avoid rapid retry loops
-            # Microphone availability and wake stream initialization are now handled by monitor_microphone_availability
+        # Check for wake word using Porcupine
+        keyword_index = porcupine.process(pcm)
+        if keyword_index >= 0:
+            print("Wake word detected!")
+            start_recording()
+            time.sleep(2)
+            stop_recording()
 
 
 def cleanup():
@@ -463,9 +415,6 @@ def main():
     print("wkey is active. Hold down", RECORD_KEY, " to start dictating.")
 
     try:
-        # Start the microphone monitoring thread
-        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
-
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         threading.Thread(target=clean_transcript, daemon=True).start()
         threading.Thread(target=process_audio_async, daemon=True).start()
