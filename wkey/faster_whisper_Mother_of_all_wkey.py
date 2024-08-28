@@ -253,7 +253,7 @@ def on_press(key):
 
 def on_release(key):
     if key == RECORD_KEY and recording:
-        stop_recording()
+        stop_recording(None)
 
 
 """
