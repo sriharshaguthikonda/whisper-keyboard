@@ -39,6 +39,7 @@ from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from vosk import Model, KaldiRecognizer
 import pyaudio
 import pvporcupine
+from pvporcupine import KEYWORD_PATHS
 
 
 # Initial setup and global variables
@@ -74,9 +75,18 @@ load_dotenv()
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+# Initialize Porcupine with multiple wake words
 porcupine = pvporcupine.create(
     pico_access_key,
-    keyword_paths=[custom_wake_word_path],
+    keyword_paths=[
+        custom_wake_word_path,
+        KEYWORD_PATHS["hey google"],  # Default wake word "Hey Google"
+        KEYWORD_PATHS["ok google"],  # Default wake word "OK Google"
+        KEYWORD_PATHS["alexa"],  # Default wake word "Alexa"
+        KEYWORD_PATHS["computer"],  # Default wake word "Computer"
+        KEYWORD_PATHS["jarvis"],  # Default wake word "Jarvis"
+        # Add more default wake words as needed
+    ],
 )
 
 
@@ -210,7 +220,7 @@ def start_recording():
     print("Listening...")
 
 
-def stop_recording():
+def stop_recording(keyword_index):
     global stream
     global recording
     global play_pause_pressed
@@ -222,7 +232,7 @@ def stop_recording():
     thread.start()
 
     if stream.active:
-        audio_buffer_queue.put(audio_buffer)
+        audio_buffer_queue.put((audio_buffer, keyword_index))
         stream.stop()
         stream.close()
         audio_buffer = np.array([], dtype="float32")
@@ -266,16 +276,25 @@ def check_microphone():
     return False
 
 
+def reinitialize_pyaudio():
+    global p
+    p.terminate()
+    p = pyaudio.PyAudio()
+
+
 def monitor_microphone_availability():
-    """Monitor microphone availability and control wake word detection accordingly."""
-    global wake_stream
+    global wake_stream, p
     while True:
         if not check_microphone():
             print("No microphone detected. Pausing wake word detection...")
             if wake_stream:
-                wake_stream.stop()
-                wake_stream.close()
-                wake_stream = None
+                try:
+                    wake_stream.stop_stream()
+                    wake_stream.close()
+                except OSError as e:
+                    print(f"Error stopping stream: {e}")
+                finally:
+                    wake_stream = None
         else:
             if wake_stream is None:
                 print("Microphone detected. Resuming wake word detection...")
@@ -290,9 +309,12 @@ def monitor_microphone_availability():
                     wake_stream.start_stream()
                 except OSError as e:
                     print(f"Failed to restart wake stream: {e}")
+                    reinitialize_pyaudio()  # Reinitialize PyAudio
                     wake_stream = None
+                except Exception as e:
+                    print(f"Unexpected error: {e}")
 
-        time.sleep(5)  # Check every 5 seconds
+        time.sleep(10)
 
 
 def listen_for_wake_word():
@@ -307,10 +329,36 @@ def listen_for_wake_word():
                 # Check for wake word using Porcupine
                 keyword_index = porcupine.process(pcm)
                 if keyword_index >= 0:
-                    print("Wake word detected!")
-                    start_recording()
-                    time.sleep(5)
-                    stop_recording()
+                    if keyword_index == 0:  # Custom wake word: "Hey Llama"
+                        print("Custom wake word 'Hey Llama' detected!")
+                        start_recording()
+                        time.sleep(5)
+                        stop_recording(keyword_index)
+                    elif keyword_index == 1:  # Default wake word: "Hey Google"
+                        print("Wake word 'Hey Google' detected!")
+                        decrease_volume_all()
+                        time.sleep(5)
+                        restore_volume_all()
+                    elif keyword_index == 2:  # Default wake word: "OK Google"
+                        print("Wake word 'OK Google' detected!")
+                        decrease_volume_all()
+                        time.sleep(5)
+                        restore_volume_all()
+                    elif keyword_index == 3:  # Default wake word: "Alexa"
+                        print("Wake word 'Alexa' detected!")
+                        # Define the action for "Alexa"
+                    elif keyword_index == 4:  # Default wake word: "Computer"
+                        print("Wake word 'Computer' detected!")
+                        # Define the action for "Computer"
+                    elif keyword_index == 5:  # Default wake word: "Jarvis"
+                        print("Wake word 'Jarvis' detected!")
+                        # Trigger voice command execution
+                        start_recording()
+                        time.sleep(3)
+                        stop_recording(keyword_index)
+                    else:
+                        print("Unknown wake word detected!")
+                        # You can add more wake word conditions here
             else:
                 print("Waiting for microphone...")
                 time.sleep(5)
@@ -327,15 +375,20 @@ def listen_for_wake_word():
             wake_stream = None
 
             # Attempt to reinitialize the wake word detection after an error
-            time.sleep(5)  # Wait before retrying to avoid rapid retry loops
+            time.sleep(10)  # Wait before retrying to avoid rapid retry loops
             # Microphone availability and wake stream initialization are now handled by monitor_microphone_availability
 
 
 def cleanup():
+    global wake_stream
     if wake_stream:
-        if wake_stream.active:
-            wake_stream.stop()
-        wake_stream.close()
+        try:
+            if wake_stream.is_active():
+                wake_stream.stop_stream()
+            wake_stream.close()
+        except OSError as e:
+            print(f"Error during cleanup: {e}")
+        wake_stream = None
     porcupine.delete()
     p.terminate()
     print("Cleanup completed.")
@@ -389,7 +442,9 @@ def transcribe_with_local_model(audio_buffer):
 def process_audio_async():
     while True:
         try:
-            audio_buffer_for_processing = audio_buffer_queue.get(timeout=5)
+            audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
+                timeout=5
+            )
             if audio_buffer_for_processing is None:
                 break
             try:
@@ -397,7 +452,7 @@ def process_audio_async():
             except groq.RateLimitError:
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
-            transcript_queue.put(transcript)
+            transcript_queue.put((transcript, keyword_index))
             print(transcript)
         except queue.Empty:
             continue
@@ -427,21 +482,19 @@ def beep(sound):
 def clean_transcript():
     while True:
         try:
-            transcript = transcript_queue.get()
-
-            original_clipboard_content = clipboard.paste()
-
-            clipboard.copy(transcript)
-
-            pyautogui.hotkey("ctrl", "v")
-            beep(PASTE_BEEP)
-            print("Transcript pasted")
-
-            time.sleep(0.1)
-            clipboard.copy(original_clipboard_content)
-
-            time.sleep(0.1)
-            clipboard.copy(transcript)
+            transcript, keyword_index = transcript_queue.get()
+            if keyword_index == 5:
+                execute_command(transcript)
+            else:
+                original_clipboard_content = clipboard.paste()
+                clipboard.copy(transcript)
+                pyautogui.hotkey("ctrl", "v")
+                beep(PASTE_BEEP)
+                print("Transcript pasted")
+                time.sleep(0.1)
+                clipboard.copy(original_clipboard_content)
+                time.sleep(0.1)
+                clipboard.copy(transcript)
 
         except Exception as e:
             print(f"An error occurred in clean_transcript: {e}")
