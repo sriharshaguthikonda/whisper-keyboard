@@ -118,7 +118,7 @@ ACTIONS = {
     "open system properties": lambda: os.system("sysdm.cpl"),
     "open date and time": lambda: os.system("timedate.cpl"),
     # System Commands
-    "ping google": lambda: os.system("ping -c 4 google.com"),
+    "ping google": lambda: os.system("ping www.google.com"),
     "flush dns": lambda: os.system("ipconfig /flushdns"),
     # Add more as needed
 }
