@@ -136,13 +136,93 @@ def restore_volume_all():
         set_volume(initial_volume)  # Restore to initial volume
 
 
+# Add a new global variable for desktop audio
+desktop_audio_buffer = np.array([], dtype="float32")
+
+
 def callback(indata, frames, time, status):
-    global audio_buffer
+    global audio_buffer, desktop_audio_buffer
     if status:
         print(status)
     with audio_data_lock:
         if recording:
-            audio_buffer = np.append(audio_buffer, indata.copy())
+            # Capture desktop audio simultaneously
+            desktop_audio_data = capture_desktop_audio(frames)
+
+            # Convert desktop audio to the same format as microphone audio
+            desktop_audio_data = desktop_audio_data[
+                : len(indata)
+            ]  # Ensure lengths match
+            desktop_audio_data = (
+                np.asarray(desktop_audio_data, dtype=np.float32) / 32768.0
+            )  # Normalize to [-1, 1]
+
+            # Subtract desktop audio from microphone audio
+            adjusted_audio = (
+                indata.copy().astype(np.float32) / 32768.0 - desktop_audio_data
+            )
+
+            # Append the adjusted audio to the buffer
+            audio_buffer = np.append(audio_buffer, adjusted_audio)
+
+
+def capture_desktop_audio(frames):
+    global desktop_audio_buffer
+
+    try:
+        # Open stream using the default input device (which should be the desktop audio)
+        stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=sample_rate,
+            input=True,
+            frames_per_buffer=512,
+        )
+        # Read data from the stream
+        audio_data = stream.read(frames)
+        # Convert data to numpy array
+        desktop_audio_data = np.frombuffer(audio_data, dtype=np.int16)
+    except Exception as e:
+        print(f"Error capturing desktop audio: {e}")
+        desktop_audio_data = np.zeros(
+            frames, dtype=np.int16
+        )  # Return silent audio in case of error
+    finally:
+        stream.stop_stream()
+        stream.close()
+
+    return desktop_audio_data
+
+
+# Ensure this function is called in the correct place in your main or threading setup
+def main():
+    global stream
+    print("wkey is active. Hold down", RECORD_KEY, " to start dictating.")
+
+    try:
+        # Start the microphone monitoring thread
+        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+
+        # Start the audio subtraction feature (new thread)
+        threading.Thread(target=capture_desktop_audio, daemon=True).start()
+
+        # Existing threads
+        threading.Thread(target=clean_transcript, daemon=True).start()
+        threading.Thread(target=process_audio_async, daemon=True).start()
+        threading.Thread(target=listen_for_wake_word, daemon=True).start()
+
+        with stream:
+            start_listener()
+    except KeyboardInterrupt:
+        print("Ctrl+C pressed. Exiting...")
+    finally:
+        if stream:
+            if stream.active:
+                stream.stop()
+            stream.close()
+        cleanup()
+        restore_volume_all()
+        print("Cleanup completed. Exiting...")
 
 
 stream = sd.InputStream(
