@@ -46,14 +46,23 @@ COMMAND_MAPPINGS = {
     "volume down": ["volume down", "decrease volume"],
     # "mute volume": ["mute volume", "mute sound"],
     # Media Controls
-    "play pause media": [
-        "play pause media",
-        "toggle media play pause",
-        "Play, pause, media.",
-        "pause everything",
+    "play media": [
+        "play media",
+        "play",
+        "play music",
     ],
-    "next track": ["next track", "next song"],
-    "previous track": ["previous track", "previous song"],
+    "stop media": [
+        "stop media",
+        "stop",
+        "stop music",
+    ],
+    "next track": ["next track", "next song", "skip", "play next song"],
+    "previous track": [
+        "previous track",
+        "previous song",
+        "replay",
+        "play previous song",
+    ],
     # Custom or Complex Operations
     "open device manager": ["open device manager", "device manager"],
     "open disk management": [
@@ -108,7 +117,8 @@ ACTIONS = {
     "volume down": lambda: pyautogui.press("volumedown"),
     "mute volume": lambda: pyautogui.press("volumemute"),
     # Media Controls
-    "play pause media": lambda: pyautogui.press("playpause"),
+    "play media": lambda: pyautogui.press("playpause"),
+    "stop media": lambda: pyautogui.press("stop"),
     "next track": lambda: pyautogui.press("nexttrack"),
     "previous track": lambda: pyautogui.press("prevtrack"),
     # Custom or Complex Operations

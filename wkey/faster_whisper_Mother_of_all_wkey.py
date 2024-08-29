@@ -12,9 +12,9 @@ import os
 import io
 import time
 import threading
-import pyautogui
 import winsound
 import clipboard
+import pyautogui
 import numpy as np
 import sounddevice as sd
 import pythoncom
@@ -75,18 +75,19 @@ load_dotenv()
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
-# Initialize Porcupine with multiple wake words
+# Initialize Porcupine with multiple wake words and higher sensitivity
 porcupine = pvporcupine.create(
-    pico_access_key,
+    access_key=pico_access_key,
     keyword_paths=[
         custom_wake_word_path,
-        KEYWORD_PATHS["hey google"],  # Default wake word "Hey Google"
-        KEYWORD_PATHS["ok google"],  # Default wake word "OK Google"
-        KEYWORD_PATHS["alexa"],  # Default wake word "Alexa"
-        KEYWORD_PATHS["computer"],  # Default wake word "Computer"
-        KEYWORD_PATHS["jarvis"],  # Default wake word "Jarvis"
+        KEYWORD_PATHS["hey google"],
+        KEYWORD_PATHS["ok google"],
+        KEYWORD_PATHS["alexa"],
+        KEYWORD_PATHS["computer"],
+        KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
+    sensitivities=[0.9, 0.95, 0.95, 0.75, 0.75, 0.95],  # Adjust these values as needed
 )
 
 
@@ -484,7 +485,7 @@ def clean_transcript():
         try:
             transcript, keyword_index = transcript_queue.get()
             if keyword_index == 5:
-                execute_command(transcript)
+                threading.Thread(target=execute_command, args=(transcript,)).start()
             else:
                 original_clipboard_content = clipboard.paste()
                 clipboard.copy(transcript)
