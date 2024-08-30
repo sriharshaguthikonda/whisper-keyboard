@@ -87,7 +87,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.9, 0.95, 0.75, 0.75, 0.75, 0.75],  # Adjust these values as needed
+    sensitivities=[0.85, 0.85, 0.65, 0.75, 0.75, 0.75],  # Adjust these values as needed
 )
 
 
