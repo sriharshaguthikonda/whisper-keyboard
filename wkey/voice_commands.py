@@ -173,7 +173,6 @@ def execute_command(transcript):
         return True
     else:
         print(f"No matching command found for: {transcript}")
-        return transcript
 
 
 """

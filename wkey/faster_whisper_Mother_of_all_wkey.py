@@ -75,18 +75,19 @@ load_dotenv()
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
-# Initialize Porcupine with multiple wake words
+# Initialize Porcupine with multiple wake words and higher sensitivity
 porcupine = pvporcupine.create(
-    pico_access_key,
+    access_key=pico_access_key,
     keyword_paths=[
         custom_wake_word_path,
-        KEYWORD_PATHS["hey google"],  # Default wake word "Hey Google"
-        KEYWORD_PATHS["ok google"],  # Default wake word "OK Google"
-        KEYWORD_PATHS["alexa"],  # Default wake word "Alexa"
-        KEYWORD_PATHS["computer"],  # Default wake word "Computer"
-        KEYWORD_PATHS["jarvis"],  # Default wake word "Jarvis"
+        KEYWORD_PATHS["hey google"],
+        KEYWORD_PATHS["ok google"],
+        KEYWORD_PATHS["alexa"],
+        KEYWORD_PATHS["computer"],
+        KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
+    sensitivities=[0.9, 0.95, 0.75, 0.75, 0.75, 0.75],  # Adjust these values as needed
 )
 
 
@@ -123,8 +124,9 @@ def set_volume(volume_level):
 
 def decrease_volume_all():
     global initial_volume
-    if initial_volume is None:
-        initial_volume = get_current_volume()
+    current_volume = get_current_volume()
+    if initial_volume is None or current_volume != initial_volume:
+        initial_volume = current_volume
     print(f"Decreasing volume from {initial_volume * 100}% to 10%")
     set_volume(0.1)  # Set volume to 10%
 
@@ -134,6 +136,7 @@ def restore_volume_all():
     if initial_volume is not None:
         print(f"Restoring volume to {initial_volume * 100}%")
         set_volume(initial_volume)  # Restore to initial volume
+        initial_volume = None  # Reset initial volume after restoring
 
 
 def callback(indata, frames, time, status):
@@ -250,6 +253,7 @@ def stop_recording(keyword_index):
         desktop_stream.stop()
         desktop_stream.close()
 
+    # Ensure audio buffers are of equal length
     if len(mic_audio_buffer) != len(desktop_audio_buffer):
         if len(mic_audio_buffer) > len(desktop_audio_buffer):
             desktop_audio_buffer = np.pad(
@@ -272,6 +276,11 @@ def stop_recording(keyword_index):
         restore_volume_all()
         play_pause_pressed = False
     beep(STOP_BEEP)
+
+    # Clear the audio buffers after processing
+    mic_audio_buffer = np.array([], dtype="float32")
+    desktop_audio_buffer = np.array([], dtype="float32")
+
     with recording_lock:
         recording = False
     print("Transcribing...")
