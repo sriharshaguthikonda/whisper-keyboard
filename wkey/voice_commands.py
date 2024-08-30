@@ -170,6 +170,7 @@ def execute_command(transcript):
 
     if action:
         action()  # Execute the corresponding action
+        print(f"command for: {transcript}")
         return True
     else:
         print(f"No matching command found for: {transcript}")
