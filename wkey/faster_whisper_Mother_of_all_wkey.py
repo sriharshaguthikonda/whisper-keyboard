@@ -87,7 +87,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.85, 0.85, 0.65, 0.75, 0.75, 0.75],  # Adjust these values as needed
+    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.75],  # Adjust these values as needed
 )
 
 
@@ -108,6 +108,17 @@ recording_lock = threading.Lock()
 audio_data_lock = threading.Lock()
 
 
+"""
+##     ##  #######  ##       ##     ## ##     ## ######## 
+##     ## ##     ## ##       ##     ## ###   ### ##       
+##     ## ##     ## ##       ##     ## #### #### ##       
+##     ## ##     ## ##       ##     ## ## ### ## ######   
+ ##   ##  ##     ## ##       ##     ## ##     ## ##       
+  ## ##   ##     ## ##       ##     ## ##     ## ##       
+   ###     #######  ########  #######  ##     ## ######## 
+"""
+
+
 def get_current_volume():
     devices = AudioUtilities.GetSpeakers()
     interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
@@ -124,8 +135,9 @@ def set_volume(volume_level):
 
 def decrease_volume_all():
     global initial_volume
-    if initial_volume is None:
-        initial_volume = get_current_volume()
+    current_volume = get_current_volume()
+    if initial_volume is None or current_volume != initial_volume:
+        initial_volume = current_volume
     print(f"Decreasing volume from {initial_volume * 100}% to 10%")
     set_volume(0.1)  # Set volume to 10%
 
@@ -135,6 +147,7 @@ def restore_volume_all():
     if initial_volume is not None:
         print(f"Restoring volume to {initial_volume * 100}%")
         set_volume(initial_volume)  # Restore to initial volume
+        initial_volume = None  # Reset initial volume after restoring
 
 
 def callback(indata, frames, time, status):
