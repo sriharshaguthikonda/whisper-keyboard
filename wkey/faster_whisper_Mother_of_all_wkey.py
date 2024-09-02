@@ -87,7 +87,8 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.75],  # Adjust these values as needed
+    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.95],  # Adjust these values as needed
+    keywords=["avengers"],
 )
 
 
@@ -106,6 +107,54 @@ PASTE_BEEP = (1060, 100)  # Intermediate frequency for paste
 # Locks for synchronization
 recording_lock = threading.Lock()
 audio_data_lock = threading.Lock()
+
+
+"""
+ ######  ######## ########  ########    ###    ##     ## 
+##    ##    ##    ##     ## ##         ## ##   ###   ### 
+##          ##    ##     ## ##        ##   ##  #### #### 
+ ######     ##    ########  ######   ##     ## ## ### ## 
+      ##    ##    ##   ##   ##       ######### ##     ## 
+##    ##    ##    ##    ##  ##       ##     ## ##     ## 
+ ######     ##    ##     ## ######## ##     ## ##     ## 
+"""
+
+
+PRE_RECORDING_DURATION = 1  # seconds
+BUFFER_SIZE = PRE_RECORDING_DURATION * 2000
+channels = 1
+
+pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
+buffer_index = 0
+audio_buffer = []
+
+
+def audio_callback(indata, frames, time, status):
+    """Callback function for audio recording."""
+    global buffer_index
+    global audio_buffer
+    if status:
+        print(f"Audio callback status: {status}")
+    with recording_lock:
+        if recording:
+            audio_buffer = np.append(audio_buffer, indata.flatten())
+        else:
+            end_index = buffer_index + frames
+            if end_index > BUFFER_SIZE:
+                end_index = BUFFER_SIZE
+            pre_recording_buffer[buffer_index:end_index] = indata[
+                : end_index - buffer_index
+            ]
+            buffer_index = (buffer_index + frames) % BUFFER_SIZE
+
+
+stream = sd.InputStream(
+    callback=audio_callback,
+    device=None,
+    channels=1,
+    samplerate=sample_rate,
+    blocksize=int(sample_rate * 0.1),
+)
 
 
 """
@@ -150,24 +199,6 @@ def restore_volume_all():
         initial_volume = None  # Reset initial volume after restoring
 
 
-def callback(indata, frames, time, status):
-    global audio_buffer
-    if status:
-        print(status)
-    with audio_data_lock:
-        if recording:
-            audio_buffer = np.append(audio_buffer, indata.copy())
-
-
-stream = sd.InputStream(
-    callback=callback,
-    device=None,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=int(sample_rate * 0.1),
-)
-
-
 def monitor_sound_processing():
     pythoncom.CoInitialize()
     global something_is_playing
@@ -195,31 +226,30 @@ def start_recording():
     global play_pause_pressed
     global something_is_playing
 
-    # this thread has to go if something_is_playing check is happening below Are you listening to me now?!
+    # this thread has to go if something_is_playing check is happening below
     thread = threading.Thread(target=lambda: decrease_volume_all())
     thread.start()
 
     try:
         if stream and stream.active:
-            stream.stop()
-        stream.close()
+            print("stream is active")
+        else:
+            try:
+                device_info = sd.default.device
+                print(f"Using device: {device_info}")
+                stream = sd.InputStream(
+                    callback=audio_callback,
+                    device=None,
+                    channels=1,
+                    samplerate=sample_rate,
+                    blocksize=int(sample_rate * 0.1),
+                )
+                stream.start()
+            except Exception as e:
+                print(f"Failed to start stream: {e}")
+                time.sleep(2)
     except NameError:
         pass
-
-    try:
-        device_info = sd.default.device
-        print(f"Using device: {device_info}")
-        stream = sd.InputStream(
-            callback=callback,
-            device=None,
-            channels=1,
-            samplerate=sample_rate,
-            blocksize=int(sample_rate * 0.1),
-        )
-        stream.start()
-    except Exception as e:
-        print(f"Failed to start stream: {e}")
-        time.sleep(2)
 
     if something_is_playing:
         print("Stream started")
@@ -241,14 +271,21 @@ def stop_recording(keyword_index):
     global audio_buffer
 
     # this thread has to go if play_pause_pressed check is happening below!
-
     thread = threading.Thread(target=lambda: restore_volume_all())
     thread.start()
 
     if stream.active:
+        # Convert pre-recording buffer to numpy array
+        pre_recording_data = np.roll(
+            pre_recording_buffer, -buffer_index, axis=0
+        ).flatten()
+
+        # Convert main recording to numpy array
+        audio_buffer = np.concatenate(
+            [pre_recording_data, audio_buffer],
+            axis=0,
+        )
         audio_buffer_queue.put((audio_buffer, keyword_index))
-        stream.stop()
-        stream.close()
         audio_buffer = np.array([], dtype="float32")
 
     if play_pause_pressed:
