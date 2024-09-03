@@ -8,6 +8,11 @@
  ######   #######  ########   ######     ##    ##     ## ##     ##  ######     ##
 """
 
+"""
+TODO this way doesnt work...this is using desktop_stream which is actually sd.inputstream that is recording from the mic and also  and also subtracting from the mic so there is no point. We have to use a loopback device or Python PyAudio to achieve recording from the audio stream of desktop playing music.
+
+"""
+
 import os
 import io
 import time
@@ -86,16 +91,60 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["alexa"],
         KEYWORD_PATHS["computer"],
         KEYWORD_PATHS["jarvis"],
-        # Add more default wake words as needed
+        KEYWORD_PATHS["porcupine"],
+        KEYWORD_PATHS["americano"],
+        KEYWORD_PATHS["blueberry"],
+        KEYWORD_PATHS["bumblebee"],
+        KEYWORD_PATHS["grapefruit"],
+        KEYWORD_PATHS["grasshopper"],
+        KEYWORD_PATHS["hey barista"],
+        KEYWORD_PATHS["hey siri"],
+        KEYWORD_PATHS["pico clock"],
+        KEYWORD_PATHS["picovoice"],
+        KEYWORD_PATHS["terminator"],
     ],
-    sensitivities=[0.85, 0.85, 0.65, 0.75, 0.75, 0.75],  # Adjust these values as needed
+    # Add more default wake words as needed
+    sensitivities=[
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+    ],  # Adjust these values as needed
+    keywords=["avengers"],
 )
 
 
 p = pyaudio.PyAudio()
+wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
+default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
+
 wake_stream = p.open(
     format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=512
 )
+
+desk_stream = p.open(
+    format=pyaudio.paInt16,
+    # channels=default_speakers["maxOutputChannels"],
+    channels=1,
+    rate=int(default_speakers["defaultSampleRate"]),
+    input=True,
+    frames_per_buffer=1024,
+    input_device_index=default_speakers["index"],
+)
+
 wake_stream.start_stream()
 
 
@@ -410,39 +459,77 @@ def monitor_microphone_availability():
                     print(f"Failed to restart wake stream: {e}")
                     reinitialize_pyaudio()  # Reinitialize PyAudio
                     wake_stream = None
+            elif desk_stream is None:
+                try:
+                    desk_stream = p.open(
+                        format=pyaudio.paInt16,
+                        channels=default_speakers["maxOutputChannels"],
+                        rate=int(default_speakers["defaultSampleRate"]),
+                        input=True,
+                        frames_per_buffer=512,
+                        input_device_index=default_speakers["index"],
+                        as_loopback=True,
+                    )
+                except OSError as e:
+                    print(f"Failed to restart wake stream: {e}")
+                    reinitialize_pyaudio()  # Reinitialize PyAudio
+                    desk_stream = None
                 except Exception as e:
                     print(f"Unexpected error: {e}")
 
         time.sleep(10)
 
 
+def normalize_audio(data):
+    max_val = np.max(np.abs(data))
+    if max_val == 0:
+        return data
+    return data / max_val
+
+
+scaling_factor = 0.9  # Adjust this factor to avoid over-subtraction
+
+
 def listen_for_wake_word():
     global wake_stream
+    global scaling_factor
+
     print("Listening for wake words...")
+
     while True:
         try:
             if wake_stream:
-                data = wake_stream.read(512, exception_on_overflow=False)
-                pcm = np.frombuffer(data, dtype=np.int16)
+                # Read and normalize wake_stream data
+                wake_data = wake_stream.read(512, exception_on_overflow=False)
+                wake_data = np.frombuffer(wake_data, dtype=np.int16)
+                wake_data = normalize_audio(wake_data)
+
+                # Read and normalize desk_stream data
+                desk_data = desk_stream.read(512, exception_on_overflow=False)
+                desk_data = np.frombuffer(desk_data, dtype=np.int16)
+
+                desk_data = desk_data.mean(axis=1).astype(np.int16)  # Combine channels
+
+                desk_data = normalize_audio(desk_data)
+
+                # Subtract the normalized desk stream from the wake stream
+                subtracted_data = wake_data - (scaling_factor * desk_data)
+
+                # Optionally, normalize the subtracted data again
+                final_data = normalize_audio(subtracted_data)
+
+                # Convert back to int16 for Porcupine processing
+                pcm = (final_data * 32767).astype(np.int16)
 
                 # Check for wake word using Porcupine
                 keyword_index = porcupine.process(pcm)
                 if keyword_index >= 0:
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'Hey Llama' detected!")
-                        start_recording()
-                        time.sleep(5)
-                        stop_recording(keyword_index)
                     elif keyword_index == 1:  # Default wake word: "Hey Google"
                         print("Wake word 'Hey Google' detected!")
-                        decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()
                     elif keyword_index == 2:  # Default wake word: "OK Google"
                         print("Wake word 'OK Google' detected!")
-                        decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()
                     elif keyword_index == 3:  # Default wake word: "Alexa"
                         print("Wake word 'Alexa' detected!")
                         # Define the action for "Alexa"
@@ -452,9 +539,39 @@ def listen_for_wake_word():
                     elif keyword_index == 5:  # Default wake word: "Jarvis"
                         print("Wake word 'Jarvis' detected!")
                         # Trigger voice command execution
-                        start_recording()
-                        time.sleep(3)
-                        stop_recording(keyword_index)
+                    elif keyword_index == 6:  # Default wake word: "Porcupine"
+                        print("Wake word 'Porcupine' detected!")
+                        # Define the action for "Porcupine"
+                    elif keyword_index == 7:  # Default wake word: "Americano"
+                        print("Wake word 'Americano' detected!")
+                        # Define the action for "Americano"
+                    elif keyword_index == 8:  # Default wake word: "Blueberry"
+                        print("Wake word 'Blueberry' detected!")
+                        # Define the action for "Blueberry"
+                    elif keyword_index == 9:  # Default wake word: "Bumblebee"
+                        print("Wake word 'Bumblebee' detected!")
+                        # Define the action for "Bumblebee"
+                    elif keyword_index == 10:  # Default wake word: "Grapefruit"
+                        print("Wake word 'Grapefruit' detected!")
+                        # Define the action for "Grapefruit"
+                    elif keyword_index == 11:  # Default wake word: "Grasshopper"
+                        print("Wake word 'Grasshopper' detected!")
+                        # Define the action for "Grasshopper"
+                    elif keyword_index == 12:  # Default wake word: "Hey Barista"
+                        print("Wake word 'Hey Barista' detected!")
+                        # Define the action for "Hey Barista"
+                    elif keyword_index == 13:  # Default wake word: "Hey Siri"
+                        print("Wake word 'Hey Siri' detected!")
+                        # Define the action for "Hey Siri"
+                    elif keyword_index == 14:  # Default wake word: "Pico Clock"
+                        print("Wake word 'Pico Clock' detected!")
+                        # Define the action for "Pico Clock"
+                    elif keyword_index == 15:  # Default wake word: "Picovoice"
+                        print("Wake word 'Picovoice' detected!")
+                        # Define the action for "Picovoice"
+                    elif keyword_index == 16:  # Default wake word: "Terminator"
+                        print("Wake word 'Terminator' detected!")
+                        # Define the action for "Terminator"
                     else:
                         print("Unknown wake word detected!")
                         # You can add more wake word conditions here
