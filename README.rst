@@ -61,3 +61,6 @@ Haven't tested it on Windows yet. If you do, please let me know how it goes.
 ## Security risks
 
 This script creates a recording with your microphone and sends the audio to the Whisper API. The Whisper API response will be automatically streamed to your keyboard and executed there. This might entail security risks. Use at your own risk. 
+
+
+
