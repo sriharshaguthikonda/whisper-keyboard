@@ -85,9 +85,38 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["alexa"],
         KEYWORD_PATHS["computer"],
         KEYWORD_PATHS["jarvis"],
-        # Add more default wake words as needed
+        KEYWORD_PATHS["porcupine"],
+        KEYWORD_PATHS["americano"],
+        KEYWORD_PATHS["blueberry"],
+        KEYWORD_PATHS["bumblebee"],
+        KEYWORD_PATHS["grapefruit"],
+        KEYWORD_PATHS["grasshopper"],
+        KEYWORD_PATHS["hey barista"],
+        KEYWORD_PATHS["hey siri"],
+        KEYWORD_PATHS["pico clock"],
+        KEYWORD_PATHS["picovoice"],
+        KEYWORD_PATHS["terminator"],
     ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.95],  # Adjust these values as needed
+    # Add more default wake words as needed
+    sensitivities=[
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+    ],  # Adjust these values as needed
     keywords=["avengers"],
 )
 
@@ -382,19 +411,10 @@ def listen_for_wake_word():
                 if keyword_index >= 0:
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'Hey Llama' detected!")
-                        start_recording()
-                        time.sleep(5)
-                        stop_recording(keyword_index)
                     elif keyword_index == 1:  # Default wake word: "Hey Google"
                         print("Wake word 'Hey Google' detected!")
-                        decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()
                     elif keyword_index == 2:  # Default wake word: "OK Google"
                         print("Wake word 'OK Google' detected!")
-                        decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()
                     elif keyword_index == 3:  # Default wake word: "Alexa"
                         print("Wake word 'Alexa' detected!")
                         # Define the action for "Alexa"
@@ -404,9 +424,39 @@ def listen_for_wake_word():
                     elif keyword_index == 5:  # Default wake word: "Jarvis"
                         print("Wake word 'Jarvis' detected!")
                         # Trigger voice command execution
-                        start_recording()
-                        time.sleep(3)
-                        stop_recording(keyword_index)
+                    elif keyword_index == 6:  # Default wake word: "Porcupine"
+                        print("Wake word 'Porcupine' detected!")
+                        # Define the action for "Porcupine"
+                    elif keyword_index == 7:  # Default wake word: "Americano"
+                        print("Wake word 'Americano' detected!")
+                        # Define the action for "Americano"
+                    elif keyword_index == 8:  # Default wake word: "Blueberry"
+                        print("Wake word 'Blueberry' detected!")
+                        # Define the action for "Blueberry"
+                    elif keyword_index == 9:  # Default wake word: "Bumblebee"
+                        print("Wake word 'Bumblebee' detected!")
+                        # Define the action for "Bumblebee"
+                    elif keyword_index == 10:  # Default wake word: "Grapefruit"
+                        print("Wake word 'Grapefruit' detected!")
+                        # Define the action for "Grapefruit"
+                    elif keyword_index == 11:  # Default wake word: "Grasshopper"
+                        print("Wake word 'Grasshopper' detected!")
+                        # Define the action for "Grasshopper"
+                    elif keyword_index == 12:  # Default wake word: "Hey Barista"
+                        print("Wake word 'Hey Barista' detected!")
+                        # Define the action for "Hey Barista"
+                    elif keyword_index == 13:  # Default wake word: "Hey Siri"
+                        print("Wake word 'Hey Siri' detected!")
+                        # Define the action for "Hey Siri"
+                    elif keyword_index == 14:  # Default wake word: "Pico Clock"
+                        print("Wake word 'Pico Clock' detected!")
+                        # Define the action for "Pico Clock"
+                    elif keyword_index == 15:  # Default wake word: "Picovoice"
+                        print("Wake word 'Picovoice' detected!")
+                        # Define the action for "Picovoice"
+                    elif keyword_index == 16:  # Default wake word: "Terminator"
+                        print("Wake word 'Terminator' detected!")
+                        # Define the action for "Terminator"
                     else:
                         print("Unknown wake word detected!")
                         # You can add more wake word conditions here
