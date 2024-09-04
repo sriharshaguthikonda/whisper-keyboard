@@ -177,7 +177,7 @@ def execute_command(transcript):
     if not action:
         # Find the best fuzzy match (with a threshold of 80 for confidence)
         best_match, match_score = process.extractOne(command, PHRASE_TO_ACTION.keys())
-        if match_score >= 90:  # Adjust the threshold as needed
+        if match_score >= 80:  # Adjust the threshold as needed
             action = PHRASE_TO_ACTION.get(best_match)
 
     if action:

@@ -120,7 +120,7 @@ audio_data_lock = threading.Lock()
 """
 
 
-PRE_RECORDING_DURATION = 1  # seconds
+PRE_RECORDING_DURATION = 2  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
