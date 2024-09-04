@@ -237,6 +237,9 @@ Wake word 'Picovoice' detected!
 
 
 
+
+
+
 """
 
 wake_words = [
