@@ -5,78 +5,90 @@ import re
 import string
 from fuzzywuzzy import process
 
-
 COMMAND_MAPPINGS = {
     # System Commands
-    "search windows": ["open start menu", "show start menu", "Windows search"],
-    "show desktop": ["show desktop", "minimize everything"],
-    "open settings": ["open settings", "settings"],
-    "lock screen": ["lock screen", "lock the computer"],
-    "take screenshot": ["take screenshot", "capture screen"],
-    "open file explorer": ["open file explorer", "explore files"],
-    "windows search": ["open search", "search"],
-    "open run dialog": ["open run dialog", "run command"],
-    "open task manager": ["open task manager", "task manager"],
-    "minimize all windows": ["minimize all windows", "minimize windows"],
-    "restore windows": ["restore windows", "restore all windows"],
-    #    "shutdown system": ["shutdown system", "turn off computer"],
-    #    "restart system": ["restart system", "reboot computer"],
-    #    "log off": ["log off", "sign out"],
+    "search windows": [
+        "Hey Jarvis open start menu",
+        "Hey Jarvis show start menu",
+        "Hey Jarvis Windows search",
+    ],
+    "show desktop": ["Hey Jarvis show desktop", "Hey Jarvis minimize everything"],
+    "open settings": ["Hey Jarvis open settings", "Hey Jarvis settings"],
+    "lock screen": ["Hey Jarvis lock screen", "Hey Jarvis lock the computer"],
+    "take screenshot": ["Hey Jarvis take screenshot", "Hey Jarvis capture screen"],
+    "open file explorer": ["Hey Jarvis open file explorer", "Hey Jarvis explore files"],
+    "windows search": ["Hey Jarvis open search", "Hey Jarvis search"],
+    "open run dialog": ["Hey Jarvis open run dialog", "Hey Jarvis run command"],
+    "open task manager": ["Hey Jarvis open task manager", "Hey Jarvis task manager"],
+    "minimize all windows": [
+        "Hey Jarvis minimize all windows",
+        "Hey Jarvis minimize windows",
+    ],
+    "restore windows": ["Hey Jarvis restore windows", "Hey Jarvis restore all windows"],
+    #    "shutdown system": ["Hey Jarvis shutdown system", "Hey Jarvis turn off computer"],
+    #    "restart system": ["Hey Jarvis restart system", "Hey Jarvis reboot computer"],
+    #    "log off": ["Hey Jarvis log off", "Hey Jarvis sign out"],
     # Application Commands
-    "open control panel": ["open control panel", "control panel"],
-    "open calculator": ["open calculator", "calculator"],
-    "open notepad": ["open notepad", "notepad"],
-    "open word": ["open word", "start word"],
-    "open excel": ["open excel", "start excel"],
-    "open powerpoint": ["open powerpoint", "start powerpoint"],
-    "open outlook": ["open outlook", "start outlook"],
-    "open paint": ["open paint", "start paint"],
+    "open control panel": ["Hey Jarvis open control panel", "Hey Jarvis control panel"],
+    "open calculator": ["Hey Jarvis open calculator", "Hey Jarvis calculator"],
+    "open notepad": ["Hey Jarvis open notepad", "Hey Jarvis notepad"],
+    "open word": ["Hey Jarvis open word", "Hey Jarvis start word"],
+    "open excel": ["Hey Jarvis open excel", "Hey Jarvis start excel"],
+    "open powerpoint": ["Hey Jarvis open powerpoint", "Hey Jarvis start powerpoint"],
+    "open outlook": ["Hey Jarvis open outlook", "Hey Jarvis start outlook"],
+    "open paint": ["Hey Jarvis open paint", "Hey Jarvis start paint"],
     "open command prompt": [
-        "open command prompt",
-        "open console",
-        "command prompt",
-        " Open command drop",
+        "Hey Jarvis open command prompt",
+        "Hey Jarvis open console",
+        "Hey Jarvis command prompt",
+        "Hey Jarvis Open command drop",
     ],
-    "open powershell": ["open powershell", "powershell"],
-    "open edge": ["open edge", "start edge"],
-    "open chrome": ["open chrome", "start chrome"],
-    "open firefox": ["open firefox", "start firefox"],
+    "open powershell": ["Hey Jarvis open powershell", "Hey Jarvis powershell"],
+    "open edge": ["Hey Jarvis open edge", "Hey Jarvis start edge"],
+    "open chrome": ["Hey Jarvis open chrome", "Hey Jarvis start chrome"],
+    "open firefox": ["Hey Jarvis open firefox", "Hey Jarvis start firefox"],
     # Volume Controls
-    "volume up": ["volume up", "increase volume"],
-    "volume down": ["volume down", "decrease volume"],
-    # "mute volume": ["mute volume", "mute sound"],
+    "volume up": ["Hey Jarvis volume up", "Hey Jarvis increase volume"],
+    "volume down": ["Hey Jarvis volume down", "Hey Jarvis decrease volume"],
+    # "mute volume": ["Hey Jarvis mute volume", "Hey Jarvis mute sound"],
     # Media Controls
-    "play media": [
-        "play media",
-        "play",
-        "play music",
+    "play media": ["Hey Jarvis play media", "Hey Jarvis play", "Hey Jarvis play music"],
+    "stop media": ["Hey Jarvis stop media", "Hey Jarvis stop", "Hey Jarvis stop music"],
+    "next track": [
+        "Hey Jarvis next track",
+        "Hey Jarvis next song",
+        "Hey Jarvis skip",
+        "Hey Jarvis play next song",
     ],
-    "stop media": [
-        "stop media",
-        "stop",
-        "stop music",
-    ],
-    "next track": ["next track", "next song", "skip", "play next song"],
     "previous track": [
-        "previous track",
-        "previous song",
-        "replay",
-        "play previous song",
+        "Hey Jarvis previous track",
+        "Hey Jarvis previous song",
+        "Hey Jarvis replay",
+        "Hey Jarvis play previous song",
     ],
     # Custom or Complex Operations
-    "open device manager": ["open device manager", "device manager"],
-    "open disk management": [
-        "open disk management",
-        "disk management",
-        "format disk",
-        "hard disk",
+    "open device manager": [
+        "Hey Jarvis open device manager",
+        "Hey Jarvis device manager",
     ],
-    "open network connections": ["open network connections", "network connections"],
-    "open system properties": ["open system properties", "system properties"],
-    "open date and time": ["open date and time", "date and time"],
+    "open disk management": [
+        "Hey Jarvis open disk management",
+        "Hey Jarvis disk management",
+        "Hey Jarvis format disk",
+        "Hey Jarvis hard disk",
+    ],
+    "open network connections": [
+        "Hey Jarvis open network connections",
+        "Hey Jarvis network connections",
+    ],
+    "open system properties": [
+        "Hey Jarvis open system properties",
+        "Hey Jarvis system properties",
+    ],
+    "open date and time": ["Hey Jarvis open date and time", "Hey Jarvis date and time"],
     # System Commands
-    "ping google": ["ping google", "check internet connection"],
-    "flush dns": ["flush dns", "reset dns cache"],
+    "ping google": ["Hey Jarvis ping google", "Hey Jarvis check internet connection"],
+    "flush dns": ["Hey Jarvis flush dns", "Hey Jarvis reset dns cache"],
     # Add more as needed Play, pause, media.
 }
 
@@ -165,7 +177,7 @@ def execute_command(transcript):
     if not action:
         # Find the best fuzzy match (with a threshold of 80 for confidence)
         best_match, match_score = process.extractOne(command, PHRASE_TO_ACTION.keys())
-        if match_score >= 80:  # Adjust the threshold as needed
+        if match_score >= 90:  # Adjust the threshold as needed
             action = PHRASE_TO_ACTION.get(best_match)
 
     if action:
