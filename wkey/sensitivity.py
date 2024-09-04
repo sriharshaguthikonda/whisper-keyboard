@@ -240,6 +240,776 @@ Wake word 'Picovoice' detected!
 
 
 
+Wake word 'Grasshopper' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Terminator' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Alexa' detected!
+Wake word 'Terminator' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Terminator' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Terminator' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+stream is active
+Stream started
+Decreasing volume from 69.9999988079071% to 10%
+Listening...
+Restoring volume to 69.9999988079071%
+Transcribing...
+ If I don't run this script in general, where are the path variables stored? Is there a backup?
+Transcript pasted
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'OK Google' detected!
+Wake word 'Grasshopper' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Alexa' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Alexa' detected!
+Wake word 'Terminator' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Terminator' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Alexa' detected!
+Wake word 'Computer' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Computer' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Google' detected!
+Wake word 'OK Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Terminator' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Alexa' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Pico Clock' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Grasshopper' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Alexa' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Terminator' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Terminator' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Terminator' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Terminator' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Blueberry' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Custom wake word 'Hey Llama' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grasshopper' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Alexa' detected!
+Wake word 'Grasshopper' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Alexa' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Computer' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Pico Clock' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'OK Google' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Terminator' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Alexa' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Terminator' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Porcupine' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'OK Google' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Alexa' detected!
+Wake word 'Alexa' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Alexa' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'OK Google' detected!
+Wake word 'Terminator' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Americano' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Computer' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Computer' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Computer' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'OK Google' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Computer' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Terminator' detected!
+Wake word 'Terminator' detected!
+Wake word 'Terminator' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Terminator' detected!
+Wake word 'Terminator' detected!
+Wake word 'Americano' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'OK Google' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grapefruit' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Terminator' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Google' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Americano' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Americano' detected!
+Wake word 'OK Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Blueberry' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Hey Google' detected!
+Wake word 'OK Google' detected!
+Wake word 'Americano' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Computer' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Americano' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Americano' detected!
+Wake word 'Hey Google' detected!
+Wake word 'Porcupine' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Porcupine' detected!
+
+
+
+
+
+
 """
 
 wake_words = [
