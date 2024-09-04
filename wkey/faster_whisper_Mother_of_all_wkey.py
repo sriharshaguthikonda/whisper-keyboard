@@ -262,7 +262,7 @@ def start_recording():
         desktop_start_time = time.time()
         desktop_stream = sd.InputStream(
             callback=callback_desktop_audio,
-            device=None,
+            device="Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI",
             channels=1,
             samplerate=sample_rate,
             blocksize=int(sample_rate * 0.1),
@@ -375,6 +375,7 @@ desktop_stream = sd.InputStream(
     channels=1,
     samplerate=sample_rate,
     blocksize=blocksize,
+    device="Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI",
 )
 
 # Start capturing microphone audio
