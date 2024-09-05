@@ -1,6 +1,6 @@
 transcript = """
 
-
+the lower the number the better!
 
 Wake word 'Hey Barista' detected!
 Wake word 'Terminator' detected!
@@ -1052,3 +1052,105 @@ sorted_wake_word_counts = dict(
 # Print the counts
 for word, count in sorted_wake_word_counts.items():
     print(f"{word}: {count}")
+
+
+"""
+the higher the number the better!
+specificitity testing
+
+Wake word 'Alexa' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'OK Google' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Terminator' detected!
+
+Wake word 'Computer' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'OK Google' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Terminator' detected!
+
+Wake word 'Alexa' detected!
+Wake word 'Computer' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Computer' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Alexa' detected!
+Wake word 'Computer' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Bumblebee' detected!
+Wake word 'Grapefruit' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Terminator' detected!
+Wake word 'Grasshopper' detected!
+
+Wake word 'Alexa' detected!
+Wake word 'Computer' detected!
+Wake word 'Porcupine' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Grasshopper' detected!
+Wake word 'Terminator' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Terminator' detected!
+Wake word 'Jarvis' detected!
+Wake word 'Computer' detected!
+Wake word 'Hey Siri' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Picovoice' detected!
+Wake word 'Terminator' detected!
+
+Wake word 'Americano' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Americano' detected!
+Wake word 'Blueberry' detected!
+Wake word 'Pico Clock' detected!
+Wake word 'Americano' detected!
+Wake word 'Computer' detected!
+Wake word 'Computer' detected!
+Wake word 'Pico Clock' detected!
+Custom wake word 'Hey Llama' detected!
+Wake word 'Hey Barista' detected!
+Wake word 'Hey Google' detected!
+Custom wake word 'Hey Llama' detected!
+
+"""
+
+
+"""
+TODO "computer looks amazing."
+"""

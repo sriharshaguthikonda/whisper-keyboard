@@ -10,16 +10,22 @@ get rid of  global There_is_a_device
 
 
 
+
+
+cd whisper-keyboard
 git branch
 
 
 
+
+
+
+
 git add .
-git commit -m "Your commit message"
-    
+git commit -m "added hey jarvis to all commands"
 
 
 
-there audio-substract branch is combining previous commands into current commands
 
-i think it is combinig previous audio into new audio
+git push
+
