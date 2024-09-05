@@ -18,9 +18,6 @@ git branch
 
 
 
-
-
-
 git add .
 git commit -m "added hey jarvis to all commands"
 
@@ -28,4 +25,9 @@ git commit -m "added hey jarvis to all commands"
 
 
 git push
+
+
+
+
+
 
