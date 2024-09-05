@@ -10,6 +10,9 @@ get rid of  global There_is_a_device
 
 
 
+
+
+cd whisper-keyboard
 git branch
 
 

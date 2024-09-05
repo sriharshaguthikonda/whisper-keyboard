@@ -87,7 +87,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.95],  # Adjust these values as needed
+    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.65],  # Adjust these values as needed
     keywords=["avengers"],
 )
 
@@ -405,7 +405,7 @@ def listen_for_wake_word():
                         print("Wake word 'Jarvis' detected!")
                         # Trigger voice command execution
                         start_recording()
-                        time.sleep(3)
+                        time.sleep(2)
                         stop_recording(keyword_index)
                     else:
                         print("Unknown wake word detected!")
