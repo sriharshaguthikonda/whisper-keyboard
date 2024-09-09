@@ -13,6 +13,8 @@ get rid of  global There_is_a_device
 
 
 cd whisper-keyboard
+
+
 git branch
 
 
@@ -24,7 +26,6 @@ git commit -m "added hey jarvis to all commands"
 
 
 git push
-
 
 
 

@@ -9,6 +9,7 @@
 """
 
 import os
+import psutil
 import io
 import time
 import threading
@@ -28,7 +29,7 @@ from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 
 from faster_whisper import WhisperModel
-from voice_commands import execute_command
+from voice_commands import execute_command, start_driver, driver  # , driver_pid
 from pause_all import is_sound_playing_windows_processing
 
 from ctypes import cast, POINTER
@@ -87,7 +88,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 0.75, 0.65],  # Adjust these values as needed
+    sensitivities=[0.75, 0.85, 0.65, 0.75, 1, 0.65],  # Adjust these values as needed
     keywords=["avengers"],
 )
 
@@ -387,26 +388,27 @@ def listen_for_wake_word():
                         stop_recording(keyword_index)
                     elif keyword_index == 1:  # Default wake word: "Hey Google"
                         print("Wake word 'Hey Google' detected!")
-                        decrease_volume_all()
+                        """decrease_volume_all()
                         time.sleep(5)
-                        restore_volume_all()
+                        restore_volume_all()"""
                     elif keyword_index == 2:  # Default wake word: "OK Google"
                         print("Wake word 'OK Google' detected!")
-                        decrease_volume_all()
+                        """decrease_volume_all()
                         time.sleep(5)
-                        restore_volume_all()
+                        restore_volume_all()"""
                     elif keyword_index == 3:  # Default wake word: "Alexa"
                         print("Wake word 'Alexa' detected!")
                         # Define the action for "Alexa"
                     elif keyword_index == 4:  # Default wake word: "Computer"
                         print("Wake word 'Computer' detected!")
                         # Define the action for "Computer"
-                    elif keyword_index == 5:  # Default wake word: "Jarvis"
-                        print("Wake word 'Jarvis' detected!")
-                        # Trigger voice command execution
                         start_recording()
                         time.sleep(2)
                         stop_recording(keyword_index)
+                    elif keyword_index == 5:  # Default wake word: "Jarvis"
+                        print("Wake word 'Jarvis' detected!")
+                        # Trigger voice command execution
+
                     else:
                         print("Unknown wake word detected!")
                         # You can add more wake word conditions here
@@ -534,8 +536,9 @@ def clean_transcript():
     while True:
         try:
             transcript, keyword_index = transcript_queue.get()
-            if keyword_index == 5:
+            if keyword_index == 4:
                 threading.Thread(target=execute_command, args=(transcript,)).start()
+                # execute_command
             else:
                 original_clipboard_content = clipboard.paste()
                 clipboard.copy(transcript)
@@ -564,6 +567,9 @@ def clean_transcript():
 
 def main():
     global stream
+    global driver
+    global driver_pid
+
     print("wkey is active. Hold down", RECORD_KEY, " to start dictating.")
 
     try:
@@ -574,6 +580,7 @@ def main():
         threading.Thread(target=clean_transcript, daemon=True).start()
         threading.Thread(target=process_audio_async, daemon=True).start()
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
+        threading.Thread(target=start_driver, daemon=True).start()
 
         with stream:
             start_listener()
@@ -587,6 +594,9 @@ def main():
         cleanup()
         restore_volume_all()
         print("Cleanup completed. Exiting...")
+        # Clean up (close the browser)
+        if driver:
+            driver.quit()
 
 
 if __name__ == "__main__":

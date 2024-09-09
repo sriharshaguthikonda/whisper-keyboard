@@ -4,94 +4,229 @@ import pyautogui
 import re
 import string
 from fuzzywuzzy import process
+from selenium import webdriver
+from selenium.webdriver.edge.service import Service
+from selenium.webdriver.edge.options import Options
+from selenium.webdriver.common.action_chains import ActionChains
+import time
+
+
+# Path to your Edge WebDriver
+webdriver_path = r"C:\Users\deletable\Downloads\edgedriver_win64\msedgedriver.exe"
+
+# Set up Edge options
+options = Options()
+options.add_argument(
+    r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
+)  # Adjust this to your user data directory
+options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
+options.add_argument("--headless")
+# options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
+
+# Initialize the WebDriver
+service = Service(webdriver_path)
+
+driver = None
+driver_pid = None
+
+
+def start_driver():
+    global driver
+    global driver_pid
+
+    try:
+        driver = webdriver.Edge(service=service, options=options)
+        time.sleep(6)
+        driver.get("https://open.spotify.com/collection/tracks")
+        driver.execute_script("window.focus();")
+        time.sleep(5)  # Wait for the page to load
+        driver_pid = driver.service.process.pid
+    except Exception as e:
+        print(f"Error terminating WebDriver process: {e}")
+
+
+# Start the WebDriver in a separate thread
+# Allow time to log in (if not using a persistent session)
+# time.sleep(60)  # Uncomment if you need time to log in manually
+
+
+# Control playback
+def play_song():
+    try:
+        play_button = driver.find_element("xpath", "//button[@aria-label='Play']")
+        ActionChains(driver).move_to_element(play_button).click(play_button).perform()
+        print("Playback started.")
+    except Exception as e:
+        print(f"Error while trying to play: {e}")
+
+
+def pause_song():
+    try:
+        pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
+        pause_button.click()
+        print("Playback paused.")
+    except Exception as e:
+        print(f"Error while trying to pause: {e}")
+
+
+def next_track():
+    try:
+        next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
+        next_button.click()
+        print("Next track.")
+    except Exception as e:
+        print(f"Error while trying to skip to next track: {e}")
+
+
+def previous_track():
+    try:
+        prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
+        prev_button.click()
+        print("Previous track.")
+    except Exception as e:
+        print(f"Error while trying to go to previous track: {e}")
+
+
+"""
+ ######   #######  ##     ## ##     ##    ###    ##    ## ########  
+##    ## ##     ## ###   ### ###   ###   ## ##   ###   ## ##     ## 
+##       ##     ## #### #### #### ####  ##   ##  ####  ## ##     ## 
+##       ##     ## ## ### ## ## ### ## ##     ## ## ## ## ##     ## 
+##       ##     ## ##     ## ##     ## ######### ##  #### ##     ## 
+##    ## ##     ## ##     ## ##     ## ##     ## ##   ### ##     ## 
+ ######   #######  ##     ## ##     ## ##     ## ##    ## ########  
+"""
 
 COMMAND_MAPPINGS = {
     # System Commands
     "search windows": [
-        "Hey Jarvis open start menu",
-        "Hey Jarvis show start menu",
-        "Hey Jarvis Windows search",
+        "Hey computer open start menu",
+        "Hey computer show start menu",
+        "Hey computer Windows search",
     ],
-    "show desktop": ["Hey Jarvis show desktop", "Hey Jarvis minimize everything"],
-    "open settings": ["Hey Jarvis open settings", "Hey Jarvis settings"],
-    "lock screen": ["Hey Jarvis lock screen", "Hey Jarvis lock the computer"],
-    "take screenshot": ["Hey Jarvis take screenshot", "Hey Jarvis capture screen"],
-    "open file explorer": ["Hey Jarvis open file explorer", "Hey Jarvis explore files"],
-    "windows search": ["Hey Jarvis open search", "Hey Jarvis search"],
-    "open run dialog": ["Hey Jarvis open run dialog", "Hey Jarvis run command"],
-    "open task manager": ["Hey Jarvis open task manager", "Hey Jarvis task manager"],
+    "show desktop": ["Hey computer show desktop", "Hey computer minimize everything"],
+    "open settings": ["Hey computer open settings", "Hey computer settings"],
+    "lock screen": ["Hey computer lock screen", "Hey computer lock the computer"],
+    "take screenshot": ["Hey computer take screenshot", "Hey computer capture screen"],
+    "open file explorer": [
+        "Hey computer open file explorer",
+        "Hey computer explore files",
+    ],
+    "windows search": ["Hey computer open search", "Hey computer search"],
+    "open run dialog": ["Hey computer open run dialog", "Hey computer run command"],
+    "open task manager": [
+        "Hey computer open task manager",
+        "Hey computer task manager",
+    ],
     "minimize all windows": [
-        "Hey Jarvis minimize all windows",
-        "Hey Jarvis minimize windows",
+        "Hey computer minimize all windows",
+        "Hey computer minimize windows",
     ],
-    "restore windows": ["Hey Jarvis restore windows", "Hey Jarvis restore all windows"],
-    #    "shutdown system": ["Hey Jarvis shutdown system", "Hey Jarvis turn off computer"],
-    #    "restart system": ["Hey Jarvis restart system", "Hey Jarvis reboot computer"],
-    #    "log off": ["Hey Jarvis log off", "Hey Jarvis sign out"],
+    "restore windows": [
+        "Hey computer restore windows",
+        "Hey computer restore all windows",
+    ],
+    #    "shutdown system": ["Hey computer shutdown system", "Hey computer turn off computer"],
+    #    "restart system": ["Hey computer restart system", "Hey computer reboot computer"],
+    #    "log off": ["Hey computer log off", "Hey computer sign out"],
     # Application Commands
-    "open control panel": ["Hey Jarvis open control panel", "Hey Jarvis control panel"],
-    "open calculator": ["Hey Jarvis open calculator", "Hey Jarvis calculator"],
-    "open notepad": ["Hey Jarvis open notepad", "Hey Jarvis notepad"],
-    "open word": ["Hey Jarvis open word", "Hey Jarvis start word"],
-    "open excel": ["Hey Jarvis open excel", "Hey Jarvis start excel"],
-    "open powerpoint": ["Hey Jarvis open powerpoint", "Hey Jarvis start powerpoint"],
-    "open outlook": ["Hey Jarvis open outlook", "Hey Jarvis start outlook"],
-    "open paint": ["Hey Jarvis open paint", "Hey Jarvis start paint"],
-    "open command prompt": [
-        "Hey Jarvis open command prompt",
-        "Hey Jarvis open console",
-        "Hey Jarvis command prompt",
-        "Hey Jarvis Open command drop",
+    "open control panel": [
+        "Hey computer open control panel",
+        "Hey computer control panel",
     ],
-    "open powershell": ["Hey Jarvis open powershell", "Hey Jarvis powershell"],
-    "open edge": ["Hey Jarvis open edge", "Hey Jarvis start edge"],
-    "open chrome": ["Hey Jarvis open chrome", "Hey Jarvis start chrome"],
-    "open firefox": ["Hey Jarvis open firefox", "Hey Jarvis start firefox"],
+    "open calculator": ["Hey computer open calculator", "Hey computer calculator"],
+    "open notepad": ["Hey computer open notepad", "Hey computer notepad"],
+    "open word": ["Hey computer open word", "Hey computer start word"],
+    "open excel": ["Hey computer open excel", "Hey computer start excel"],
+    "open powerpoint": [
+        "Hey computer open powerpoint",
+        "Hey computer start powerpoint",
+    ],
+    "open outlook": ["Hey computer open outlook", "Hey computer start outlook"],
+    "open paint": ["Hey computer open paint", "Hey computer start paint"],
+    "open command prompt": [
+        "Hey computer open command prompt",
+        "Hey computer open console",
+        "Hey computer command prompt",
+        "Hey computer Open command drop",
+    ],
+    "open powershell": ["Hey computer open powershell", "Hey computer powershell"],
+    "open edge": ["Hey computer open edge", "Hey computer start edge"],
+    "open chrome": ["Hey computer open chrome", "Hey computer start chrome"],
+    "open firefox": ["Hey computer open firefox", "Hey computer start firefox"],
     # Volume Controls
-    "volume up": ["Hey Jarvis volume up", "Hey Jarvis increase volume"],
-    "volume down": ["Hey Jarvis volume down", "Hey Jarvis decrease volume"],
-    # "mute volume": ["Hey Jarvis mute volume", "Hey Jarvis mute sound"],
+    "open sound control panel": [
+        "Hey computer open sound control panel",
+        "Hey computer open audio settings",
+    ],
+    "volume up": ["Hey computer volume up", "Hey computer increase volume"],
+    "volume down": ["Hey computer volume down", "Hey computer decrease volume"],
+    # "mute volume": ["Hey computer mute volume", "Hey computer mute sound"],
     # Media Controls
-    "play media": ["Hey Jarvis play media", "Hey Jarvis play", "Hey Jarvis play music"],
-    "stop media": ["Hey Jarvis stop media", "Hey Jarvis stop", "Hey Jarvis stop music"],
+    "play media": [
+        "Hey computer play media",
+        "Hey computer play",
+        "Hey computer play music",
+    ],
+    "stop media": [
+        "Hey computer stop media",
+        "Hey computer stop",
+        "Hey computer stop music",
+    ],
     "next track": [
-        "Hey Jarvis next track",
-        "Hey Jarvis next song",
-        "Hey Jarvis skip",
-        "Hey Jarvis play next song",
+        "Hey computer next track",
+        "Hey computer next song",
+        "Hey computer skip",
+        "Hey computer play next song",
     ],
     "previous track": [
-        "Hey Jarvis previous track",
-        "Hey Jarvis previous song",
-        "Hey Jarvis replay",
-        "Hey Jarvis play previous song",
+        "Hey computer previous track",
+        "Hey computer previous song",
+        "Hey computer replay",
+        "Hey computer play previous song",
     ],
     # Custom or Complex Operations
     "open device manager": [
-        "Hey Jarvis open device manager",
-        "Hey Jarvis device manager",
+        "Hey computer open device manager",
+        "Hey computer device manager",
     ],
     "open disk management": [
-        "Hey Jarvis open disk management",
-        "Hey Jarvis disk management",
-        "Hey Jarvis format disk",
-        "Hey Jarvis hard disk",
+        "Hey computer open disk management",
+        "Hey computer disk management",
+        "Hey computer format disk",
+        "Hey computer hard disk",
     ],
     "open network connections": [
-        "Hey Jarvis open network connections",
-        "Hey Jarvis network connections",
+        "Hey computer open network connections",
+        "Hey computer network connections",
     ],
     "open system properties": [
-        "Hey Jarvis open system properties",
-        "Hey Jarvis system properties",
+        "Hey computer open system properties",
+        "Hey computer system properties",
     ],
-    "open date and time": ["Hey Jarvis open date and time", "Hey Jarvis date and time"],
+    "open date and time": [
+        "Hey computer open date and time",
+        "Hey computer date and time",
+    ],
     # System Commands
-    "ping google": ["Hey Jarvis ping google", "Hey Jarvis check internet connection"],
-    "flush dns": ["Hey Jarvis flush dns", "Hey Jarvis reset dns cache"],
+    "ping google": [
+        "Hey computer ping google",
+        "Hey computer check internet connection",
+    ],
+    "flush dns": ["Hey computer flush dns", "Hey computer reset dns cache"],
     # Add more as needed Play, pause, media.
 }
 
+
+"""
+   ###     ######  ######## ####  #######  ##    ##  ######  
+  ## ##   ##    ##    ##     ##  ##     ## ###   ## ##    ## 
+ ##   ##  ##          ##     ##  ##     ## ####  ## ##       
+##     ## ##          ##     ##  ##     ## ## ## ##  ######  
+######### ##          ##     ##  ##     ## ##  ####       ## 
+##     ## ##    ##    ##     ##  ##     ## ##   ### ##    ## 
+##     ##  ######     ##    ####  #######  ##    ##  ######  
+"""
 
 # Define actions for commands
 ACTIONS = {
@@ -125,14 +260,15 @@ ACTIONS = {
     "open chrome": lambda: os.system("start chrome"),
     "open firefox": lambda: os.system("start firefox"),
     # Volume Controls
+    "open sound control panel": lambda: os.system("control mmsys.cpl"),
     "volume up": lambda: pyautogui.press("volumeup"),
     "volume down": lambda: pyautogui.press("volumedown"),
     "mute volume": lambda: pyautogui.press("volumemute"),
     # Media Controls
-    "play media": lambda: pyautogui.press("playpause"),
-    "stop media": lambda: pyautogui.press("stop"),
-    "next track": lambda: pyautogui.press("nexttrack"),
-    "previous track": lambda: pyautogui.press("prevtrack"),
+    "play media": play_song,
+    "stop media": pause_song,
+    "next track": next_track,
+    "previous track": previous_track,
     # Custom or Complex Operations
     "open device manager": lambda: os.system("devmgmt.msc"),
     "open disk management": lambda: os.system("diskmgmt.msc"),
@@ -177,7 +313,9 @@ def execute_command(transcript):
     if not action:
         # Find the best fuzzy match (with a threshold of 80 for confidence)
         best_match, match_score = process.extractOne(command, PHRASE_TO_ACTION.keys())
-        if match_score >= 80:  # Adjust the threshold as needed
+        if (
+            match_score >= 80 and "computer" in transcript
+        ):  # Adjust the threshold as needed
             action = PHRASE_TO_ACTION.get(best_match)
 
     if action:
