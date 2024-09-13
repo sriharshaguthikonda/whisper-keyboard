@@ -21,10 +21,10 @@ model = Model(model_path)
 rec = KaldiRecognizer(model, 16000)
 
 # Initialize Porcupine with custom wake word
-custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+hey_llama_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 porcupine = pvporcupine.create(
-    access_key="kj/04yPb1D3qtG9dC5Lxs8PxQidMWBwonaxdtdbAbYeTz+1aI2GA7A==",
-    keyword_paths=[custom_wake_word_path],
+    access_key="*********",
+    keyword_paths=[hey_llama_word_path],
 )
 
 # Initialize PyAudio

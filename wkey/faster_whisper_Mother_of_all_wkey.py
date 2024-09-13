@@ -75,16 +75,18 @@ rec = KaldiRecognizer(model, 16000)
 load_dotenv()
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
-custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+hey_llama_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+hey_computer_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\hey-computer_en_windows_v3_0_0.ppn"
+
 # Initialize Porcupine with multiple wake words and higher sensitivity
 porcupine = pvporcupine.create(
     access_key=pico_access_key,
     keyword_paths=[
-        custom_wake_word_path,
+        hey_llama_word_path,
         KEYWORD_PATHS["hey google"],
         KEYWORD_PATHS["ok google"],
         KEYWORD_PATHS["alexa"],
-        KEYWORD_PATHS["computer"],
+        hey_computer_word_path,
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
