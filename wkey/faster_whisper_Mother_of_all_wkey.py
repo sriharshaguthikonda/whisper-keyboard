@@ -86,7 +86,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["hey google"],
         KEYWORD_PATHS["ok google"],
         KEYWORD_PATHS["alexa"],
-        hey_computer_word_path,
+        KEYWORD_PATHS["computer"],
         KEYWORD_PATHS["jarvis"],
         KEYWORD_PATHS["porcupine"],
         KEYWORD_PATHS["americano"],
