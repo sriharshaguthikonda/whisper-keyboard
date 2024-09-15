@@ -83,30 +83,44 @@ load_dotenv()
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 
+"""
+########  ####  ######   #######  
+##     ##  ##  ##    ## ##     ## 
+##     ##  ##  ##       ##     ## 
+########   ##  ##       ##     ## 
+##         ##  ##       ##     ## 
+##         ##  ##    ## ##     ## 
+##        ####  ######   #######  
+"""
+
+
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 # Create named queues for each thread
 wake_word_queue = queue.Queue()
 
 
-# Function to process each chunk
 def process_chunk():
     while True:
         chunk = wake_word_queue.get()
         if chunk is None:
             break
-        pcm = chunk.astype(np.int16)
-        keyword_index = porcupine.process(pcm)
 
-        if keyword_index == 0:
-            print(" Custom wake word 'Hey Llama' detected!")
-        elif keyword_index == 1:
-            print(" Wake word 'Hey Google' detected!")
-        elif keyword_index == 2:
-            print(" Wake word 'OK Google' detected!")
-        elif keyword_index == 4:
-            print(" Wake word 'Computer' detected!")
+        # Ensure the chunk has the correct frame length
+        if len(chunk) == 512:
+            keyword_index = porcupine.process(chunk)
+            # print(len(chunk))
+            if keyword_index == 0:
+                print("Custom wake word 'Hey Llama' detected!")
+            elif keyword_index == 1:
+                print("Wake word 'Hey Google' detected!")
+            elif keyword_index == 2:
+                print("Wake word 'OK Google' detected!")
+            elif keyword_index == 4:
+                print("Wake word 'Computer' detected!")
+            else:
+                pass
         else:
-            print(" Unknown wake word detected!")
+            print(f"Invalid frame length: expected 512 but received {len(chunk)}")
 
 
 # Initialize Porcupine instances
@@ -615,9 +629,9 @@ def listen_for_wake_word(scaling_factor=1.0):
             # Split noise_cancelled_data into 4 chunks of 512 frames
             chunks = [noise_cancelled_data[i : i + 512] for i in range(0, 2048, 512)]
 
-            # Send chunks to the respective named queues
-            for i in range(4):
-                wake_word_queue.put(chunks)
+            # Send each chunk to the queue
+            for chunk in chunks:
+                wake_word_queue.put(chunk)
 
             time.sleep(0.1)  # Adding a small sleep to avoid excessive CPU usage
 
@@ -780,6 +794,7 @@ def main():
         threading.Thread(target=clean_transcript, daemon=True).start()
         threading.Thread(target=process_audio_async, daemon=True).start()
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
+        threading.Thread(target=process_chunk, daemon=True).start()
 
         with stream:
             start_listener()
