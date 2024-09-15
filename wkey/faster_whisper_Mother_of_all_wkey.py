@@ -85,102 +85,74 @@ pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 # Create named queues for each thread
-wake_word_queues = [queue.Queue() for _ in range(4)]
+wake_word_queue = queue.Queue()
 
 
 # Function to process each chunk
-def process_chunk(queue, porcupine_instance, debounce, thread_name):
+def process_chunk():
     while True:
-        chunk = queue.get()
+        chunk = wake_word_queue.get()
         if chunk is None:
             break
         pcm = chunk.astype(np.int16)
-        keyword_index = porcupine_instance.process(pcm)
-        if keyword_index >= 0 and debounce.is_allowed():
-            if keyword_index == 0:
-                print(f"{thread_name}: Custom wake word 'Hey Llama' detected!")
-            elif keyword_index == 1:
-                print(f"{thread_name}: Wake word 'Hey Google' detected!")
-            elif keyword_index == 2:
-                print(f"{thread_name}: Wake word 'OK Google' detected!")
-            elif keyword_index == 4:
-                print(f"{thread_name}: Wake word 'Computer' detected!")
-            else:
-                print(f"{thread_name}: Unknown wake word detected!")
+        keyword_index = porcupine.process(pcm)
+
+        if keyword_index == 0:
+            print(" Custom wake word 'Hey Llama' detected!")
+        elif keyword_index == 1:
+            print(" Wake word 'Hey Google' detected!")
+        elif keyword_index == 2:
+            print(" Wake word 'OK Google' detected!")
+        elif keyword_index == 4:
+            print(" Wake word 'Computer' detected!")
+        else:
+            print(" Unknown wake word detected!")
 
 
 # Initialize Porcupine instances
-porcupine_instances = [
-    pvporcupine.create(
-        access_key=pico_access_key,
-        keyword_paths=[
-            custom_wake_word_path,
-            KEYWORD_PATHS["hey google"],
-            KEYWORD_PATHS["ok google"],
-            KEYWORD_PATHS["alexa"],
-            KEYWORD_PATHS["computer"],
-            KEYWORD_PATHS["jarvis"],
-            KEYWORD_PATHS["porcupine"],
-            KEYWORD_PATHS["americano"],
-            KEYWORD_PATHS["blueberry"],
-            KEYWORD_PATHS["bumblebee"],
-            KEYWORD_PATHS["grapefruit"],
-            KEYWORD_PATHS["grasshopper"],
-            KEYWORD_PATHS["hey barista"],
-            KEYWORD_PATHS["hey siri"],
-            KEYWORD_PATHS["pico clock"],
-            KEYWORD_PATHS["picovoice"],
-            KEYWORD_PATHS["terminator"],
-        ],
-        sensitivities=[
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-            0.95,
-        ],
-        keywords=["avengers"],
-    )
-    for _ in range(4)
-]
+porcupine = pvporcupine.create(
+    access_key=pico_access_key,
+    keyword_paths=[
+        custom_wake_word_path,
+        KEYWORD_PATHS["hey google"],
+        KEYWORD_PATHS["ok google"],
+        KEYWORD_PATHS["alexa"],
+        KEYWORD_PATHS["computer"],
+        KEYWORD_PATHS["jarvis"],
+        KEYWORD_PATHS["porcupine"],
+        KEYWORD_PATHS["americano"],
+        KEYWORD_PATHS["blueberry"],
+        KEYWORD_PATHS["bumblebee"],
+        KEYWORD_PATHS["grapefruit"],
+        KEYWORD_PATHS["grasshopper"],
+        KEYWORD_PATHS["hey barista"],
+        KEYWORD_PATHS["hey siri"],
+        KEYWORD_PATHS["pico clock"],
+        KEYWORD_PATHS["picovoice"],
+        KEYWORD_PATHS["terminator"],
+    ],
+    sensitivities=[
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+        0.95,
+    ],
+    keywords=["avengers"],
+)
 
-
-class Debounce:
-    def __init__(self):
-        self.last_detection_time = 0
-        self.debounce_time = 1.0  # 1 second debounce time
-
-    def is_allowed(self):
-        current_time = time.time()
-        if current_time - self.last_detection_time > self.debounce_time:
-            self.last_detection_time = current_time
-            return True
-        return False
-
-
-# Create and start named threads
-thread_names = ["Thread-1", "Thread-2", "Thread-3", "Thread-4"]
-threads = []
-debounce = Debounce()
-for i in range(4):
-    thread = threading.Thread(
-        target=process_chunk,
-        args=(wake_word_queues[i], porcupine_instances[i], debounce, thread_names[i]),
-    )
-    thread.start()
-    threads.append(thread)
 
 p = pyaudio.PyAudio()
 wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
@@ -307,14 +279,6 @@ def callback_mic_audio(indata, frames, time, status):
     mic_audio_buffer = np.append(mic_audio_buffer, indata.copy())
 
 
-# Start capturing microphone audio
-rec_mic_stream = sd.InputStream(
-    callback=callback_mic_audio,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=blocksize,
-)
-
 # Define device indexes (you might need to modify these based on your system)
 desk_device = "Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI"
 
@@ -324,10 +288,47 @@ desk_stream = sd.InputStream(
     samplerate=48000, channels=1, device=desk_device, dtype="int16"
 )
 
+
+PRE_RECORDING_DURATION = 2  # seconds
+BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
+channels = 1
+
+pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
+buffer_index = 0
+audio_buffer = []
+
+
+def audio_callback(indata, frames, time, status):
+    """Callback function for audio recording."""
+    global buffer_index
+    global audio_buffer
+    if status:
+        print(f"Audio callback status: {status}")
+    with recording_lock:
+        if recording:
+            audio_buffer = np.append(audio_buffer, indata.flatten())
+        else:
+            end_index = buffer_index + frames
+            if end_index > BUFFER_SIZE:
+                end_index = BUFFER_SIZE
+            pre_recording_buffer[buffer_index:end_index] = indata[
+                : end_index - buffer_index
+            ]
+            buffer_index = (buffer_index + frames) % BUFFER_SIZE
+
+
+stream = sd.InputStream(
+    callback=audio_callback,
+    device=None,
+    channels=1,
+    samplerate=sample_rate,
+    blocksize=int(sample_rate * 0.1),
+)
+
 # Start both streams
 wake_stream.start()
 desk_stream.start()
-rec_mic_stream.start()
+stream.start()
 
 
 """
@@ -565,6 +566,17 @@ def match_rms_levels(original_data, processed_data):
     return np.array(matched_audio.get_array_of_samples(), dtype=np.int16)
 
 
+"""
+##       ####  ######  ######## ######## ##    ## 
+##        ##  ##    ##    ##    ##       ###   ## 
+##        ##  ##          ##    ##       ####  ## 
+##        ##   ######     ##    ######   ## ## ## 
+##        ##        ##    ##    ##       ##  #### 
+##        ##  ##    ##    ##    ##       ##   ### 
+######## ####  ######     ##    ######## ##    ## 
+"""
+
+
 def listen_for_wake_word(scaling_factor=1.0):
     global desk_stream, wake_stream
 
@@ -605,7 +617,7 @@ def listen_for_wake_word(scaling_factor=1.0):
 
             # Send chunks to the respective named queues
             for i in range(4):
-                wake_word_queues[i].put(chunks[i])
+                wake_word_queue.put(chunks)
 
             time.sleep(0.1)  # Adding a small sleep to avoid excessive CPU usage
 
@@ -620,7 +632,7 @@ def listen_for_wake_word(scaling_factor=1.0):
         desk_stream.close()
 
         # Stop threads
-        for q in wake_word_queues:
+        for q in wake_word_queue:
             q.put(None)
 
 
