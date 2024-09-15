@@ -230,8 +230,7 @@ def start_recording():
     global something_is_playing
 
     # this thread has to go if something_is_playing check is happening below
-    thread = threading.Thread(target=lambda: decrease_volume_all())
-    thread.start()
+    threading.Thread(target=decrease_volume_all()).start()
 
     try:
         if stream and stream.active:
