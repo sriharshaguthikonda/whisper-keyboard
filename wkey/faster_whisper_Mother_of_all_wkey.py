@@ -9,7 +9,7 @@
 """
 
 """
-TODO this way doesnt work...this is using desktop_stream which is actually sd.inputstream that is recording from the mic and also  and also subtracting from the mic so there is no point. We have to use a loopback device or Python PyAudio to achieve recording from the audio stream of desktop playing music.
+TODO this way doesnt work...this is using desk_stream which is actually sd.inputstream that is recording from the mic and also  and also subtracting from the mic so there is no point. We have to use a loopback device or Python PyAudio to achieve recording from the audio stream of desktop playing music.
 
 """
 
@@ -46,6 +46,9 @@ import pyaudio
 import pvporcupine
 from pvporcupine import KEYWORD_PATHS
 
+import noisereduce as nr
+from pydub import AudioSegment
+
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -81,56 +84,109 @@ pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 
 custom_wake_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
-# Initialize Porcupine with multiple wake words and higher sensitivity
-porcupine = pvporcupine.create(
-    access_key=pico_access_key,
-    keyword_paths=[
-        custom_wake_word_path,
-        KEYWORD_PATHS["hey google"],
-        KEYWORD_PATHS["ok google"],
-        KEYWORD_PATHS["alexa"],
-        KEYWORD_PATHS["computer"],
-        KEYWORD_PATHS["jarvis"],
-        KEYWORD_PATHS["porcupine"],
-        KEYWORD_PATHS["americano"],
-        KEYWORD_PATHS["blueberry"],
-        KEYWORD_PATHS["bumblebee"],
-        KEYWORD_PATHS["grapefruit"],
-        KEYWORD_PATHS["grasshopper"],
-        KEYWORD_PATHS["hey barista"],
-        KEYWORD_PATHS["hey siri"],
-        KEYWORD_PATHS["pico clock"],
-        KEYWORD_PATHS["picovoice"],
-        KEYWORD_PATHS["terminator"],
-    ],
-    # Add more default wake words as needed
-    sensitivities=[
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-        0.95,
-    ],  # Adjust these values as needed
-    keywords=["avengers"],
-)
+# Create named queues for each thread
+wake_word_queues = [queue.Queue() for _ in range(4)]
 
+
+# Function to process each chunk
+def process_chunk(queue, porcupine_instance, debounce, thread_name):
+    while True:
+        chunk = queue.get()
+        if chunk is None:
+            break
+        pcm = chunk.astype(np.int16)
+        keyword_index = porcupine_instance.process(pcm)
+        if keyword_index >= 0 and debounce.is_allowed():
+            if keyword_index == 0:
+                print(f"{thread_name}: Custom wake word 'Hey Llama' detected!")
+            elif keyword_index == 1:
+                print(f"{thread_name}: Wake word 'Hey Google' detected!")
+            elif keyword_index == 2:
+                print(f"{thread_name}: Wake word 'OK Google' detected!")
+            elif keyword_index == 4:
+                print(f"{thread_name}: Wake word 'Computer' detected!")
+            else:
+                print(f"{thread_name}: Unknown wake word detected!")
+
+
+# Initialize Porcupine instances
+porcupine_instances = [
+    pvporcupine.create(
+        access_key=pico_access_key,
+        keyword_paths=[
+            custom_wake_word_path,
+            KEYWORD_PATHS["hey google"],
+            KEYWORD_PATHS["ok google"],
+            KEYWORD_PATHS["alexa"],
+            KEYWORD_PATHS["computer"],
+            KEYWORD_PATHS["jarvis"],
+            KEYWORD_PATHS["porcupine"],
+            KEYWORD_PATHS["americano"],
+            KEYWORD_PATHS["blueberry"],
+            KEYWORD_PATHS["bumblebee"],
+            KEYWORD_PATHS["grapefruit"],
+            KEYWORD_PATHS["grasshopper"],
+            KEYWORD_PATHS["hey barista"],
+            KEYWORD_PATHS["hey siri"],
+            KEYWORD_PATHS["pico clock"],
+            KEYWORD_PATHS["picovoice"],
+            KEYWORD_PATHS["terminator"],
+        ],
+        sensitivities=[
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+            0.95,
+        ],
+        keywords=["avengers"],
+    )
+    for _ in range(4)
+]
+
+
+class Debounce:
+    def __init__(self):
+        self.last_detection_time = 0
+        self.debounce_time = 1.0  # 1 second debounce time
+
+    def is_allowed(self):
+        current_time = time.time()
+        if current_time - self.last_detection_time > self.debounce_time:
+            self.last_detection_time = current_time
+            return True
+        return False
+
+
+# Create and start named threads
+thread_names = ["Thread-1", "Thread-2", "Thread-3", "Thread-4"]
+threads = []
+debounce = Debounce()
+for i in range(4):
+    thread = threading.Thread(
+        target=process_chunk,
+        args=(wake_word_queues[i], porcupine_instances[i], debounce, thread_names[i]),
+    )
+    thread.start()
+    threads.append(thread)
 
 p = pyaudio.PyAudio()
 wasapi_info = p.get_host_api_info_by_type(pyaudio.paWASAPI)
 default_speakers = p.get_device_info_by_index(wasapi_info["defaultOutputDevice"])
 
+"""
 wake_stream = p.open(
     format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=512
 )
@@ -146,7 +202,7 @@ desk_stream = p.open(
 )
 
 wake_stream.start_stream()
-
+"""
 
 # Define beep sounds
 START_BEEP = (2080, 100)  # Frequency in Hz, Duration in ms
@@ -218,18 +274,75 @@ def monitor_sound_processing():
 
 
 """
-########  ########  ######   #######  ########  ########  #### ##    ##  ######   
-##     ## ##       ##    ## ##     ## ##     ## ##     ##  ##  ###   ## ##    ##  
-##     ## ##       ##       ##     ## ##     ## ##     ##  ##  ####  ## ##        
-########  ######   ##       ##     ## ########  ##     ##  ##  ## ## ## ##   #### 
-##   ##   ##       ##       ##     ## ##   ##   ##     ##  ##  ##  #### ##    ##  
-##    ##  ##       ##    ## ##     ## ##    ##  ##     ##  ##  ##   ### ##    ##  
-##     ## ########  ######   #######  ##     ## ########  #### ##    ##  ######   
+ ######  ######## ########  ########    ###    ##     ##  ######  
+##    ##    ##    ##     ## ##         ## ##   ###   ### ##    ## 
+##          ##    ##     ## ##        ##   ##  #### #### ##       
+ ######     ##    ########  ######   ##     ## ## ### ##  ######  
+      ##    ##    ##   ##   ##       ######### ##     ##       ## 
+##    ##    ##    ##    ##  ##       ##     ## ##     ## ##    ## 
+ ######     ##    ##     ## ######## ##     ## ##     ##  ######  
+"""
+
+
+# Global buffers for audio data
+desktop_audio_buffer = np.array([], dtype="float32")
+mic_audio_buffer = np.array([], dtype="float32")
+
+# Sample rate and blocksize (set according to your requirements)
+sample_rate = 16000
+blocksize = int(sample_rate * 0.1)
+
+
+def callback_desktop_audio(indata, frames, time, status):
+    global desktop_audio_buffer
+    if status:
+        print(status)
+    desktop_audio_buffer = np.append(desktop_audio_buffer, indata.copy())
+
+
+def callback_mic_audio(indata, frames, time, status):
+    global mic_audio_buffer
+    if status:
+        print(status)
+    mic_audio_buffer = np.append(mic_audio_buffer, indata.copy())
+
+
+# Start capturing microphone audio
+rec_mic_stream = sd.InputStream(
+    callback=callback_mic_audio,
+    channels=1,
+    samplerate=sample_rate,
+    blocksize=blocksize,
+)
+
+# Define device indexes (you might need to modify these based on your system)
+desk_device = "Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI"
+
+# Create input streams for microphone and desktop audio
+wake_stream = sd.InputStream(samplerate=48000, channels=1, device=None, dtype="int16")
+desk_stream = sd.InputStream(
+    samplerate=48000, channels=1, device=desk_device, dtype="int16"
+)
+
+# Start both streams
+wake_stream.start()
+desk_stream.start()
+rec_mic_stream.start()
+
+
+"""
+ ######  ########    ###    ########  ########    ########  ########  ######  
+##    ##    ##      ## ##   ##     ##    ##       ##     ## ##       ##    ## 
+##          ##     ##   ##  ##     ##    ##       ##     ## ##       ##       
+ ######     ##    ##     ## ########     ##       ########  ######   ##       
+      ##    ##    ######### ##   ##      ##       ##   ##   ##       ##       
+##    ##    ##    ##     ## ##    ##     ##       ##    ##  ##       ##    ## 
+ ######     ##    ##     ## ##     ##    ##       ##     ## ########  ######   
 """
 
 
 def start_recording():
-    global mic_stream, desktop_stream, mic_start_time, desktop_start_time
+    global rec_mic_stream, desk_stream, mic_start_time, desktop_start_time
     global recording
     global play_pause_pressed
     global something_is_playing
@@ -238,36 +351,22 @@ def start_recording():
     thread.start()
 
     try:
-        if mic_stream and mic_stream.active:
-            mic_stream.stop()
-        mic_stream.close()
+        if rec_mic_stream and rec_mic_stream.active:
+            rec_mic_stream.stop()
+        rec_mic_stream.close()
     except NameError:
         pass
 
     try:
         mic_start_time = time.time()
-        mic_stream = sd.InputStream(
-            callback=callback_mic_audio,
-            device=None,
-            channels=1,
-            samplerate=sample_rate,
-            blocksize=int(sample_rate * 0.1),
-        )
-        mic_stream.start()
+        rec_mic_stream.start()
     except Exception as e:
         print(f"Failed to start microphone stream: {e}")
         time.sleep(2)
 
     try:
         desktop_start_time = time.time()
-        desktop_stream = sd.InputStream(
-            callback=callback_desktop_audio,
-            device="Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI",
-            channels=1,
-            samplerate=sample_rate,
-            blocksize=int(sample_rate * 0.1),
-        )
-        desktop_stream.start()
+        desk_stream.start()
     except Exception as e:
         print(f"Failed to start desktop stream: {e}")
         time.sleep(2)
@@ -285,23 +384,33 @@ def start_recording():
     print("Listening...")
 
 
+"""
+ ######  ########  #######  ########     ########  ########  ######  
+##    ##    ##    ##     ## ##     ##    ##     ## ##       ##    ## 
+##          ##    ##     ## ##     ##    ##     ## ##       ##       
+ ######     ##    ##     ## ########     ########  ######   ##       
+      ##    ##    ##     ## ##           ##   ##   ##       ##       
+##    ##    ##    ##     ## ##           ##    ##  ##       ##    ## 
+ ######     ##     #######  ##           ##     ## ########  ######  
+"""
+
+
 def stop_recording(keyword_index):
-    global mic_stream, desktop_stream
+    global rec_mic_stream, desk_stream
     global recording
     global play_pause_pressed
     global audio_buffer
     global desktop_audio_buffer
     global mic_audio_buffer
 
-    thread = threading.Thread(target=lambda: restore_volume_all())
-    thread.start()
+    threading.Thread(target=lambda: restore_volume_all()).start()
 
-    if mic_stream.active:
-        mic_stream.stop()
-        mic_stream.close()
-    if desktop_stream.active:
-        desktop_stream.stop()
-        desktop_stream.close()
+    if rec_mic_stream.active:
+        rec_mic_stream.stop()
+        rec_mic_stream.close()
+    if desk_stream.active:
+        desk_stream.stop()
+        desk_stream.close()
 
     # Ensure audio buffers are of equal length
     if len(mic_audio_buffer) != len(desktop_audio_buffer):
@@ -346,47 +455,8 @@ def on_release(key):
         stop_recording(None)
 
 
-# Global buffers for audio data
-desktop_audio_buffer = np.array([], dtype="float32")
-mic_audio_buffer = np.array([], dtype="float32")
-
-# Sample rate and blocksize (set according to your requirements)
-sample_rate = 16000
-blocksize = int(sample_rate * 0.1)
-
-
-def callback_desktop_audio(indata, frames, time, status):
-    global desktop_audio_buffer
-    if status:
-        print(status)
-    desktop_audio_buffer = np.append(desktop_audio_buffer, indata.copy())
-
-
-def callback_mic_audio(indata, frames, time, status):
-    global mic_audio_buffer
-    if status:
-        print(status)
-    mic_audio_buffer = np.append(mic_audio_buffer, indata.copy())
-
-
-# Start capturing desktop audio
-desktop_stream = sd.InputStream(
-    callback=callback_desktop_audio,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=blocksize,
-    device="Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI",
-)
-
-# Start capturing microphone audio
-mic_stream = sd.InputStream(
-    callback=callback_mic_audio,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=blocksize,
-)
-
 """
+
 # Subtract desktop audio from microphone audio
 def subtract_audio():
     global desktop_audio_buffer, mic_audio_buffer
@@ -432,7 +502,7 @@ def reinitialize_pyaudio():
 
 
 def monitor_microphone_availability():
-    global wake_stream, p
+    global wake_stream, desk_stream, p
     while True:
         if not check_microphone():
             print("No microphone detected. Pausing wake word detection...")
@@ -448,13 +518,6 @@ def monitor_microphone_availability():
             if wake_stream is None:
                 print("Microphone detected. Resuming wake word detection...")
                 try:
-                    wake_stream = p.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=16000,
-                        input=True,
-                        frames_per_buffer=512,
-                    )
                     wake_stream.start_stream()
                 except OSError as e:
                     print(f"Failed to restart wake stream: {e}")
@@ -462,15 +525,7 @@ def monitor_microphone_availability():
                     wake_stream = None
             elif desk_stream is None:
                 try:
-                    desk_stream = p.open(
-                        format=pyaudio.paInt16,
-                        channels=default_speakers["maxOutputChannels"],
-                        rate=int(default_speakers["defaultSampleRate"]),
-                        input=True,
-                        frames_per_buffer=512,
-                        input_device_index=default_speakers["index"],
-                        as_loopback=True,
-                    )
+                    desk_stream.start_stream()
                 except OSError as e:
                     print(f"Failed to restart wake stream: {e}")
                     reinitialize_pyaudio()  # Reinitialize PyAudio
@@ -481,6 +536,8 @@ def monitor_microphone_availability():
         time.sleep(10)
 
 
+"""
+
 def normalize_audio(data):
     max_val = np.max(np.abs(data))
     if max_val == 0:
@@ -490,110 +547,96 @@ def normalize_audio(data):
 
 scaling_factor = 0.9  # Adjust this factor to avoid over-subtraction
 
+"""
+# Assume other imports and global variables like porcupine, wake_stream, desk_stream, and scaling_factor
 
-def listen_for_wake_word():
-    global wake_stream
-    global scaling_factor
 
-    print("Listening for wake words...")
+def normalize_audio_rms(data, rate, target_rms=-20.0):
+    audio_segment = AudioSegment(
+        data.tobytes(),
+        frame_rate=rate,
+        sample_width=data.dtype.itemsize,
+        channels=1,
+    )
+    rms = audio_segment.rms
+    change_in_dBFS = target_rms - audio_segment.dBFS
+    normalized_audio = audio_segment.apply_gain(change_in_dBFS)
+    return np.array(normalized_audio.get_array_of_samples(), dtype=np.int16)
 
-    while True:
-        try:
-            if wake_stream:
-                # Read and normalize wake_stream data
-                wake_data = wake_stream.read(512, exception_on_overflow=False)
-                wake_data = np.frombuffer(wake_data, dtype=np.int16)
-                wake_data = normalize_audio(wake_data)
 
-                # Read and normalize desk_stream data
-                desk_data = desk_stream.read(512, exception_on_overflow=False)
-                desk_data = np.frombuffer(desk_data, dtype=np.int16)
+def match_rms_levels(original_data, processed_data):
+    original_audio = AudioSegment(
+        original_data.tobytes(),
+        frame_rate=48000,
+        sample_width=original_data.dtype.itemsize,
+        channels=1,
+    )
+    processed_audio = AudioSegment(
+        processed_data.tobytes(),
+        frame_rate=48000,
+        sample_width=processed_data.dtype.itemsize,
+        channels=1,
+    )
+    change_in_dBFS = original_audio.dBFS - processed_audio.dBFS
+    matched_audio = processed_audio.apply_gain(change_in_dBFS)
+    return np.array(matched_audio.get_array_of_samples(), dtype=np.int16)
 
-                desk_data = desk_data.mean(axis=1).astype(np.int16)  # Combine channels
 
-                desk_data = normalize_audio(desk_data)
+def listen_for_wake_word(scaling_factor=1.0):
+    try:
+        while True:
+            # Read from the wake word audio stream (microphone)
+            wake_data = wake_stream.read(2048)[0]  # Reading 2048 samples
+            wake_data = wake_data.flatten()  # Convert from 2D array to 1D array
 
-                # Subtract the normalized desk stream from the wake stream
-                subtracted_data = wake_data - (scaling_factor * desk_data)
-
-                # Optionally, normalize the subtracted data again
-                final_data = normalize_audio(subtracted_data)
-
-                # Convert back to int16 for Porcupine processing
-                pcm = (final_data * 32767).astype(np.int16)
-
-                # Check for wake word using Porcupine
-                keyword_index = porcupine.process(pcm)
-                if keyword_index >= 0:
-                    if keyword_index == 0:  # Custom wake word: "Hey Llama"
-                        print("Custom wake word 'Hey Llama' detected!")
-                    elif keyword_index == 1:  # Default wake word: "Hey Google"
-                        print("Wake word 'Hey Google' detected!")
-                    elif keyword_index == 2:  # Default wake word: "OK Google"
-                        print("Wake word 'OK Google' detected!")
-                    elif keyword_index == 3:  # Default wake word: "Alexa"
-                        print("Wake word 'Alexa' detected!")
-                        # Define the action for "Alexa"
-                    elif keyword_index == 4:  # Default wake word: "Computer"
-                        print("Wake word 'Computer' detected!")
-                        # Define the action for "Computer"
-                    elif keyword_index == 5:  # Default wake word: "Jarvis"
-                        print("Wake word 'Jarvis' detected!")
-                        # Trigger voice command execution
-                    elif keyword_index == 6:  # Default wake word: "Porcupine"
-                        print("Wake word 'Porcupine' detected!")
-                        # Define the action for "Porcupine"
-                    elif keyword_index == 7:  # Default wake word: "Americano"
-                        print("Wake word 'Americano' detected!")
-                        # Define the action for "Americano"
-                    elif keyword_index == 8:  # Default wake word: "Blueberry"
-                        print("Wake word 'Blueberry' detected!")
-                        # Define the action for "Blueberry"
-                    elif keyword_index == 9:  # Default wake word: "Bumblebee"
-                        print("Wake word 'Bumblebee' detected!")
-                        # Define the action for "Bumblebee"
-                    elif keyword_index == 10:  # Default wake word: "Grapefruit"
-                        print("Wake word 'Grapefruit' detected!")
-                        # Define the action for "Grapefruit"
-                    elif keyword_index == 11:  # Default wake word: "Grasshopper"
-                        print("Wake word 'Grasshopper' detected!")
-                        # Define the action for "Grasshopper"
-                    elif keyword_index == 12:  # Default wake word: "Hey Barista"
-                        print("Wake word 'Hey Barista' detected!")
-                        # Define the action for "Hey Barista"
-                    elif keyword_index == 13:  # Default wake word: "Hey Siri"
-                        print("Wake word 'Hey Siri' detected!")
-                        # Define the action for "Hey Siri"
-                    elif keyword_index == 14:  # Default wake word: "Pico Clock"
-                        print("Wake word 'Pico Clock' detected!")
-                        # Define the action for "Pico Clock"
-                    elif keyword_index == 15:  # Default wake word: "Picovoice"
-                        print("Wake word 'Picovoice' detected!")
-                        # Define the action for "Picovoice"
-                    elif keyword_index == 16:  # Default wake word: "Terminator"
-                        print("Wake word 'Terminator' detected!")
-                        # Define the action for "Terminator"
-                    else:
-                        print("Unknown wake word detected!")
-                        # You can add more wake word conditions here
+            if desk_stream.active:
+                pass
             else:
-                print("Waiting for microphone...")
-                time.sleep(5)
-        except OSError as e:
-            print(f"Audio stream error: {e}")
-            if wake_stream:
-                try:
-                    if wake_stream.is_active():
-                        wake_stream.stop_stream()
-                    wake_stream.close()
-                except OSError:
-                    print("Stream already closed or failed to close.")
+                desk_stream.start()
+            # Read from the desktop audio stream
+            desk_data = desk_stream.read(2048)[0]  # Reading 2048 samples
+            desk_data = desk_data.flatten()  # Convert from 2D array to 1D array
 
-            wake_stream = None
+            # Ensure both streams have sufficient length
+            if len(wake_data) < 2048 or len(desk_data) < 2048:
+                continue  # Skip this iteration if data is insufficient
 
-            # Attempt to reinitialize the wake word detection after an error
-            time.sleep(10)  # Wait before retrying to avoid rapid retry loops
-            # Microphone availability and wake stream initialization are now handled by monitor_microphone_availability
+            # Normalize both audio streams to target RMS
+            wake_data = normalize_audio_rms(wake_data, sample_rate)
+            desk_data = normalize_audio_rms(desk_data, sample_rate)
+
+            # Perform noise reduction using noisereduce
+            noise_cancelled_data = nr.reduce_noise(
+                y=wake_data,
+                sr=sample_rate,
+                y_noise=desk_data,
+                prop_decrease=1.0,  # Adjust if needed
+                device="cuda",  # If CUDA is available, otherwise omit this
+                use_torch=True,
+            )
+
+            # Split noise_cancelled_data into 4 chunks of 512 frames
+            chunks = [noise_cancelled_data[i : i + 512] for i in range(0, 2048, 512)]
+
+            # Send chunks to the respective named queues
+            for i in range(4):
+                wake_word_queues[i].put(chunks[i])
+
+            time.sleep(0.1)  # Adding a small sleep to avoid excessive CPU usage
+
+    except OSError as e:
+        print(f"Audio stream error: {e}")
+        time.sleep(10)  # Wait before retrying to avoid rapid retry loops
+    finally:
+        # Stop and close streams on exit
+        wake_stream.stop()
+        wake_stream.close()
+        desk_stream.stop()
+        desk_stream.close()
+
+        # Stop threads
+        for q in wake_word_queues:
+            q.put(None)
 
 
 def cleanup():

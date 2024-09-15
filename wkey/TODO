@@ -13,5 +13,9 @@ get rid of  global There_is_a_device
 
 
     git add .
-    git commit -m "Your commit message"
+    git commit -m "some NR"
+
+    git push
+
+    
     
