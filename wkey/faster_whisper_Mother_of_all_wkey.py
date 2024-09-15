@@ -583,6 +583,8 @@ def match_rms_levels(original_data, processed_data):
 
 
 def listen_for_wake_word(scaling_factor=1.0):
+    global desk_stream, wake_stream
+
     try:
         while True:
             # Read from the wake word audio stream (microphone)
