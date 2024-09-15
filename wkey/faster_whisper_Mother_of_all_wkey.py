@@ -342,41 +342,41 @@ rec_mic_stream.start()
 
 
 def start_recording():
-    global rec_mic_stream, desk_stream, mic_start_time, desktop_start_time
+    global stream
     global recording
     global play_pause_pressed
     global something_is_playing
 
-    thread = threading.Thread(target=lambda: decrease_volume_all())
-    thread.start()
+    # this thread has to go if something_is_playing check is happening below
+    threading.Thread(target=decrease_volume_all()).start()
 
     try:
-        if rec_mic_stream and rec_mic_stream.active:
-            rec_mic_stream.stop()
-        rec_mic_stream.close()
+        if stream and stream.active:
+            print("stream is active")
+        else:
+            try:
+                device_info = sd.default.device
+                print(f"Using device: {device_info}")
+                stream = sd.InputStream(
+                    callback=audio_callback,
+                    device=None,
+                    channels=1,
+                    samplerate=sample_rate,
+                    blocksize=int(sample_rate * 0.1),
+                )
+                stream.start()
+            except Exception as e:
+                print(f"Failed to start stream: {e}")
+                time.sleep(2)
     except NameError:
         pass
 
-    try:
-        mic_start_time = time.time()
-        rec_mic_stream.start()
-    except Exception as e:
-        print(f"Failed to start microphone stream: {e}")
-        time.sleep(2)
-
-    try:
-        desktop_start_time = time.time()
-        desk_stream.start()
-    except Exception as e:
-        print(f"Failed to start desktop stream: {e}")
-        time.sleep(2)
-
     if something_is_playing:
-        print("Streams started")
+        print("Stream started")
         decrease_volume_all()
         play_pause_pressed = True
     else:
-        print("Streams started")
+        print("Stream started")
 
     beep(START_BEEP)
     with recording_lock:
@@ -396,50 +396,33 @@ def start_recording():
 
 
 def stop_recording(keyword_index):
-    global rec_mic_stream, desk_stream
+    global stream
     global recording
     global play_pause_pressed
     global audio_buffer
-    global desktop_audio_buffer
-    global mic_audio_buffer
 
-    threading.Thread(target=lambda: restore_volume_all()).start()
+    # this thread has to go if play_pause_pressed check is happening below!
+    thread = threading.Thread(target=lambda: restore_volume_all())
+    thread.start()
 
-    if rec_mic_stream.active:
-        rec_mic_stream.stop()
-        rec_mic_stream.close()
-    if desk_stream.active:
-        desk_stream.stop()
-        desk_stream.close()
+    if stream.active:
+        # Convert pre-recording buffer to numpy array
+        pre_recording_data = np.roll(
+            pre_recording_buffer, -buffer_index, axis=0
+        ).flatten()
 
-    # Ensure audio buffers are of equal length
-    if len(mic_audio_buffer) != len(desktop_audio_buffer):
-        if len(mic_audio_buffer) > len(desktop_audio_buffer):
-            desktop_audio_buffer = np.pad(
-                desktop_audio_buffer,
-                (0, len(mic_audio_buffer) - len(desktop_audio_buffer)),
-                "constant",
-            )
-        else:
-            mic_audio_buffer = np.pad(
-                mic_audio_buffer,
-                (0, len(desktop_audio_buffer) - len(mic_audio_buffer)),
-                "constant",
-            )
-
-    # Subtract desktop audio from mic audio
-    aligned_audio = mic_audio_buffer - desktop_audio_buffer
-    audio_buffer_queue.put((aligned_audio, keyword_index))
+        # Convert main recording to numpy array
+        audio_buffer = np.concatenate(
+            [pre_recording_data, audio_buffer],
+            axis=0,
+        )
+        audio_buffer_queue.put((audio_buffer, keyword_index))
+        audio_buffer = np.array([], dtype="float32")
 
     if play_pause_pressed:
         restore_volume_all()
         play_pause_pressed = False
     beep(STOP_BEEP)
-
-    # Clear the audio buffers after processing
-    mic_audio_buffer = np.array([], dtype="float32")
-    desktop_audio_buffer = np.array([], dtype="float32")
-
     with recording_lock:
         recording = False
     print("Transcribing...")
