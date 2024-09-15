@@ -117,7 +117,45 @@ def process_chunk():
                 print("Wake word 'OK Google' detected!")
             elif keyword_index == 4:
                 print("Wake word 'Computer' detected!")
+            elif keyword_index == 5:  # Default wake word: "Jarvis"
+                print("Wake word 'Jarvis' detected!")
+                # Trigger voice command execution
+            elif keyword_index == 6:  # Default wake word: "Porcupine"
+                print("Wake word 'Porcupine' detected!")
+                # Define the action for "Porcupine"
+            elif keyword_index == 7:  # Default wake word: "Americano"
+                print("Wake word 'Americano' detected!")
+                # Define the action for "Americano"
+            elif keyword_index == 8:  # Default wake word: "Blueberry"
+                print("Wake word 'Blueberry' detected!")
+                # Define the action for "Blueberry"
+            elif keyword_index == 9:  # Default wake word: "Bumblebee"
+                print("Wake word 'Bumblebee' detected!")
+                # Define the action for "Bumblebee"
+            elif keyword_index == 10:  # Default wake word: "Grapefruit"
+                print("Wake word 'Grapefruit' detected!")
+                # Define the action for "Grapefruit"
+            elif keyword_index == 11:  # Default wake word: "Grasshopper"
+                print("Wake word 'Grasshopper' detected!")
+                # Define the action for "Grasshopper"
+            elif keyword_index == 12:  # Default wake word: "Hey Barista"
+                print("Wake word 'Hey Barista' detected!")
+                # Define the action for "Hey Barista"
+            elif keyword_index == 13:  # Default wake word: "Hey Siri"
+                print("Wake word 'Hey Siri' detected!")
+                # Define the action for "Hey Siri"
+            elif keyword_index == 14:  # Default wake word: "Pico Clock"
+                print("Wake word 'Pico Clock' detected!")
+                # Define the action for "Pico Clock"
+            elif keyword_index == 15:  # Default wake word: "Picovoice"
+                print("Wake word 'Picovoice' detected!")
+                # Define the action for "Picovoice"
+            elif keyword_index == 16:  # Default wake word: "Terminator"
+                print("Wake word 'Terminator' detected!")
+                # Define the action for "Terminator"
             else:
+                # print("Unknown wake word detected!")
+                # You can add more wake word conditions here
                 pass
         else:
             print(f"Invalid frame length: expected 512 but received {len(chunk)}")
@@ -240,15 +278,6 @@ def callback(indata, frames, time, status):
             audio_buffer = np.append(audio_buffer, indata.copy())
 
 
-stream = sd.InputStream(
-    callback=callback,
-    device=None,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=int(sample_rate * 0.1),
-)
-
-
 def monitor_sound_processing():
     pythoncom.CoInitialize()
     global something_is_playing
@@ -297,9 +326,19 @@ def callback_mic_audio(indata, frames, time, status):
 desk_device = "Voicemeeter Out B2 (VB-Audio Voicemeeter VAIO), Windows WASAPI"
 
 # Create input streams for microphone and desktop audio
-wake_stream = sd.InputStream(samplerate=48000, channels=1, device=None, dtype="int16")
+wake_stream = sd.InputStream(
+    samplerate=48000,
+    channels=1,
+    device=None,
+    dtype="int16",
+    blocksize=2048,
+)
 desk_stream = sd.InputStream(
-    samplerate=48000, channels=1, device=desk_device, dtype="int16"
+    samplerate=48000,
+    channels=1,
+    device=desk_device,
+    dtype="int16",
+    blocksize=2048,
 )
 
 
@@ -339,6 +378,7 @@ stream = sd.InputStream(
     blocksize=int(sample_rate * 0.1),
 )
 
+
 # Start both streams
 wake_stream.start()
 desk_stream.start()
@@ -372,13 +412,6 @@ def start_recording():
             try:
                 device_info = sd.default.device
                 print(f"Using device: {device_info}")
-                stream = sd.InputStream(
-                    callback=audio_callback,
-                    device=None,
-                    channels=1,
-                    samplerate=sample_rate,
-                    blocksize=int(sample_rate * 0.1),
-                )
                 stream.start()
             except Exception as e:
                 print(f"Failed to start stream: {e}")
@@ -625,6 +658,9 @@ def listen_for_wake_word(scaling_factor=1.0):
                 device="cuda",  # If CUDA is available, otherwise omit this
                 use_torch=True,
             )
+
+            # Match RMS levels
+            noise_cancelled_data = match_rms_levels(wake_data, noise_cancelled_data)
 
             # Split noise_cancelled_data into 4 chunks of 512 frames
             chunks = [noise_cancelled_data[i : i + 512] for i in range(0, 2048, 512)]
