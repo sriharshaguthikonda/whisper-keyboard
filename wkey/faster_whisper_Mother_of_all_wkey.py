@@ -284,8 +284,7 @@ def stop_recording(keyword_index):
     global audio_buffer
 
     # this thread has to go if play_pause_pressed check is happening below!
-    thread = threading.Thread(target=lambda: restore_volume_all())
-    thread.start()
+    threading.Thread(target=restore_volume_all()).start()
 
     if stream.active:
         # Convert pre-recording buffer to numpy array
@@ -299,6 +298,9 @@ def stop_recording(keyword_index):
             axis=0,
         )
         audio_buffer_queue.put((audio_buffer, keyword_index))
+
+        threading.Thread(target=save_audio()).start()
+
         audio_buffer = np.array([], dtype="float32")
 
     if play_pause_pressed:
@@ -318,6 +320,39 @@ def on_press(key):
 def on_release(key):
     if key == RECORD_KEY and recording:
         stop_recording(None)
+
+
+"""
+ ######     ###    ##     ## ######## 
+##    ##   ## ##   ##     ## ##       
+##        ##   ##  ##     ## ##       
+ ######  ##     ## ##     ## ######   
+      ## #########  ##   ##  ##       
+##    ## ##     ##   ## ##   ##       
+ ######  ##     ##    ###    ######## 
+"""
+
+
+def save_audio(audio_data, keyword_index, directory="train", samplerate=44100):
+    # Ensure the directory exists
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+
+    base_filename = f"{directory}/{keyword_index}_recording.wav"
+    filename = base_filename
+    counter = 1
+
+    # Increment filename if it already exists
+    while os.path.exists(filename):
+        filename = f"{directory}/{keyword_index}_recording_{counter}.wav"
+        counter += 1
+
+    # Convert audio data to int16 format (expected by wav_write)
+    audio_data_int16 = np.int16(audio_data * 32767)
+
+    # Save the audio file using scipy.io.wavfile.write
+    wav_write(filename, samplerate, audio_data_int16)
+    print(f"Audio saved as {filename}")
 
 
 """

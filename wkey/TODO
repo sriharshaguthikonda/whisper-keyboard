@@ -20,7 +20,7 @@ git branch
 
 
 git add .
-git commit -m "added hey computer wake word"
+git commit -m "training data saving added"
 
 
 git push
