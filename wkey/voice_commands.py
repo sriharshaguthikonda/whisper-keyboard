@@ -56,13 +56,15 @@ https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 
 
 def reconnect_driver():
-    global driver, session_id, executor_url
+    global driver, session_id, executor_url, options
 
     if session_id and executor_url:
-        options = Options()
         driver = webdriver.Remote(command_executor=executor_url, options=options)
         driver.session_id = session_id
         print("Reconnected to the existing session.")
+        time.sleep(3)
+        driver.get("https://open.spotify.com/collection/tracks")
+        time.sleep(3)
 
 
 # Start the WebDriver in a separate thread
@@ -95,9 +97,7 @@ def play_song():
                 play_button = driver.find_element(
                     By.XPATH, "//button[@aria-label='Play']"
                 )
-                ActionChains(driver).move_to_element(play_button).click(
-                    play_button
-                ).perform()
+                play_button.click()
                 print("Playback started after reconnection.")
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
@@ -441,7 +441,7 @@ def execute_command(transcript):
             # Find the best fuzzy match (with a threshold of 80 for confidence)
             best_match, match_score = process.extractOne(cmd, PHRASE_TO_ACTION.keys())
             if (
-                match_score >= 80 and "computer" in transcript
+                match_score >= 70 and "computer" in transcript
             ):  # Adjust the threshold as needed
                 action = PHRASE_TO_ACTION.get(best_match)
 
