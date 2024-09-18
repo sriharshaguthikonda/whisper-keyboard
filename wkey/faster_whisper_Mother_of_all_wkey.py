@@ -136,6 +136,7 @@ def audio_callback(indata, frames, time, status):
     """Callback function for audio recording."""
     global buffer_index
     global audio_buffer
+
     if status:
         print(f"Audio callback status: {status}")
     with recording_lock:
@@ -282,6 +283,7 @@ def stop_recording(keyword_index):
     global recording
     global play_pause_pressed
     global audio_buffer
+    global sample_rate
 
     # this thread has to go if play_pause_pressed check is happening below!
     threading.Thread(target=restore_volume_all()).start()
@@ -298,8 +300,6 @@ def stop_recording(keyword_index):
             axis=0,
         )
         audio_buffer_queue.put((audio_buffer, keyword_index))
-
-        threading.Thread(target=save_audio()).start()
 
         audio_buffer = np.array([], dtype="float32")
 
@@ -333,25 +333,37 @@ def on_release(key):
 """
 
 
-def save_audio(audio_data, keyword_index, directory="train", samplerate=44100):
+def save_audio(
+    audio_data, keyword_index, directory="train", sample_rate=8000, type_of_audio=None
+):
     # Ensure the directory exists
     if not os.path.exists(directory):
         os.makedirs(directory)
 
-    base_filename = f"{directory}/{keyword_index}_recording.wav"
+    # Construct the base filename
+    base_filename = os.path.join(
+        directory, f"{type_of_audio}_{keyword_index}_recording.wav"
+    )
     filename = base_filename
     counter = 1
 
     # Increment filename if it already exists
     while os.path.exists(filename):
-        filename = f"{directory}/{keyword_index}_recording_{counter}.wav"
+        filename = os.path.join(
+            directory, f"{type_of_audio}_{keyword_index}_recording_{counter}.wav"
+        )
         counter += 1
+
+    # Ensure audio data is in the range [-1.0, 1.0]
+    max_val = np.max(np.abs(audio_data))
+    if max_val > 1.0:
+        audio_data = audio_data / max_val  # Normalize the data if necessary
 
     # Convert audio data to int16 format (expected by wav_write)
     audio_data_int16 = np.int16(audio_data * 32767)
 
     # Save the audio file using scipy.io.wavfile.write
-    wav_write(filename, samplerate, audio_data_int16)
+    wav_write(filename, sample_rate, audio_data_int16)
     print(f"Audio saved as {filename}")
 
 
@@ -553,6 +565,24 @@ def process_audio_async():
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
             transcript_queue.put((transcript, keyword_index))
+            if "computer" in transcript.lower():  # Adjust the threshold as needed
+                threading.Thread(
+                    target=save_audio(
+                        audio_data=audio_buffer,
+                        keyword_index=keyword_index,
+                        sample_rate=sample_rate,
+                        type_of_audio="true_positive",
+                    )
+                ).start()
+            else:
+                threading.Thread(
+                    target=save_audio(
+                        audio_data=audio_buffer,
+                        keyword_index=keyword_index,
+                        sample_rate=sample_rate,
+                        type_of_audio="false_positive",
+                    )
+                ).start()
             print(transcript)
         except queue.Empty:
             continue

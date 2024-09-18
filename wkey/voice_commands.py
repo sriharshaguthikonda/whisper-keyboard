@@ -8,6 +8,8 @@ from selenium import webdriver
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import WebDriverException, SessionNotCreatedException
+from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 import time
 import subprocess
@@ -22,7 +24,7 @@ options.add_argument(
     r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
 )  # Adjust this to your user data directory
 options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
-options.add_argument("--headless")
+# options.add_argument("--headless")
 # options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
 
 # Initialize the WebDriver
@@ -58,13 +60,28 @@ https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 def reconnect_driver():
     global driver, session_id, executor_url, options
 
-    if session_id and executor_url:
-        driver = webdriver.Remote(command_executor=executor_url, options=options)
-        driver.session_id = session_id
-        print("Reconnected to the existing session.")
-        time.sleep(3)
-        driver.get("https://open.spotify.com/collection/tracks")
-        time.sleep(3)
+    try:
+        if session_id and executor_url:
+            driver = webdriver.Remote(command_executor=executor_url, options=options)
+            driver.session_id = session_id
+            print("Reconnected to the existing session.")
+    except (SessionNotCreatedException, WebDriverException) as e:
+        print(f"Failed to reconnect to the session: {str(e)}")
+
+        # Attempt to start a new session
+        try:
+            options = webdriver.EdgeOptions()
+            options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
+
+            driver = webdriver.Edge(
+                options=options,
+                service_log_path="C:/Users/deletable/Downloads/edgedriver_win64/msedgedriver.log",
+            )
+            driver.get("https://open.spotify.com/collection/tracks")
+            time.sleep(3)
+            print("Started a new session.")
+        except Exception as new_session_error:
+            print(f"Failed to start a new session: {new_session_error}")
 
 
 # Start the WebDriver in a separate thread
@@ -82,12 +99,27 @@ def reconnect_driver():
 """
 
 
+def change_device():
+    devices_button = driver.find_element(
+        By.XPATH, "//button[@aria-label='Connect to a device']"
+    )
+    # Click the button
+    devices_button.click()
+    print("Playback started.")
+    # Locate the element containing "This web browser"
+    # Wait for the panel to appear
+    wait = WebDriverWait(driver, 10)
+    element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
+    # Click the panel
+    element.click()
+
+
 # Control playback
 def play_song():
     try:
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
-        ActionChains(driver).move_to_element(play_button).click(play_button).perform()
-        print("Playback started.")
+        play_button.click()
+        change_device()
     except Exception as e:
         error_message = str(e)
         if "disconnected" in error_message:
