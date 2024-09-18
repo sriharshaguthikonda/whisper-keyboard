@@ -240,13 +240,6 @@ def start_recording():
             try:
                 device_info = sd.default.device
                 print(f"Using device: {device_info}")
-                stream = sd.InputStream(
-                    callback=audio_callback,
-                    device=None,
-                    channels=1,
-                    samplerate=sample_rate,
-                    blocksize=int(sample_rate * 0.1),
-                )
                 stream.start()
             except Exception as e:
                 print(f"Failed to start stream: {e}")

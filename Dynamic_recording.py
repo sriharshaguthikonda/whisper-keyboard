@@ -4,7 +4,7 @@ import webrtcvad
 import sys
 
 # Configuration
-sample_rate = 16000  # Sample rate in Hz
+sample_rate = 8000  # Sample rate in Hz
 frame_duration_ms = 30  # Frame duration in milliseconds
 vad = webrtcvad.Vad()
 vad.set_mode(1)  # Set the VAD mode (0-3)
