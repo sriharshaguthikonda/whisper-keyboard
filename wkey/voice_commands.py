@@ -24,7 +24,7 @@ options.add_argument(
     r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
 )  # Adjust this to your user data directory
 options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
-# options.add_argument("--headless")
+options.add_argument("--headless")
 # options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
 
 # Initialize the WebDriver
