@@ -38,6 +38,7 @@ from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 
 from vosk import Model, KaldiRecognizer
+import webrtcvad
 import pyaudio
 import pvporcupine
 from pvporcupine import KEYWORD_PATHS
@@ -131,18 +132,62 @@ pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 buffer_index = 0
 audio_buffer = []
 
+speech = False  # Tracks whether speech is detected
+frame_duration_ms = 30  # Frame duration in milliseconds
+vad = webrtcvad.Vad()
+vad.set_mode(1)  # Set the VAD mode (0-3)
+
+
+def detect_speech(indata):
+    """Detects if speech is present in the audio frame."""
+    global speech
+
+    # Ensure indata is a numpy array and convert it to int16
+    if len(indata) > 0:
+        # Use only one channel for VAD
+        audio_data = indata[:, 0].astype(np.int16)  # Convert to int16
+        frame_size = int(
+            sample_rate * frame_duration_ms / 1000
+        )  # Frame size in samples
+
+        # Process in chunks of frame_size
+        for start in range(0, len(audio_data), frame_size):
+            end = min(start + frame_size, len(audio_data))
+            frame = audio_data[start:end]
+
+            # If the frame is smaller than the required size, pad it
+            if len(frame) < frame_size:
+                frame = np.pad(frame, (0, frame_size - len(frame)), "constant")
+
+            frame_bytes = frame.tobytes()
+
+            # Check if speech is detected
+            if vad.is_speech(frame_bytes, sample_rate):
+                speech = True
+                return True
+            else:
+                speech = False
+    return False
+
 
 def audio_callback(indata, frames, time, status):
     """Callback function for audio recording."""
-    global buffer_index
-    global audio_buffer
+    global buffer_index, audio_buffer, recording, speech
 
     if status:
         print(f"Audio callback status: {status}")
-    with recording_lock:
-        if recording:
+
+    # Detect if speech is present in the audio
+    if detect_speech(indata):
+        print("Speech detected, starting/continuing recording.")
+        with recording_lock:
+            recording = True  # Enable recording when speech is detected
             audio_buffer = np.append(audio_buffer, indata.flatten())
-        else:
+    else:
+        print("Silence detected, buffering pre-recording audio.")
+        with recording_lock:
+            recording = False  # Stop recording if no speech
+            # Buffer the audio into the pre-recording buffer
             end_index = buffer_index + frames
             if end_index > BUFFER_SIZE:
                 end_index = BUFFER_SIZE
