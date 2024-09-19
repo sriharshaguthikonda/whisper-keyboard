@@ -42,6 +42,8 @@ import pyaudio
 import pvporcupine
 from pvporcupine import KEYWORD_PATHS
 
+import webrtcvad
+
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -123,6 +125,11 @@ audio_data_lock = threading.Lock()
 """
 
 
+# WebRTC VAD setup
+vad = webrtcvad.Vad()
+vad.set_mode(1)  # Set VAD mode (0-3)
+
+
 PRE_RECORDING_DURATION = 2  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
@@ -131,25 +138,67 @@ pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 buffer_index = 0
 audio_buffer = []
 
+frame_duration_ms = 30  # Frame duration in milliseconds
+speech_detected = False
+silence_duration = 0.0
+max_silence_duration = 3.0  # Stop recording after this much silence
+
 
 def audio_callback(indata, frames, time, status):
-    """Callback function for audio recording."""
-    global buffer_index
-    global audio_buffer
+    global buffer_index, audio_buffer, speech_detected, silence_duration, recording
 
     if status:
         print(f"Audio callback status: {status}")
-    with recording_lock:
-        if recording:
-            audio_buffer = np.append(audio_buffer, indata.flatten())
-        else:
-            end_index = buffer_index + frames
-            if end_index > BUFFER_SIZE:
-                end_index = BUFFER_SIZE
-            pre_recording_buffer[buffer_index:end_index] = indata[
-                : end_index - buffer_index
-            ]
-            buffer_index = (buffer_index + frames) % BUFFER_SIZE
+
+    # Convert input audio to int16 for VAD
+    audio_data = indata[:, 0].astype(np.int16)  # Single channel
+    frame_size = int(sample_rate * frame_duration_ms / 1000)  # Frame size in samples
+
+    # Process audio in frame_size chunks for VAD
+    for start in range(0, len(audio_data), frame_size):
+        end = min(start + frame_size, len(audio_data))
+        frame = audio_data[start:end]
+
+        # Pad the frame if it's too short
+        if len(frame) < frame_size:
+            frame = np.pad(frame, (0, frame_size - len(frame)), "constant")
+
+        frame_bytes = frame.tobytes()
+        is_speech = vad.is_speech(frame_bytes, sample_rate)
+
+        with recording_lock:
+            if is_speech:
+                silence_duration = 0  # Reset silence duration
+
+                if not speech_detected:  # First time detecting speech
+                    speech_detected = True
+                    print("Speech detected, appending pre-recording buffer.")
+                    # Combine pre-recording buffer with the audio buffer
+                    audio_buffer = np.append(
+                        audio_buffer, pre_recording_buffer.flatten()
+                    )
+
+                # Append current audio data to the main buffer
+                audio_buffer = np.append(audio_buffer, indata.flatten())
+
+            else:
+                silence_duration += (
+                    frame_duration_ms / 1000.0
+                )  # Increment silence duration
+                if speech_detected and silence_duration > max_silence_duration:
+                    print("Silence detected for too long, stopping recording.")
+                    recording = False
+                    speech_detected = False
+
+            # Fill pre-recording buffer with incoming audio when not detecting speech
+            if not speech_detected:
+                end_index = buffer_index + frames
+                if end_index > BUFFER_SIZE:
+                    end_index = BUFFER_SIZE
+                pre_recording_buffer[buffer_index:end_index] = indata[
+                    : end_index - buffer_index
+                ]
+                buffer_index = (buffer_index + frames) % BUFFER_SIZE
 
 
 stream = sd.InputStream(
@@ -565,7 +614,9 @@ def process_audio_async():
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
             transcript_queue.put((transcript, keyword_index))
-            if "computer" in transcript.lower():  # Adjust the threshold as needed
+            if (
+                "computer" or "hey Lama" in transcript.lower()
+            ):  # Adjust the threshold as needed
                 threading.Thread(
                     target=save_audio(
                         audio_data=audio_buffer_for_processing,

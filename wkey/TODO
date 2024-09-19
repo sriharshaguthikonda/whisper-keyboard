@@ -20,7 +20,7 @@ git branch
 
 
 git add .
-git commit -m "training data saving added"
+git commit -m "vad working?!"
 
 
 git push

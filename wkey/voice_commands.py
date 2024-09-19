@@ -100,18 +100,21 @@ def reconnect_driver():
 
 
 def change_device():
-    devices_button = driver.find_element(
-        By.XPATH, "//button[@aria-label='Connect to a device']"
-    )
-    # Click the button
-    devices_button.click()
-    print("Playback started.")
-    # Locate the element containing "This web browser"
-    # Wait for the panel to appear
-    wait = WebDriverWait(driver, 10)
-    element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
-    # Click the panel
-    element.click()
+    try:
+        devices_button = driver.find_element(
+            By.XPATH, "//button[@aria-label='Connect to a device']"
+        )
+        # Click the button
+        devices_button.click()
+        print("Playback started.")
+        # Locate the element containing "This web browser"
+        # Wait for the panel to appear
+        wait = WebDriverWait(driver, 10)
+        element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
+        # Click the panel
+        element.click()
+    except Exception as e:
+        print(f"Error while trying to play after reconnection: {e}")
 
 
 # Control playback
