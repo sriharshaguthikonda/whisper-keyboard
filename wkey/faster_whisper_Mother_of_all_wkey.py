@@ -565,26 +565,22 @@ def process_audio_async():
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
             transcript_queue.put((transcript, keyword_index))
-            if (
-                "computer" or "hey Lama" in transcript.lower()
-            ):  # Adjust the threshold as needed
-                threading.Thread(
-                    target=save_audio(
-                        audio_data=audio_buffer_for_processing,
-                        keyword_index=keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="true_positive",
-                    )
-                ).start()
+            keywords = ["computer", "hey lama"]
+            transcript_lower = transcript.lower()
+            if any(keyword in transcript_lower for keyword in keywords):
+                audio_type = "true_positive"
             else:
-                threading.Thread(
-                    target=save_audio(
-                        audio_data=audio_buffer_for_processing,
-                        keyword_index=keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="false_positive",
-                    )
-                ).start()
+                audio_type = "false_positive"
+
+            threading.Thread(
+                target=save_audio,
+                args=(
+                    audio_buffer_for_processing,
+                    keyword_index,
+                    sample_rate,
+                    audio_type,
+                ),
+            ).start()
             print(transcript)
         except queue.Empty:
             continue
