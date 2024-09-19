@@ -150,47 +150,42 @@ def audio_callback(indata, frames, time, status):
     if status:
         print(f"Audio callback status: {status}")
 
-    # Convert input audio to int16 for VAD
+    # Convert incoming audio to int16 format for VAD
     audio_data = indata[:, 0].astype(np.int16)  # Single channel
     frame_size = int(sample_rate * frame_duration_ms / 1000)  # Frame size in samples
 
-    # Process audio in frame_size chunks for VAD
+    # Process the audio in frame-size chunks for VAD
     for start in range(0, len(audio_data), frame_size):
         end = min(start + frame_size, len(audio_data))
         frame = audio_data[start:end]
-
-        # Pad the frame if it's too short
-        if len(frame) < frame_size:
-            frame = np.pad(frame, (0, frame_size - len(frame)), "constant")
-
         frame_bytes = frame.tobytes()
+
         is_speech = vad.is_speech(frame_bytes, sample_rate)
 
         with recording_lock:
             if is_speech:
-                silence_duration = 0  # Reset silence duration
-
-                if not speech_detected:  # First time detecting speech
+                silence_duration = 0  # Reset silence counter
+                if not speech_detected:
                     speech_detected = True
-                    print("Speech detected, appending pre-recording buffer.")
-                    # Combine pre-recording buffer with the audio buffer
-                    audio_buffer = np.append(
-                        audio_buffer, pre_recording_buffer.flatten()
-                    )
+                    print("Speech detected. Combining pre-recording buffer.")
+                    # Append pre-recorded buffer to the main audio buffer
+                    pre_recorded_data = np.roll(
+                        pre_recording_buffer, -buffer_index, axis=0
+                    ).flatten()
+                    audio_buffer = np.append(audio_buffer, pre_recorded_data)
 
-                # Append current audio data to the main buffer
+                # Append current speech audio to buffer
                 audio_buffer = np.append(audio_buffer, indata.flatten())
 
             else:
-                silence_duration += (
-                    frame_duration_ms / 1000.0
-                )  # Increment silence duration
+                # Increase silence duration and check if recording should stop
+                silence_duration += frame_duration_ms / 1000.0
                 if speech_detected and silence_duration > max_silence_duration:
-                    print("Silence detected for too long, stopping recording.")
+                    print("Silence detected. Stopping recording.")
                     recording = False
                     speech_detected = False
 
-            # Fill pre-recording buffer with incoming audio when not detecting speech
+            # Fill pre-recording buffer when speech is not detected
             if not speech_detected:
                 end_index = buffer_index + frames
                 if end_index > BUFFER_SIZE:
@@ -206,7 +201,7 @@ stream = sd.InputStream(
     device=None,
     channels=1,
     samplerate=sample_rate,
-    blocksize=int(sample_rate * 0.1),
+    blocksize=int(sample_rate * 1),  # 200ms chunks
 )
 
 
@@ -274,10 +269,7 @@ def monitor_sound_processing():
 
 
 def start_recording():
-    global stream
-    global recording
-    global play_pause_pressed
-    global something_is_playing
+    global stream, recording, play_pause_pressed, something_is_playing
 
     # this thread has to go if something_is_playing check is happening below
     threading.Thread(target=decrease_volume_all()).start()
@@ -289,13 +281,6 @@ def start_recording():
             try:
                 device_info = sd.default.device
                 print(f"Using device: {device_info}")
-                stream = sd.InputStream(
-                    callback=audio_callback,
-                    device=None,
-                    channels=1,
-                    samplerate=sample_rate,
-                    blocksize=int(sample_rate * 0.1),
-                )
                 stream.start()
             except Exception as e:
                 print(f"Failed to start stream: {e}")
@@ -328,28 +313,25 @@ def start_recording():
 
 
 def stop_recording(keyword_index):
-    global stream
-    global recording
-    global play_pause_pressed
-    global audio_buffer
-    global sample_rate
-
-    # this thread has to go if play_pause_pressed check is happening below!
-    threading.Thread(target=restore_volume_all()).start()
+    global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
     if stream.active:
-        # Convert pre-recording buffer to numpy array
+        # Roll the pre-recording buffer to get the oldest audio first
         pre_recording_data = np.roll(
             pre_recording_buffer, -buffer_index, axis=0
         ).flatten()
 
-        # Convert main recording to numpy array
-        audio_buffer = np.concatenate(
-            [pre_recording_data, audio_buffer],
-            axis=0,
-        )
-        audio_buffer_queue.put((audio_buffer, keyword_index))
+        # Combine pre-recording data with the main audio buffer
+        if len(audio_buffer) == 0:
+            print("No speech detected. Using only pre-recording buffer.")
+            combined_audio = pre_recording_data
+        else:
+            combined_audio = np.concatenate([pre_recording_data, audio_buffer])
 
+        # Process the combined audio (e.g., save it or queue it)
+        audio_buffer_queue.put((combined_audio, keyword_index))
+
+        # Clear the buffer for the next recording session
         audio_buffer = np.array([], dtype="float32")
 
     if play_pause_pressed:
@@ -613,9 +595,9 @@ def process_audio_async():
             except groq.RateLimitError:
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
-            transcript_queue.put((transcript, keyword_index))
+            transcript_lower = transcript.lower()
             if (
-                "computer" or "hey Lama" in transcript.lower()
+                "computer" in transcript_lower or "hey lama" in transcript_lower
             ):  # Adjust the threshold as needed
                 threading.Thread(
                     target=save_audio(
