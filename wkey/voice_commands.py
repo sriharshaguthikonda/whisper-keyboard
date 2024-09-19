@@ -7,7 +7,8 @@ from fuzzywuzzy import process
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.edge.options import Options
-from selenium.webdriver.common.action_chains import ActionChains
+
+# from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import WebDriverException, SessionNotCreatedException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
@@ -100,18 +101,21 @@ def reconnect_driver():
 
 
 def change_device():
-    devices_button = driver.find_element(
-        By.XPATH, "//button[@aria-label='Connect to a device']"
-    )
-    # Click the button
-    devices_button.click()
-    print("Playback started.")
-    # Locate the element containing "This web browser"
-    # Wait for the panel to appear
-    wait = WebDriverWait(driver, 10)
-    element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
-    # Click the panel
-    element.click()
+    try:
+        devices_button = driver.find_element(
+            By.XPATH, "//button[@aria-label='Connect to a device']"
+        )
+        # Click the button
+        devices_button.click()
+        print("Playback started.")
+        # Locate the element containing "This web browser"
+        # Wait for the panel to appear
+        wait = WebDriverWait(driver, 10)
+        element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
+        # Click the panel
+        element.click()
+    except Exception as e:
+        print(f"Error while trying to play after reconnection: {e}")
 
 
 # Control playback
