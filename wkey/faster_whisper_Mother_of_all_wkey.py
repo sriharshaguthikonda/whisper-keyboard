@@ -42,6 +42,8 @@ import pyaudio
 import pvporcupine
 from pvporcupine import KEYWORD_PATHS
 
+import win32clipboard as clipboard
+
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -564,6 +566,8 @@ def process_audio_async():
             except groq.RateLimitError:
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
+
+            transcript_queue.put((transcript, keyword_index))
             transcript_lower = transcript.lower()
             if (
                 "computer" in transcript_lower or "hey lama" in transcript_lower
@@ -610,24 +614,76 @@ def beep(sound):
     # thread.join()
 
 
-# Function to clean transcript and paste it
+"""
+ ######  ##       #### ########  ########   #######     ###    ########  ########  
+##    ## ##        ##  ##     ## ##     ## ##     ##   ## ##   ##     ## ##     ## 
+##       ##        ##  ##     ## ##     ## ##     ##  ##   ##  ##     ## ##     ## 
+##       ##        ##  ########  ########  ##     ## ##     ## ########  ##     ## 
+##       ##        ##  ##        ##     ## ##     ## ######### ##   ##   ##     ## 
+##    ## ##        ##  ##        ##     ## ##     ## ##     ## ##    ##  ##     ## 
+ ######  ######## #### ##        ########   #######  ##     ## ##     ## ########  
+"""
+
+
+def get_clipboard_content():
+    retry_attempts = 3  # Number of retry attempts
+    for attempt in range(retry_attempts):
+        try:
+            clipboard.OpenClipboard()
+            try:
+                content = clipboard.GetClipboardData()
+            except TypeError:
+                content = ""
+            finally:
+                clipboard.CloseClipboard()
+            return content
+        except Exception as e:
+            print(f"Failed to access clipboard on attempt {attempt + 1}. Error: {e}")
+            time.sleep(0.5)  # Delay before retrying
+    return None  # Return None if clipboard access failed
+
+
+def set_clipboard_content(text):
+    retry_attempts = 3  # Number of retry attempts
+    for attempt in range(retry_attempts):
+        try:
+            clipboard.OpenClipboard()
+            clipboard.EmptyClipboard()  # Clear clipboard before setting content
+            clipboard.SetClipboardText(text)
+            clipboard.CloseClipboard()
+            return  # Exit after successful clipboard access
+        except Exception as e:
+            print(f"Failed to access clipboard on attempt {attempt + 1}. Error: {e}")
+            time.sleep(0.5)  # Delay before retrying
+
+
 def clean_transcript():
     while True:
         try:
             transcript, keyword_index = transcript_queue.get()
+
             if keyword_index == 4:
+                # Execute command when keyword_index is 4
                 threading.Thread(target=execute_command, args=(transcript,)).start()
-                # execute_command
             else:
-                original_clipboard_content = clipboard.paste()
-                clipboard.copy(transcript)
+                # Get and store the original clipboard content
+                original_clipboard_content = get_clipboard_content()
+
+                # Set the clipboard to transcript and paste it
+                if original_clipboard_content != transcript:
+                    set_clipboard_content(transcript)
+
+                # Simulate paste using pyautogui
                 pyautogui.hotkey("ctrl", "v")
+
+                # Beep to signal paste success
                 beep(PASTE_BEEP)
                 print("Transcript pasted")
-                time.sleep(0.1)
-                clipboard.copy(original_clipboard_content)
-                time.sleep(0.1)
-                clipboard.copy(transcript)
+
+                # Restore original clipboard content
+                if original_clipboard_content != transcript:
+                    time.sleep(0.2)  # Give time for pasting to complete
+                    set_clipboard_content(original_clipboard_content)
 
         except Exception as e:
             print(f"An error occurred in clean_transcript: {e}")

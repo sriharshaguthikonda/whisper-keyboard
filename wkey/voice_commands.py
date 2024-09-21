@@ -78,6 +78,7 @@ def reconnect_driver():
                 options=options,
                 service_log_path="C:/Users/deletable/Downloads/edgedriver_win64/msedgedriver.log",
             )
+            time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
             print("Started a new session.")
@@ -349,6 +350,11 @@ COMMAND_MAPPINGS = {
         "load monitor profile",
         "set monitor profile",
     ],
+    # Add more as needed Play, pause, media.
+    "open negative screen": [
+        "computer open negative screen",
+        " hey computer invert screen",
+    ],
 }
 
 
@@ -425,6 +431,9 @@ ACTIONS = {
         ]
     ),
     # Add more as needed
+    "open negative screen": lambda: subprocess.Popen(
+        ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
+    ),
 }
 
 
