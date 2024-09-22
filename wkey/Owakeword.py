@@ -4,7 +4,7 @@ from openwakeword.model import Model
 import argparse
 
 # Hardcoded model path
-MODEL_PATH = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_llama.tflite"  # Update this path
+MODEL_PATH = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer.tflite"  # Update this path
 
 # Parse input arguments
 parser = argparse.ArgumentParser()

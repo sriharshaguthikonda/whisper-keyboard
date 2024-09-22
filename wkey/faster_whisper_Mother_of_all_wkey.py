@@ -42,6 +42,8 @@ import pyaudio
 import pvporcupine
 from pvporcupine import KEYWORD_PATHS
 
+from openwakeword.model import Model
+
 import win32clipboard as clipboard
 
 
@@ -65,41 +67,9 @@ play_pause_pressed = False
 something_is_playing = False
 
 
-# Initialize components for wake word detection
-model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
-
-if not os.path.exists(model_path):
-    print("Model path does not exist. Exiting.")
-    exit(1)
-
-model = Model(model_path)
-rec = KaldiRecognizer(model, 16000)
-load_dotenv()
-pico_access_key = os.getenv("PICO_ACCESS_KEY")
-
-hey_llama_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
-hey_computer_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\hey-computer_en_windows_v3_0_0.ppn"
-
-# Initialize Porcupine with multiple wake words and higher sensitivity
-porcupine = pvporcupine.create(
-    access_key=pico_access_key,
-    keyword_paths=[
-        hey_llama_word_path,
-        KEYWORD_PATHS["hey google"],
-        KEYWORD_PATHS["ok google"],
-        KEYWORD_PATHS["alexa"],
-        hey_computer_word_path,
-        KEYWORD_PATHS["jarvis"],
-        # Add more default wake words as needed
-    ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 1, 0.65],  # Adjust these values as needed
-    keywords=["avengers"],
-)
-
-
 p = pyaudio.PyAudio()
 wake_stream = p.open(
-    format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=512
+    format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=16000
 )
 wake_stream.start_stream()
 
@@ -370,13 +340,13 @@ def save_audio(
 
 
 """
-########  ####  ######   #######  
-##     ##  ##  ##    ## ##     ## 
-##     ##  ##  ##       ##     ## 
-########   ##  ##       ##     ## 
-##         ##  ##       ##     ## 
-##         ##  ##    ## ##     ## 
-##        ####  ######   #######  
+ #######  ##      ## ##      ## 
+##     ## ##  ##  ## ##  ##  ## 
+##     ## ##  ##  ## ##  ##  ## 
+##     ## ##  ##  ## ##  ##  ## 
+##     ## ##  ##  ## ##  ##  ## 
+##     ## ##  ##  ## ##  ##  ## 
+ #######   ###  ###   ###  ###  
 """
 
 
@@ -412,13 +382,6 @@ def monitor_microphone_availability():
             if wake_stream is None:
                 print("Microphone detected. Resuming wake word detection...")
                 try:
-                    wake_stream = p.open(
-                        format=pyaudio.paInt16,
-                        channels=1,
-                        rate=16000,
-                        input=True,
-                        frames_per_buffer=512,
-                    )
                     wake_stream.start_stream()
                 except OSError as e:
                     print(f"Failed to restart wake stream: {e}")
@@ -430,52 +393,69 @@ def monitor_microphone_availability():
         time.sleep(10)
 
 
+# Hardcoded model paths
+MODEL_PATHS = [
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_llama.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer.tflite",
+]
+
+# Load the OpenWakeWord models
+owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="tflite")
+
+CHUNK = 8000  # Optimal chunk size for OpenWakeWord
+
+SCORE_THRESHOLD = 0.2  # Adjust this threshold as necessary
+COOLDOWN_TIME = 5  # Cooldown time in seconds after detecting a wake word
+
+last_detection_time = 0  # Time when the last wake word was detected
+
+
 def listen_for_wake_word():
-    global wake_stream
+    global wake_stream, last_detection_time
     print("Listening for wake words...")
     while True:
         try:
             if wake_stream:
-                data = wake_stream.read(512, exception_on_overflow=False)
+                data = wake_stream.read(CHUNK, exception_on_overflow=False)
                 pcm = np.frombuffer(data, dtype=np.int16)
 
-                # Check for wake word using Porcupine
-                keyword_index = porcupine.process(pcm)
-                if keyword_index >= 0:
+                # Check for wake word using OpenWakeWord
+                prediction = owwModel.predict(pcm)
+                keyword_index = -1  # Default to no detection
+                max_score = 0.0
+
+                # Find the highest score
+                for idx, scores in enumerate(owwModel.prediction_buffer.values()):
+                    if scores[-1] > max_score:
+                        max_score = scores[-1]
+                        keyword_index = idx
+
+                # Check if we can process a new detection
+                current_time = time.time()
+                if (
+                    keyword_index >= 0
+                    and max_score > SCORE_THRESHOLD
+                    and (current_time - last_detection_time) > COOLDOWN_TIME
+                ):
+                    last_detection_time = current_time  # Update the last detection time
+
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'Hey Llama' detected!")
                         start_recording()
                         time.sleep(5)
                         stop_recording(keyword_index)
-                    elif keyword_index == 1:  # Default wake word: "Hey Google"
-                        print("Wake word 'Hey Google' detected!")
-                        """decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()"""
-                    elif keyword_index == 2:  # Default wake word: "OK Google"
-                        print("Wake word 'OK Google' detected!")
-                        """decrease_volume_all()
-                        time.sleep(5)
-                        restore_volume_all()"""
-                    elif keyword_index == 3:  # Default wake word: "Alexa"
-                        print("Wake word 'Alexa' detected!")
-                        # Define the action for "Alexa"
-                    elif keyword_index == 4:  # Default wake word: "Computer"
-                        print("Wake word 'Computer' detected!")
-                        # Define the action for "Computer"
+                    elif keyword_index == 1:  # Custom wake word: "Hey Computer"
+                        print("Custom wake word 'Hey Computer' detected!")
                         start_recording()
-                        time.sleep(2)
+                        time.sleep(5)
                         stop_recording(keyword_index)
-                    elif keyword_index == 5:  # Default wake word: "Jarvis"
-                        print("Wake word 'Jarvis' detected!")
-                        # Trigger voice command execution
-
                     else:
                         print("Unknown wake word detected!")
-                        # You can add more wake word conditions here
+
             else:
                 print("Waiting for microphone...")
                 time.sleep(5)
+
         except OSError as e:
             print(f"Audio stream error: {e}")
             if wake_stream:
@@ -490,7 +470,6 @@ def listen_for_wake_word():
 
             # Attempt to reinitialize the wake word detection after an error
             time.sleep(10)  # Wait before retrying to avoid rapid retry loops
-            # Microphone availability and wake stream initialization are now handled by monitor_microphone_availability
 
 
 def cleanup():
@@ -503,7 +482,7 @@ def cleanup():
         except OSError as e:
             print(f"Error during cleanup: {e}")
         wake_stream = None
-    porcupine.delete()
+    # porcupine.delete()
     p.terminate()
     print("Cleanup completed.")
 

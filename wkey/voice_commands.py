@@ -44,7 +44,7 @@ def start_driver():
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
         driver.get("https://open.spotify.com/collection/tracks")
-        driver.execute_script("window.focus();")
+        # driver.execute_script("window.focus();")
         time.sleep(5)  # Wait for the page to load
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
