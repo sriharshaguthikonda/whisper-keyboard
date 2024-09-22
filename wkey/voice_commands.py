@@ -353,7 +353,7 @@ COMMAND_MAPPINGS = {
     # Add more as needed Play, pause, media.
     "open negative screen": [
         "computer open negative screen",
-        " hey computer invert screen",
+        "hey computer invert screen",
     ],
 }
 
