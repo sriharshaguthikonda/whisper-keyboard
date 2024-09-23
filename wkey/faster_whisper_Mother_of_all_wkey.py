@@ -92,7 +92,7 @@ porcupine = pvporcupine.create(
         KEYWORD_PATHS["jarvis"],
         # Add more default wake words as needed
     ],
-    sensitivities=[0.75, 0.85, 0.65, 0.75, 1, 0.65],  # Adjust these values as needed
+    sensitivities=[0.75, 0.75, 0.65, 0.75, 1, 0.65],  # Adjust these values as needed
     keywords=["avengers"],
 )
 

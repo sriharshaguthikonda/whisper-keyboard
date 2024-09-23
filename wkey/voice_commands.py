@@ -26,7 +26,7 @@ options.add_argument(
 )  # Adjust this to your user data directory
 options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
 options.add_argument("--headless")
-# options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
+options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
 
 # Initialize the WebDriver
 service = Service(webdriver_path)
@@ -44,7 +44,7 @@ def start_driver():
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
         driver.get("https://open.spotify.com/collection/tracks")
-        driver.execute_script("window.focus();")
+        # driver.execute_script("window.focus();")
         time.sleep(5)  # Wait for the page to load
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
