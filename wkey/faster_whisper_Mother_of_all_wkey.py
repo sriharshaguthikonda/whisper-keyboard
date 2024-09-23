@@ -396,13 +396,13 @@ def monitor_microphone_availability():
 # Hardcoded model paths
 MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_llama.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer.tflite",
 ]
 
 # Load the OpenWakeWord models
 owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="tflite")
 
-CHUNK = 8000  # Optimal chunk size for OpenWakeWord
+CHUNK = 4000  # Optimal chunk size for OpenWakeWord
 
 SCORE_THRESHOLD = 0.2  # Adjust this threshold as necessary
 COOLDOWN_TIME = 5  # Cooldown time in seconds after detecting a wake word
@@ -547,6 +547,7 @@ def process_audio_async():
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
 
             transcript_queue.put((transcript, keyword_index))
+            """"
             transcript_lower = transcript.lower()
             if (
                 "computer" in transcript_lower or "hey lama" in transcript_lower
@@ -568,6 +569,7 @@ def process_audio_async():
                         type_of_audio="false_positive",
                     )
                 ).start()
+            """
             print(transcript)
         except queue.Empty:
             continue
@@ -641,7 +643,7 @@ def clean_transcript():
         try:
             transcript, keyword_index = transcript_queue.get()
 
-            if keyword_index == 4:
+            if keyword_index == 1:
                 # Execute command when keyword_index is 4
                 threading.Thread(target=execute_command, args=(transcript,)).start()
             else:

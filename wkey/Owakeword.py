@@ -1,10 +1,11 @@
+import os
 import pyaudio
 import numpy as np
 from openwakeword.model import Model
 import argparse
 
-# Hardcoded model path
-MODEL_PATH = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer.tflite"  # Update this path
+# Hardcoded model directory
+MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models"  # Update this path
 
 # Parse input arguments
 parser = argparse.ArgumentParser()
@@ -16,10 +17,10 @@ parser.add_argument(
     required=False,
 )
 parser.add_argument(
-    "--model_path",
-    help="The path of a specific model to load",
+    "--model_dir",
+    help="The directory containing models to load",
     type=str,
-    default=MODEL_PATH,  # Use the hardcoded path
+    default=MODEL_DIR,  # Use the hardcoded directory
     required=False,
 )
 parser.add_argument(
@@ -31,6 +32,13 @@ parser.add_argument(
 )
 
 args = parser.parse_args()
+
+# Get all .tflite model paths in the specified directory
+model_paths = [
+    os.path.join(args.model_dir, f)
+    for f in os.listdir(args.model_dir)
+    if f.endswith(".tflite")
+]
 
 # Get microphone stream
 FORMAT = pyaudio.paInt16
@@ -44,13 +52,17 @@ mic_stream = audio.open(
 
 # Load pre-trained openwakeword models
 owwModel = Model(
-    wakeword_models=[args.model_path], inference_framework=args.inference_framework
+    wakeword_models=model_paths, inference_framework=args.inference_framework
 )
 
 n_models = len(owwModel.models.keys())
 
-# Run capture loop continuously, checking for wakewords
+# Initialize highest score tracker
+highest_score = 0
+highest_model = ""
+
 if __name__ == "__main__":
+    # Generate output string header
     print("\n\n")
     print("#" * 100)
     print("Listening for wakewords...")
@@ -59,10 +71,10 @@ if __name__ == "__main__":
 
     while True:
         # Get audio
-        audio_data = np.frombuffer(mic_stream.read(CHUNK), dtype=np.int16)
+        audio = np.frombuffer(mic_stream.read(CHUNK), dtype=np.int16)
 
         # Feed to openWakeWord model
-        prediction = owwModel.predict(audio_data)
+        prediction = owwModel.predict(audio)
 
         # Column titles
         n_spaces = 16
@@ -71,20 +83,28 @@ if __name__ == "__main__":
             --------------------------------------
             """
 
-        detected = False  # Flag for wake word detection
-
         for mdl in owwModel.prediction_buffer.keys():
             # Add scores in formatted table
             scores = list(owwModel.prediction_buffer[mdl])
             curr_score = format(scores[-1], ".20f").replace("-", "")
+            score_value = scores[-1]
 
-            if scores[-1] > 0.5:  # Wake word detection threshold
-                detected = True
-                output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | Wakeword Detected!\n"""
-            else:
-                output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | --{" " * 20}\n"""
+            output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | {"--"+" "*20 if score_value <= 0.5 else "Wakeword Detected!"}
+            """
 
-        # Print results only if a wake word is detected
-        if detected:
-            print("\033[F" * (4 * n_models + 1))
-            print(output_string_header, "                             ", end="\r")
+            # Check if this is the highest score recorded
+            if score_value > highest_score:
+                highest_score = score_value
+                highest_model = mdl
+
+        # Print results table
+        print("\033[F" * (4 * n_models + 1))
+        print(output_string_header, "                             ", end="\r")
+
+        # Stop if the highest score is recorded
+        if highest_score > 0.5:
+            print("\n\n")
+            print("#" * 100)
+            print(f"Highest score recorded: {highest_score} by model {highest_model}")
+            print("#" * 100)
+            break
