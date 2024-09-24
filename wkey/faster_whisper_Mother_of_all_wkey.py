@@ -254,11 +254,7 @@ def start_recording():
 
 
 def stop_recording(keyword_index):
-    global stream
-    global recording
-    global play_pause_pressed
-    global audio_buffer
-    global sample_rate
+    global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
     # this thread has to go if play_pause_pressed check is happening below!
     threading.Thread(target=restore_volume_all()).start()
@@ -410,10 +406,11 @@ owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="tflite")
 
 CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 
-SCORE_THRESHOLD = 0.7  # Adjust this threshold as necessary
-COOLDOWN_TIME = 5  # Cooldown time in seconds after detecting a wake word
+SCORE_THRESHOLD = 0.4  # Adjust this threshold as necessary
+COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
 
 last_detection_time = 0  # Time when the last wake word was detected
+
 
 """
 ##       ####  ######  ######## ######## ##    ## 
@@ -427,7 +424,7 @@ last_detection_time = 0  # Time when the last wake word was detected
 
 
 def listen_for_wake_word():
-    global wake_stream, last_detection_time
+    global wake_stream, last_detection_time, recording
     print("Listening for wake words...")
 
     while True:
@@ -442,7 +439,7 @@ def listen_for_wake_word():
                 max_score = 0.0
 
                 # Limit to only the most recent prediction scores for speed
-                recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
+                recent_predictions = list(owwModel.prediction_buffer.values())[-8:]
 
                 # Find the highest score among detected keywords
                 for idx, scores in enumerate(recent_predictions):
@@ -451,13 +448,14 @@ def listen_for_wake_word():
                         keyword_index = idx
 
                 # Check if we can process a new detection
-                current_time = time.time()
+                # current_time = time.time()
                 if (
                     keyword_index >= 0
                     and max_score > SCORE_THRESHOLD
-                    and (current_time - last_detection_time) > COOLDOWN_TIME
+                    # and (current_time - last_detection_time) > COOLDOWN_TIME
+                    and not recording
                 ):
-                    last_detection_time = current_time  # Update the last detection time
+                    # last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'Hey Llama' detected!")
