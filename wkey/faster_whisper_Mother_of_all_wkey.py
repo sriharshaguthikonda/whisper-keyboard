@@ -25,6 +25,9 @@ import groq
 from groq import Groq
 
 import queue
+import asyncio
+
+
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 
@@ -59,7 +62,7 @@ keyboard_controller = KeyboardController()
 recording = False
 stream = None
 audio_buffer = np.array([], dtype="float32")
-sample_rate = 8000
+sample_rate = 16000
 model = WhisperModel("small.en", device="cuda", num_workers=8)
 groq_model = "distil-whisper-large-v3-en"
 # "whisper-large-v3"
@@ -306,7 +309,7 @@ def on_release(key):
 
 
 def save_audio(
-    audio_data, keyword_index, directory="train", sample_rate=8000, type_of_audio=None
+    audio_data, keyword_index, directory="train", sample_rate=16000, type_of_audio=None
 ):
     # Ensure the directory exists
     if not os.path.exists(directory):
@@ -396,23 +399,37 @@ def monitor_microphone_availability():
 # Hardcoded model paths
 MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_llama.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer3.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer4.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer5.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer6.tflite",
 ]
 
 # Load the OpenWakeWord models
 owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="tflite")
 
-CHUNK = 4000  # Optimal chunk size for OpenWakeWord
+CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 
-SCORE_THRESHOLD = 0.2  # Adjust this threshold as necessary
+SCORE_THRESHOLD = 0.7  # Adjust this threshold as necessary
 COOLDOWN_TIME = 5  # Cooldown time in seconds after detecting a wake word
 
 last_detection_time = 0  # Time when the last wake word was detected
+
+"""
+##       ####  ######  ######## ######## ##    ## 
+##        ##  ##    ##    ##    ##       ###   ## 
+##        ##  ##          ##    ##       ####  ## 
+##        ##   ######     ##    ######   ## ## ## 
+##        ##        ##    ##    ##       ##  #### 
+##        ##  ##    ##    ##    ##       ##   ### 
+######## ####  ######     ##    ######## ##    ## 
+"""
 
 
 def listen_for_wake_word():
     global wake_stream, last_detection_time
     print("Listening for wake words...")
+
     while True:
         try:
             if wake_stream:
@@ -424,9 +441,12 @@ def listen_for_wake_word():
                 keyword_index = -1  # Default to no detection
                 max_score = 0.0
 
-                # Find the highest score
-                for idx, scores in enumerate(owwModel.prediction_buffer.values()):
-                    if scores[-1] > max_score:
+                # Limit to only the most recent prediction scores for speed
+                recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
+
+                # Find the highest score among detected keywords
+                for idx, scores in enumerate(recent_predictions):
+                    if scores[-1] > max_score:  # Check last score for this prediction
                         max_score = scores[-1]
                         keyword_index = idx
 
@@ -444,13 +464,28 @@ def listen_for_wake_word():
                         start_recording()
                         time.sleep(5)
                         stop_recording(keyword_index)
-                    elif keyword_index == 1:  # Custom wake word: "Hey Computer"
-                        print("Custom wake word 'Hey Computer' detected!")
+                    elif keyword_index == 1:  # Custom wake word: "Hey Computer_latest"
+                        print("Custom wake word 'Hey Computer_latest' detected!")
                         start_recording()
-                        time.sleep(5)
+                        time.sleep(3)
                         stop_recording(keyword_index)
+                    elif keyword_index == 2:  # Custom wake word: "Hey Computer_old"
+                        print("Custom wake word 'Hey Computer_old' detected!")
+                        start_recording()
+                        time.sleep(3)
+                        stop_recording(keyword_index=1)
+                    elif keyword_index == 3:  # Custom wake word: "HeyComputer5"
+                        print("Custom wake word 'HeyComputer5' detected!")
+                        start_recording()
+                        time.sleep(3)
+                        stop_recording(keyword_index=1)
+                    elif keyword_index == 4:  # Custom wake word: "Hey Computer6"
+                        print("Custom wake word 'Hey Computer6' detected!")
+                        start_recording()
+                        time.sleep(3)
+                        stop_recording(keyword_index=1)
                     else:
-                        print("Unknown wake word detected!")
+                        print("Unknown wake word detected!", keyword_index)
 
             else:
                 print("Waiting for microphone...")
@@ -547,7 +582,7 @@ def process_audio_async():
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
 
             transcript_queue.put((transcript, keyword_index))
-            """"
+
             transcript_lower = transcript.lower()
             if (
                 "computer" in transcript_lower or "hey lama" in transcript_lower
@@ -569,7 +604,6 @@ def process_audio_async():
                         type_of_audio="false_positive",
                     )
                 ).start()
-            """
             print(transcript)
         except queue.Empty:
             continue

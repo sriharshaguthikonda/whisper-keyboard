@@ -24,8 +24,9 @@ options = Options()
 options.add_argument(
     r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
 )  # Adjust this to your user data directory
-options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
-options.add_argument("--headless")
+options.add_argument(r"profile-directory=Profile 1")
+# Adjust this to your profile name
+# options.add_argument("--headless")
 # options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
 
 # Initialize the WebDriver
@@ -111,10 +112,12 @@ def change_device():
         print("Playback started.")
         # Locate the element containing "This web browser"
         # Wait for the panel to appear
-        wait = WebDriverWait(driver, 10)
-        element = wait.until(driver.find_elementBy.XPATH, "//span[text()='browser']")
+        # wait = WebDriverWait(driver, 10)
+        time.sleep(2)
+        driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
+        time.sleep(2)
+        driver.find_element(By.XPATH, '//*[text()="DESKTOP-6RQKD76"]').click()
         # Click the panel
-        element.click()
     except Exception as e:
         print(f"Error while trying to play after reconnection: {e}")
 
@@ -225,135 +228,135 @@ def previous_track():
 COMMAND_MAPPINGS = {
     # System Commands
     "search windows": [
-        "computer open start menu",
-        "computer show start menu",
-        "computer Windows search",
+        "open start menu",
+        "show start menu",
+        "Windows search",
     ],
-    "show desktop": ["hey computer show desktop", "hey computer minimize everything"],
-    "open settings": ["hey computer open settings", "hey computer settings"],
-    "lock screen": ["hey computer lock screen", "hey computer lock the computer"],
-    "take screenshot": ["hey computer take screenshot", "hey computer capture screen"],
+    "show desktop": ["show desktop", "minimize everything"],
+    "open settings": ["open settings", "settings"],
+    "lock screen": ["lock screen", "lock the computer"],
+    "take screenshot": ["take screenshot", "capture screen"],
     "open file explorer": [
-        "computer open file explorer",
-        "computer explore files",
+        "open file explorer",
+        "explore files",
     ],
-    "windows search": ["hey computer open search", "hey computer search"],
-    "open run dialog": ["hey computer open run dialog", "hey computer run command"],
+    "windows search": ["open search", "search"],
+    "open run dialog": ["open run dialog", "run command"],
     "open task manager": [
-        "hey computer open task manager",
-        "computer task manager",
+        "open task manager",
+        "task manager",
     ],
     "minimize all windows": [
-        "hey computer minimize all windows",
-        "computer minimize windows",
+        "minimize all windows",
+        "minimize windows",
     ],
     "restore windows": [
-        "hey computer restore windows",
-        "computer restore all windows",
+        "restore windows",
+        "restore all windows",
     ],
-    #    "shutdown system": ["hey computer shutdown system", "hey computer turn off computer"],
-    #    "restart system": ["hey computer restart system", "hey computer reboot computer"],
-    #    "log off": ["hey computer log off", "hey computer sign out"],
+    #    "shutdown system": ["shutdown system", "turn off computer"],
+    #    "restart system": ["restart system", "reboot computer"],
+    #    "log off": ["log off", "sign out"],
     # Application Commands
-    "open control panel": [
-        "hey computer open control panel",
-        "computer control panel",
-    ],
-    "open calculator": ["hey computer open calculator", "hey computer calculator"],
-    "open notepad": ["hey computer open notepad", "hey computer notepad"],
-    "open word": ["hey computer open word", "hey computer start word"],
-    "open excel": ["hey computer open excel", "hey computer start excel"],
+    #     "open control panel": [
+    #         "open control panel",
+    #         "control panel",
+    #     ],
+    "open calculator": ["open calculator", "calculator"],
+    "open notepad": ["open notepad", "notepad"],
+    "open word": ["open word", "start word"],
+    "open excel": ["open excel", "start excel"],
     "open powerpoint": [
-        "hey computer open powerpoint",
-        "computer start powerpoint",
+        "open powerpoint",
+        "start powerpoint",
     ],
-    "open outlook": ["hey computer open outlook", "hey computer start outlook"],
-    "open paint": ["hey computer open paint", "hey computer start paint"],
+    "open outlook": ["open outlook", "start outlook"],
+    "open paint": ["open paint", "start paint"],
     "open command prompt": [
-        "hey computer open command prompt",
-        "computer open console",
-        "computer command prompt",
-        "computer Open command drop",
+        "open command prompt",
+        "open console",
+        "command prompt",
+        "Open command drop",
     ],
-    "open powershell": ["hey computer open powershell", "hey computer powershell"],
-    "open edge": ["hey computer open edge", "hey computer start edge"],
-    "open chrome": ["hey computer open chrome", "hey computer start chrome"],
-    "open firefox": ["hey computer open firefox", "hey computer start firefox"],
+    "open powershell": ["open powershell", "powershell"],
+    "open edge": ["open edge", "start edge"],
+    "open chrome": ["open chrome", "start chrome"],
+    "open firefox": ["open firefox", "start firefox"],
     # Volume Controls
     "open sound control panel": [
-        "hey computer open sound control panel",
-        "computer open audio settings",
+        "open sound control panel",
+        "open audio settings",
     ],
-    "volume up": ["hey computer volume up", "hey computer increase volume"],
-    "volume down": ["hey computer volume down", "hey computer decrease volume"],
-    # "mute volume": ["hey computer mute volume", "hey computer mute sound"],
+    "volume up": ["volume up", "increase volume"],
+    "volume down": ["volume down", "decrease volume"],
+    # "mute volume": ["mute volume", "mute sound"],
     # Media Controls
     "play media": [
-        "hey computer play media",
-        "computer play",
-        "computer play music",
+        "play media",
+        "play",
+        "play music",
     ],
     "stop media": [
-        "hey computer stop media",
-        "computer stop",
-        "computer stop music",
+        "stop media",
+        "stop",
+        "stop music",
     ],
     "next track": [
-        "hey computer next track",
-        "computer next song",
-        "computer skip",
-        "computer play next song",
+        "next track",
+        "next song",
+        "skip",
+        "play next song",
     ],
     "previous track": [
-        "hey computer previous track",
-        "computer previous song",
-        "computer replay",
-        "computer play previous song",
+        "previous track",
+        "previous song",
+        "replay",
+        "play previous song",
     ],
     # Custom or Complex Operations
     "open device manager": [
-        "hey computer open device manager",
-        "computer device manager",
+        "open device manager",
+        "device manager",
     ],
     "open disk management": [
-        "hey computer open disk management",
-        "computer disk management",
-        "computer format disk",
-        "computer hard disk",
+        "open disk management",
+        "disk management",
+        "format disk",
+        "hard disk",
     ],
     "open network connections": [
-        "hey computer open network connections",
-        "computer network connections",
+        "open network connections",
+        "network connections",
     ],
     "open system properties": [
-        "hey computer open system properties",
-        "computer system properties",
+        "open system properties",
+        "system properties",
     ],
     "open date and time": [
-        "hey computer open date and time",
-        "computer date and time",
+        "open date and time",
+        "date and time",
     ],
     # System Commands
     "ping google": [
-        "hey computer ping google",
-        "computer check internet connection",
+        "ping google",
+        "check internet connection",
     ],
-    "flush dns": ["hey computer flush dns", "hey computer reset dns cache"],
+    "flush dns": ["flush dns", "reset dns cache"],
     # Add more as needed Play, pause, media.
     "restart voicemeeter": [
-        "computer restart voicemeter",
+        "restart voicemeter",
         " hey computer reset voicemeter",
     ],
     "load display fusion profile": [
-        "hey computer display fusion",
+        "display fusion",
         "a computer start display fusion",
         "load monitor profile",
         "set monitor profile",
     ],
     # Add more as needed Play, pause, media.
     "open negative screen": [
-        "computer open negative screen",
-        "hey computer invert screen",
+        "open negative screen",
+        "invert screen",
     ],
 }
 

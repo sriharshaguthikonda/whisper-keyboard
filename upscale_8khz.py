@@ -1,30 +1,30 @@
 import os
-from pydub import AudioSegment
+import torchaudio
+from torchaudio.transforms import Resample
 from tkinter import Tk, filedialog
 
 
-def upscale_wav_files(directory_path):
-    for filename in os.listdir(directory_path):
-        if filename.endswith(".wav"):
-            file_path = os.path.join(directory_path, filename)
-            audio = AudioSegment.from_wav(file_path)
-            # Check if the sample rate is 8000 Hz
-            if audio.frame_rate == 8000:
-                # Resample to 16000 Hz
-                audio = audio.set_frame_rate(16000)
-                # Save the upscaled file
-                new_file_path = os.path.join(directory_path, f"upscaled_{filename}")
-                audio.export(new_file_path, format="wav")
-                print(f"Upscaled {filename} to 16kHz")
-            else:
-                print(f"{filename} is not 8kHz, skipping.")
+def resample_audio(file_path, target_sample_rate=16000):
+    waveform, sample_rate = torchaudio.load(file_path)
+    resampler = Resample(orig_freq=sample_rate, new_freq=target_sample_rate)
+    resampled_waveform = resampler(waveform)
+    output_path = os.path.join(
+        os.path.dirname(file_path), f"16k_uped_{os.path.basename(file_path)}"
+    )
+    torchaudio.save(output_path, resampled_waveform, target_sample_rate)
+    print(
+        f"Resampled {file_path} to {target_sample_rate} Hz and saved as {output_path}"
+    )
 
 
-# Use Tkinter to select the folder at runtime
-root = Tk()
-root.withdraw()  # Hide the root window
-directory_path = filedialog.askdirectory(title="Select Folder Containing WAV Files")
-if directory_path:
-    upscale_wav_files(directory_path)
-else:
-    print("No folder selected.")
+def main():
+    Tk().withdraw()  # Hide the root window
+    file_paths = filedialog.askopenfilenames(
+        title="Select audio files to resample", filetypes=[("WAV files", "*.wav")]
+    )
+    for file_path in file_paths:
+        resample_audio(file_path)
+
+
+if __name__ == "__main__":
+    main()

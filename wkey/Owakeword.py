@@ -89,7 +89,7 @@ if __name__ == "__main__":
             curr_score = format(scores[-1], ".20f").replace("-", "")
             score_value = scores[-1]
 
-            output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | {"--"+" "*20 if score_value <= 0.5 else "Wakeword Detected!"}
+            output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | {"--"+" "*20 if score_value <= 0.1 else "Wakeword Detected!"}
             """
 
             # Check if this is the highest score recorded
