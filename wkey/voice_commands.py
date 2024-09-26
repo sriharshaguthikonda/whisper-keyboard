@@ -24,10 +24,15 @@ options = Options()
 options.add_argument(
     r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
 )  # Adjust this to your user data directory
-options.add_argument(r"profile-directory=Profile 1")
-# Adjust this to your profile name
-# options.add_argument("--headless")
-# options.add_argument("--disable-gpu")  # Optional: Disable GPU acceleration
+options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
+
+# Add remote allow origins
+options.add_argument("--remote-allow-origins=*")
+
+# Optional: Add headless and disable GPU for background processing
+options.add_argument("--headless")
+options.add_argument("--disable-gpu")
+
 
 # Initialize the WebDriver
 service = Service(webdriver_path)
@@ -72,8 +77,8 @@ def reconnect_driver():
 
         # Attempt to start a new session
         try:
-            options = webdriver.EdgeOptions()
-            options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
+            # options = webdriver.EdgeOptions()
+            # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
 
             driver = webdriver.Edge(
                 options=options,
@@ -141,6 +146,19 @@ def play_song():
                 print("Playback started after reconnection.")
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
+
+        elif "target window already closed" in error_message:
+            driver.quit()
+            start_driver()
+            try:
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
+                )
+                play_button.click()
+                print("Playback started after reconnection.")
+            except Exception as e:
+                print(f"Error while trying to play after reconnection: {e}")
+
         else:
             print(f"Error while trying to play: {e}")
 
@@ -489,7 +507,7 @@ def execute_command(transcript):
             # Find the best fuzzy match (with a threshold of 80 for confidence)
             best_match, match_score = process.extractOne(cmd, PHRASE_TO_ACTION.keys())
             if (
-                match_score >= 70 and "computer" in transcript
+                match_score >= 60 and "computer" in transcript
             ):  # Adjust the threshold as needed
                 action = PHRASE_TO_ACTION.get(best_match)
 

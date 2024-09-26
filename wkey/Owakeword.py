@@ -5,7 +5,7 @@ from openwakeword.model import Model
 import argparse
 
 # Hardcoded model directory
-MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models"  # Update this path
+MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"  # Update this path
 
 # Parse input arguments
 parser = argparse.ArgumentParser()
@@ -27,7 +27,7 @@ parser.add_argument(
     "--inference_framework",
     help="The inference framework to use (either 'onnx' or 'tflite')",
     type=str,
-    default="tflite",
+    default="onnx",
     required=False,
 )
 
@@ -37,7 +37,7 @@ args = parser.parse_args()
 model_paths = [
     os.path.join(args.model_dir, f)
     for f in os.listdir(args.model_dir)
-    if f.endswith(".tflite")
+    if f.endswith(".onnx") or f.endswith(".tflite")
 ]
 
 # Get microphone stream

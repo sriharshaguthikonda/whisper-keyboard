@@ -253,7 +253,7 @@ def start_recording():
 """
 
 
-def stop_recording(keyword_index):
+def stop_recording():
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
     # this thread has to go if play_pause_pressed check is happening below!
@@ -285,12 +285,12 @@ def stop_recording(keyword_index):
 
 def on_press(key):
     if key == RECORD_KEY and not recording:
-        start_recording()
+        threading.Thread(target=start_recording).start()
 
 
 def on_release(key):
     if key == RECORD_KEY and recording:
-        stop_recording(None)
+        threading.Thread(target=stop_recording).start()(None)
 
 
 """
@@ -394,19 +394,22 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_llama.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer3.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer4.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\heycomputer5.tflite",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\hey_computer6.tflite",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heylama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer3.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer4.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer5.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer6.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer7.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer8.onnx",
 ]
 
 # Load the OpenWakeWord models
-owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="tflite")
+owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="onnx")
 
 CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 
-SCORE_THRESHOLD = 0.4  # Adjust this threshold as necessary
+SCORE_THRESHOLD = 0.7  # Adjust this threshold as necessary
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
 
 last_detection_time = 0  # Time when the last wake word was detected
@@ -448,40 +451,55 @@ def listen_for_wake_word():
                         keyword_index = idx
 
                 # Check if we can process a new detection
-                # current_time = time.time()
+                current_time = time.time()
                 if (
                     keyword_index >= 0
                     and max_score > SCORE_THRESHOLD
-                    # and (current_time - last_detection_time) > COOLDOWN_TIME
+                    and (current_time - last_detection_time) > COOLDOWN_TIME
                     and not recording
                 ):
-                    # last_detection_time = current_time  # Update the last detection time
+                    last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'Hey Llama' detected!")
-                        start_recording()
+                        threading.Thread(target=start_recording).start()
                         time.sleep(5)
-                        stop_recording(keyword_index)
+                        threading.Thread(target=stop_recording).start()(keyword_index)
                     elif keyword_index == 1:  # Custom wake word: "Hey Computer_latest"
-                        print("Custom wake word 'Hey Computer_latest' detected!")
-                        start_recording()
+                        print("Custom wake word 'Hey Llama' detected!")
+                        threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        stop_recording(keyword_index)
+                        threading.Thread(target=stop_recording).start()(keyword_index=0)
                     elif keyword_index == 2:  # Custom wake word: "Hey Computer_old"
                         print("Custom wake word 'Hey Computer_old' detected!")
-                        start_recording()
-                        time.sleep(3)
-                        stop_recording(keyword_index=1)
+                        threading.Thread(target=start_recording).start()
+                        time.sleep(2)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
                     elif keyword_index == 3:  # Custom wake word: "HeyComputer5"
                         print("Custom wake word 'HeyComputer5' detected!")
-                        start_recording()
+                        threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        stop_recording(keyword_index=1)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
                     elif keyword_index == 4:  # Custom wake word: "Hey Computer6"
                         print("Custom wake word 'Hey Computer6' detected!")
-                        start_recording()
+                        threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        stop_recording(keyword_index=1)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
+                    elif keyword_index == 5:  # Custom wake word: "Hey Computer6"
+                        print("Custom wake word 'Hey Computer6' detected!")
+                        threading.Thread(target=start_recording).start()
+                        time.sleep(3)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
+                    elif keyword_index == 6:  # Custom wake word: "Hey Computer6"
+                        print("Custom wake word 'Hey Computer6' detected!")
+                        threading.Thread(target=start_recording).start()
+                        time.sleep(3)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
+                    elif keyword_index == 7:  # Custom wake word: "Hey Computer6"
+                        print("Custom wake word 'Hey Computer6' detected!")
+                        threading.Thread(target=start_recording).start()
+                        time.sleep(3)
+                        threading.Thread(target=stop_recording).start()(keyword_index=1)
                     else:
                         print("Unknown wake word detected!", keyword_index)
 
