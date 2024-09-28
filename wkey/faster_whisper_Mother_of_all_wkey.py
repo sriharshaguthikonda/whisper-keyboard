@@ -408,7 +408,11 @@ MODEL_PATHS = [
 ]
 
 # Load the OpenWakeWord models
-owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="onnx")
+# Load the OpenWakeWord models with VAD threshold
+owwModel = Model(
+    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.5
+)
+
 
 CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 
