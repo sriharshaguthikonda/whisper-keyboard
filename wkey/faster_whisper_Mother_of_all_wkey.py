@@ -14,7 +14,8 @@ import io
 import time
 import threading
 import winsound
-import clipboard
+
+
 import pyautogui
 import numpy as np
 import sounddevice as sd
@@ -47,7 +48,13 @@ from pvporcupine import KEYWORD_PATHS
 
 from openwakeword.model import Model
 
-import win32clipboard as clipboard
+
+# import clipboard
+# import win32clipboard as clipboard
+import klembord
+
+# Initialize klembord for clipboard operations
+klembord.init()
 
 
 # Initial setup and global variables
@@ -210,7 +217,8 @@ def start_recording():
 
     try:
         if stream and stream.active:
-            print("stream is active")
+            # print("stream is active")
+            pass
         else:
             try:
                 device_info = sd.default.device
@@ -230,11 +238,12 @@ def start_recording():
         pass
 
     if something_is_playing:
-        print("Stream started")
+        # print("Stream started")
         decrease_volume_all()
         play_pause_pressed = True
     else:
-        print("Stream started")
+        # print("Stream started")
+        pass
 
     beep(START_BEEP)
     with recording_lock:
@@ -253,7 +262,7 @@ def start_recording():
 """
 
 
-def stop_recording():
+def stop_recording(keyword_index):
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
     # this thread has to go if play_pause_pressed check is happening below!
@@ -290,7 +299,7 @@ def on_press(key):
 
 def on_release(key):
     if key == RECORD_KEY and recording:
-        threading.Thread(target=stop_recording).start()(None)
+        threading.Thread(target=stop_recording, args=(None,)).start()
 
 
 """
@@ -394,14 +403,8 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heylama.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer3.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer4.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\heycomputer5.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer6.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer7.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer8.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
 ]
 
 # Load the OpenWakeWord models
@@ -409,9 +412,13 @@ owwModel = Model(wakeword_models=MODEL_PATHS, inference_framework="onnx")
 
 CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 
-SCORE_THRESHOLD = 0.7  # Adjust this threshold as necessary
-COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
+# Define individual thresholds for each wake word model
+THRESHOLDS = {
+    0: 0.1,  # Threshold for "hey_lama"
+    1: 0.3,  # Threshold for "hey_computer10"
+}
 
+COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
 last_detection_time = 0  # Time when the last wake word was detected
 
 
@@ -450,56 +457,31 @@ def listen_for_wake_word():
                         max_score = scores[-1]
                         keyword_index = idx
 
-                # Check if we can process a new detection
+                # Use individual threshold for each wake word
                 current_time = time.time()
                 if (
                     keyword_index >= 0
-                    and max_score > SCORE_THRESHOLD
+                    and max_score
+                    > THRESHOLDS.get(
+                        keyword_index, 0.4
+                    )  # Use threshold specific to keyword_index
                     and (current_time - last_detection_time) > COOLDOWN_TIME
                     and not recording
                 ):
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
-                        print("Custom wake word 'Hey Llama' detected!")
+                        print("Custom wake word 'hey_lama' detected!")
                         threading.Thread(target=start_recording).start()
                         time.sleep(5)
-                        threading.Thread(target=stop_recording).start()(keyword_index)
-                    elif keyword_index == 1:  # Custom wake word: "Hey Computer_latest"
-                        print("Custom wake word 'Hey Llama' detected!")
+                        threading.Thread(
+                            target=stop_recording, args=(keyword_index,)
+                        ).start()
+                    elif keyword_index == 1:  # Custom wake word: "Hey_cumputer"
+                        print("Custom wake word 'hey_computer10' detected!")
                         threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=0)
-                    elif keyword_index == 2:  # Custom wake word: "Hey Computer_old"
-                        print("Custom wake word 'Hey Computer_old' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(2)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
-                    elif keyword_index == 3:  # Custom wake word: "HeyComputer5"
-                        print("Custom wake word 'HeyComputer5' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
-                    elif keyword_index == 4:  # Custom wake word: "Hey Computer6"
-                        print("Custom wake word 'Hey Computer6' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
-                    elif keyword_index == 5:  # Custom wake word: "Hey Computer6"
-                        print("Custom wake word 'Hey Computer6' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
-                    elif keyword_index == 6:  # Custom wake word: "Hey Computer6"
-                        print("Custom wake word 'Hey Computer6' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
-                    elif keyword_index == 7:  # Custom wake word: "Hey Computer6"
-                        print("Custom wake word 'Hey Computer6' detected!")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording).start()(keyword_index=1)
+                        threading.Thread(target=stop_recording, args=(1,)).start()
                     else:
                         print("Unknown wake word detected!", keyword_index)
 
@@ -597,12 +579,11 @@ def process_audio_async():
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
 
-            transcript_queue.put((transcript, keyword_index))
-
             transcript_lower = transcript.lower()
             if (
-                "computer" in transcript_lower or "hey lama" in transcript_lower
+                "computer" in transcript_lower or "lama" in transcript_lower
             ):  # Adjust the threshold as needed
+                transcript_queue.put((transcript, keyword_index))
                 threading.Thread(
                     target=save_audio(
                         audio_data=audio_buffer_for_processing,
@@ -657,35 +638,21 @@ def beep(sound):
 
 
 def get_clipboard_content():
-    retry_attempts = 3  # Number of retry attempts
-    for attempt in range(retry_attempts):
-        try:
-            clipboard.OpenClipboard()
-            try:
-                content = clipboard.GetClipboardData()
-            except TypeError:
-                content = ""
-            finally:
-                clipboard.CloseClipboard()
-            return content
-        except Exception as e:
-            print(f"Failed to access clipboard on attempt {attempt + 1}. Error: {e}")
-            time.sleep(0.5)  # Delay before retrying
-    return None  # Return None if clipboard access failed
+    try:
+        content = klembord.get("text/plain") or ""
+        return content
+    except Exception as e:
+        return None
 
 
+# Function to set clipboard content using klembord
 def set_clipboard_content(text):
-    retry_attempts = 3  # Number of retry attempts
-    for attempt in range(retry_attempts):
-        try:
-            clipboard.OpenClipboard()
-            clipboard.EmptyClipboard()  # Clear clipboard before setting content
-            clipboard.SetClipboardText(text)
-            clipboard.CloseClipboard()
-            return  # Exit after successful clipboard access
-        except Exception as e:
-            print(f"Failed to access clipboard on attempt {attempt + 1}. Error: {e}")
-            time.sleep(0.5)  # Delay before retrying
+    try:
+        # Set the clipboard content as plain text using klembord
+        text_str = str(text)
+        klembord.set_text(text_str)
+    except Exception as e:
+        print(f"Error setting clipboard content: {e}")
 
 
 def clean_transcript():
@@ -697,12 +664,16 @@ def clean_transcript():
                 # Execute command when keyword_index is 4
                 threading.Thread(target=execute_command, args=(transcript,)).start()
             else:
-                # Get and store the original clipboard content
-                original_clipboard_content = get_clipboard_content()
+                # Get current clipboard content
+                # original_clipboard_content = get_clipboard_content() or ""
+                pass
 
-                # Set the clipboard to transcript and paste it
-                if original_clipboard_content != transcript:
-                    set_clipboard_content(transcript)
+                # Create the new clipboard content by appending the transcript
+                #                 new_clipboard_content = (
+                #                     f"{original_clipboard_content}\n{transcript}".strip())
+
+                # Set the clipboard to the new content
+                set_clipboard_content(transcript)
 
                 # Simulate paste using pyautogui
                 pyautogui.hotkey("ctrl", "v")
@@ -710,11 +681,6 @@ def clean_transcript():
                 # Beep to signal paste success
                 beep(PASTE_BEEP)
                 print("Transcript pasted")
-
-                # Restore original clipboard content
-                if original_clipboard_content != transcript:
-                    time.sleep(0.2)  # Give time for pasting to complete
-                    set_clipboard_content(original_clipboard_content)
 
         except Exception as e:
             print(f"An error occurred in clean_transcript: {e}")

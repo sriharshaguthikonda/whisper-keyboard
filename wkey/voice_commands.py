@@ -30,8 +30,8 @@ options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your prof
 options.add_argument("--remote-allow-origins=*")
 
 # Optional: Add headless and disable GPU for background processing
-options.add_argument("--headless")
-options.add_argument("--disable-gpu")
+# options.add_argument("--headless")
+# options.add_argument("--disable-gpu")
 
 
 # Initialize the WebDriver
