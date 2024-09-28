@@ -327,6 +327,12 @@ def stop_recording(keyword_index):
     )
     audio_buffer_queue.put((audio_buffer, keyword_index))
 
+    # this thread has to go if play_pause_pressed check is happening below!
+    threading.Thread(target=restore_volume_all()).start()
+
+    # clearing the audio buffer - if not it will cause concat transcripts
+    audio_buffer = np.array([], dtype="float32")
+
     if play_pause_pressed:
         restore_volume_all()
         play_pause_pressed = False
@@ -518,14 +524,14 @@ def listen_for_wake_word():
                     if keyword_index == 0:  # Custom wake word: "Hey Llama"
                         print("Custom wake word 'hey_lama' detected!")
                         threading.Thread(target=start_recording).start()
-                        time.sleep(5)
+                        time.sleep(3)
                         threading.Thread(
                             target=stop_recording, args=(keyword_index,)
                         ).start()
                     elif keyword_index == 1:  # Custom wake word: "Hey_cumputer"
                         print("Custom wake word 'hey_computer10' detected!")
                         threading.Thread(target=start_recording).start()
-                        time.sleep(3)
+                        # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(1,)).start()
                     else:
                         print("Unknown wake word detected!", keyword_index)
@@ -627,16 +633,34 @@ def process_audio_async():
             transcript_lower = transcript.lower()
             if (
                 "computer" in transcript_lower or "lama" in transcript_lower
-            ):  # Adjust the threshold as needed
-                transcript_queue.put((transcript, keyword_index))
+            ) and keyword_index is not None:  # Adjust the threshold as needed
+                # Find the index of the keyword
+                if "computer" in transcript_lower:
+                    keyword_position = transcript_lower.index("computer")
+                else:
+                    keyword_position = transcript_lower.index("lama")
+
+                # Strip the part of the transcript before the keyword
+                stripped_transcript = transcript[
+                    keyword_position:
+                ]  # Keep from the keyword to the end
+
+                # Put the stripped transcript on the queue
+                transcript_queue.put((stripped_transcript, keyword_index))
+
+                # Start the audio saving thread
                 threading.Thread(
-                    target=save_audio(
-                        audio_data=audio_buffer_for_processing,
-                        keyword_index=keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="true_positive",
-                    )
+                    target=save_audio,
+                    args=(
+                        audio_buffer_for_processing,
+                        keyword_index,
+                        sample_rate,
+                        "true_positive",
+                    ),
                 ).start()
+
+            elif keyword_index is None:
+                transcript_queue.put((transcript, keyword_index))
             else:
                 threading.Thread(
                     target=save_audio(
@@ -711,7 +735,6 @@ def clean_transcript():
             else:
                 # Get current clipboard content
                 # original_clipboard_content = get_clipboard_content() or ""
-                pass
 
                 # Create the new clipboard content by appending the transcript
                 #                 new_clipboard_content = (
