@@ -119,9 +119,12 @@ def change_device():
         # Wait for the panel to appear
         # wait = WebDriverWait(driver, 10)
         time.sleep(2)
-        driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
+        try:
+            driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
+        except Exception as e:
+            print(f"Error while trying to play after reconnection: {e}")
         time.sleep(2)
-        driver.find_element(By.XPATH, '//*[text()="DESKTOP-6RQKD76"]').click()
+        driver.find_element(By.XPATH, '//*[text()="This web browser"]').click()
         # Click the panel
     except Exception as e:
         print(f"Error while trying to play after reconnection: {e}")

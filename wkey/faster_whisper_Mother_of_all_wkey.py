@@ -262,30 +262,75 @@ def start_recording():
 """
 
 
+def adjust_vad_threshold():
+    global audio_buffer  # Access the audio buffer to analyze current noise levels
+
+    # Calculate RMS value of the audio buffer to assess noise levels
+    if len(audio_buffer) > 0:
+        rms = np.sqrt(np.mean(audio_buffer**2))  # Calculate RMS
+    else:
+        rms = 0.0  # Default to 0 if no audio
+
+    # Define thresholds based on RMS values
+    if rms < 0.01:  # Low noise level
+        return 0.3  # Lower threshold for higher sensitivity
+    elif rms < 0.05:  # Moderate noise level
+        return 0.5  # Default threshold
+    elif rms < 0.1:  # High noise level
+        return 0.7  # Raise threshold for less sensitivity
+    else:  # Very high noise level
+        return 0.9  # Very high threshold to avoid false positives
+
+
 def stop_recording(keyword_index):
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
-    # this thread has to go if play_pause_pressed check is happening below!
-    threading.Thread(target=restore_volume_all()).start()
+    stop_delay_threshold = (
+        1.5  # Time to wait before stopping after no speech is detected
+    )
+    hard_stop_limit = 30  # Maximum recording time in seconds
+    silent_time = 0
+    recording_start_time = time.time()
 
-    if stream.active:
-        # Convert pre-recording buffer to numpy array
-        pre_recording_data = np.roll(
-            pre_recording_buffer, -buffer_index, axis=0
-        ).flatten()
+    while silent_time < stop_delay_threshold:
+        if stream.active:
+            # Get the last frames of audio for VAD analysis
+            audio_frame = audio_buffer[-1600:].tobytes()
+            pcm = np.frombuffer(audio_frame, dtype=np.int16)
 
-        # Convert main recording to numpy array
-        audio_buffer = np.concatenate(
-            [pre_recording_data, audio_buffer],
-            axis=0,
-        )
-        audio_buffer_queue.put((audio_buffer, keyword_index))
+            # Dynamically adjust VAD threshold based on conditions (e.g., noise level)
+            current_vad_threshold = (
+                adjust_vad_threshold()
+            )  # Custom function to adjust threshold
+            prediction = owwModel.predict(pcm)
+            vad_score = max(prediction.values())  # Get the highest VAD score
 
-        audio_buffer = np.array([], dtype="float32")
+            if vad_score > current_vad_threshold:
+                silent_time = 0  # Reset silent time if speech is detected
+                print("Voice detected, continuing recording...")
+            else:
+                silent_time += 0.1  # Increment silent time if no speech is detected
+
+            # Check if the hard stop limit is reached
+            if time.time() - recording_start_time > hard_stop_limit:
+                print("Hard stop limit reached, stopping recording.")
+                break
+
+            time.sleep(0.1)
+
+    pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
+
+    # Convert main recording to numpy array
+    audio_buffer = np.concatenate(
+        [pre_recording_data, audio_buffer],
+        axis=0,
+    )
+    audio_buffer_queue.put((audio_buffer, keyword_index))
 
     if play_pause_pressed:
         restore_volume_all()
         play_pause_pressed = False
+
     beep(STOP_BEEP)
     with recording_lock:
         recording = False
