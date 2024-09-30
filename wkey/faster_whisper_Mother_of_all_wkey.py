@@ -77,6 +77,10 @@ play_pause_pressed = False
 something_is_playing = False
 
 
+Hey_computer_STT_prompt = """ possible words in the transcript which will form a sentence : [open,start,menu,show,windows,search,desktop,minimize,everything,settings,lock,screen,the,computer,take,screenshot,capture,file,explorer,explore,files,run,dialog,command,task,manager,restore,all,calculator,notepad,word,excel,powerpoint,outlook,paint,console,powershell,edge,chrome,firefox,sound,control,panel,audio,volume,up,increase,down,decrease,play,media,music,stop,next,track,song,skip,previous,replay,device,disk,management,network,connections,system,properties,date,time,ping,google,check,internet,connection,flush,dns,reset,cache,restart,voicemeeter,set,display,fusion,monitor,profile,negative,invert]. there should be no puncuation in the output and all lower case.
+"""  # Optional
+
+
 p = pyaudio.PyAudio()
 wake_stream = p.open(
     format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=16000
@@ -105,7 +109,7 @@ audio_data_lock = threading.Lock()
 """
 
 
-PRE_RECORDING_DURATION = 2  # seconds
+PRE_RECORDING_DURATION = 3  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
@@ -285,15 +289,24 @@ def adjust_vad_threshold():
 def stop_recording(keyword_index):
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
-    stop_delay_threshold = (
-        1.5  # Time to wait before stopping after no speech is detected
-    )
-    hard_stop_limit = 30  # Maximum recording time in seconds
+    hard_stop_limit = 15  # Maximum recording time in seconds
     silent_time = 0
     recording_start_time = time.time()
 
+    if keyword_index == 1:
+        stop_delay_threshold = (
+            1  # Time to wait before stopping after no speech is detected
+        )
+    else:
+        stop_delay_threshold = (
+            2  # Time to wait before stopping after no speech is detected
+        )
+
     while silent_time < stop_delay_threshold:
         if stream.active:
+            if isinstance(audio_buffer, list):
+                audio_buffer = np.array(audio_buffer)
+
             # Get the last frames of audio for VAD analysis
             audio_frame = audio_buffer[-1600:].tobytes()
             pcm = np.frombuffer(audio_frame, dtype=np.int16)
@@ -454,8 +467,8 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer9.onnx",
 ]
 
 # Load the OpenWakeWord models
@@ -466,7 +479,7 @@ CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
     0: 0.1,  # Threshold for "hey_lama"
-    1: 0.3,  # Threshold for "hey_computer10"
+    1: 0.1,  # Threshold for "hey_computer10"
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -521,15 +534,15 @@ def listen_for_wake_word():
                 ):
                     last_detection_time = current_time  # Update the last detection time
 
-                    if keyword_index == 0:  # Custom wake word: "Hey Llama"
-                        print("Custom wake word 'hey_lama' detected!")
+                    if keyword_index == 0:  # Custom wake word: "hey_llama2 "
+                        print("Custom wake word 'hey_llama2' detected!")
                         threading.Thread(target=start_recording).start()
                         time.sleep(3)
                         threading.Thread(
                             target=stop_recording, args=(keyword_index,)
                         ).start()
-                    elif keyword_index == 1:  # Custom wake word: "Hey_cumputer"
-                        print("Custom wake word 'hey_computer10' detected!")
+                    elif keyword_index == 1:  # Custom wake word: "hey_computer9"
+                        print("Custom wake word 'hey_computer9' detected!")
                         threading.Thread(target=start_recording).start()
                         # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(1,)).start()
@@ -586,7 +599,12 @@ api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=api_key)
 
 
-def transcribe_with_groq(audio_buffer):
+def transcribe_with_groq(audio_buffer, keyword_index):
+    if keyword_index == 1:
+        prompt = Hey_computer_STT_prompt
+    else:
+        prompt = None
+
     try:
         # Convert the audio buffer (NumPy array) to a byte stream in WAV format
         byte_io = io.BytesIO()
@@ -597,7 +615,7 @@ def transcribe_with_groq(audio_buffer):
         transcription = client.audio.transcriptions.create(
             file=("audio_buffer.wav", byte_io.read()),  # Use in-memory byte stream
             model=groq_model,
-            prompt="Specify context or spelling",
+            prompt=prompt,
             response_format="json",
             language="en",
             temperature=0.0,
@@ -625,7 +643,9 @@ def process_audio_async():
             if audio_buffer_for_processing is None:
                 break
             try:
-                transcript = transcribe_with_groq(audio_buffer_for_processing)
+                transcript = transcribe_with_groq(
+                    audio_buffer_for_processing, keyword_index
+                )
             except groq.RateLimitError:
                 print("Groq API rate limit reached, switching to local transcription.")
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
@@ -654,6 +674,7 @@ def process_audio_async():
                     args=(
                         audio_buffer_for_processing,
                         keyword_index,
+                        "train",
                         sample_rate,
                         "true_positive",
                     ),
@@ -663,12 +684,14 @@ def process_audio_async():
                 transcript_queue.put((transcript, keyword_index))
             else:
                 threading.Thread(
-                    target=save_audio(
-                        audio_data=audio_buffer_for_processing,
-                        keyword_index=keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="false_positive",
-                    )
+                    target=save_audio,
+                    args=(
+                        audio_buffer_for_processing,
+                        keyword_index,
+                        "train",
+                        sample_rate,
+                        "false_positive",
+                    ),
                 ).start()
             print(transcript)
         except queue.Empty:
