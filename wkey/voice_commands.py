@@ -365,8 +365,8 @@ COMMAND_MAPPINGS = {
     "flush dns": ["flush dns", "reset dns cache"],
     # Add more as needed Play, pause, media.
     "restart voicemeeter": [
-        "restart voicemeter",
-        " hey computer reset voicemeter",
+        "restart voice meter",
+        "set voice meter",
     ],
     "load display fusion profile": [
         "display fusion",
@@ -521,28 +521,3 @@ def execute_command(transcript):
             print(f"No matching command found for: {cmd}")
 
     return True
-
-
-"""
-# Invert COMMAND_MAPPINGS to map each phrase to its action
-PHRASE_TO_ACTION = {}
-for action_key, phrases in COMMAND_MAPPINGS.items():
-    for phrase in phrases:
-        PHRASE_TO_ACTION[phrase] = ACTIONS[action_key]
-
-
-def execute_command(transcript):
-    # Trim leading and trailing spaces
-    trimmed_transcript = transcript.strip().lower()
-    
-    # Convert the transcript to lowercase for command matching
-    command = re.sub(r'[^a-zA-Z0-9\s]', '', trimmed_transcript)
-
-    action = PHRASE_TO_ACTION.get(command)
-    if action:
-        action()  # Execute the corresponding action
-        return True
-    else:
-        return transcript
-
-"""

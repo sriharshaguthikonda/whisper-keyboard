@@ -1,199 +1,129 @@
 import os
-import pyaudio
+import soundfile as sf
 import numpy as np
+import csv
 from openwakeword.model import Model
-import argparse
-from collections import defaultdict
-import signal
-import sys
+from tkinter import Tk, filedialog
 
-# Hardcoded model directory
-MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"  # Update this path
+import winsound
 
-# Parse input arguments
-parser = argparse.ArgumentParser()
-parser.add_argument(
-    "--chunk_size",
-    help="How much audio (in number of samples) to predict on at once",
-    type=int,
-    default=1280,
-    required=False,
-)
-parser.add_argument(
-    "--model_dir",
-    help="The directory containing models to load",
-    type=str,
-    default=MODEL_DIR,  # Use the hardcoded directory
-    required=False,
-)
-parser.add_argument(
-    "--inference_framework",
-    help="The inference framework to use (either 'onnx' or 'tflite')",
-    type=str,
-    default="onnx",
-    required=False,
-)
-
-args = parser.parse_args()
-
-# Get all .tflite and .onnx model paths in the specified directory
+# Load models (same as before)
+MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"
 model_paths = [
-    os.path.join(args.model_dir, f)
-    for f in os.listdir(args.model_dir)
+    os.path.join(MODEL_DIR, f)
+    for f in os.listdir(MODEL_DIR)
     if f.endswith(".onnx") or f.endswith(".tflite")
 ]
+owwModel = Model(wakeword_models=model_paths, inference_framework="onnx")
 
-# Get microphone stream
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-RATE = 16000
-CHUNK = args.chunk_size
-audio = pyaudio.PyAudio()
-mic_stream = audio.open(
-    format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK
-)
-
-# Load pre-trained openwakeword models
-owwModel = Model(
-    wakeword_models=model_paths, inference_framework=args.inference_framework
-)
-
-n_models = len(owwModel.models.keys())
-
-# Initialize highest score tracker and wakeword count dictionary
-highest_score = 0
-highest_model = ""
-wakeword_count = defaultdict(int)  # Dictionary to count detections for each model
+# CSV logging functionality (same as before)
+CSV_LOG_FILE = "llama_wakeword_detection_log.csv"
 
 
-def signal_handler(sig, frame):
-    """Handle Ctrl+C to log and print activations at the end."""
-    print("\n\n")
-    print("#" * 100)
-    print("Wakeword Detection Summary:")
-    print("#" * 100)
+def read_existing_data():
+    data = {}
+    if os.path.exists(CSV_LOG_FILE):
+        with open(CSV_LOG_FILE, "r", newline="") as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                model_name = row["model_name"]
+                data[model_name] = {
+                    "false_positive": int(row["false_positive"]),
+                    "true_positive": int(row["true_positive"]),
+                }
+    return data
 
-    # Sort wake words by detection count and print the results
-    sorted_wakewords = sorted(
-        wakeword_count.items(), key=lambda item: item[1], reverse=True
+
+def write_data_to_csv(data):
+    with open(CSV_LOG_FILE, "w", newline="") as csvfile:
+        fieldnames = ["model_name", "false_positive", "true_positive"]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for model_name, values in data.items():
+            writer.writerow(
+                {
+                    "model_name": model_name,
+                    "false_positive": values["false_positive"],
+                    "true_positive": values["true_positive"],
+                }
+            )
+
+
+def log_to_csv(model_name, detection_status, test_mode):
+    data = read_existing_data()
+    if model_name not in data:
+        data[model_name] = {
+            "false_positive": 0,
+            "true_positive": 0,
+        }
+
+    if test_mode == "false_positive" and detection_status == "Wakeword Detected!":
+        data[model_name]["false_positive"] += 1
+    elif test_mode == "true_positive" and detection_status == "Wakeword Detected!":
+        data[model_name]["true_positive"] += 1
+
+    write_data_to_csv(data)
+
+
+def process_audio_files(audio_file_paths, chunk_size=1280, test_mode="true_positive"):
+    """Process each audio file and run wakeword detection."""
+    for file_path in audio_file_paths:
+        print(f"Processing file: {file_path}")
+        # Read audio file using soundfile (for 16-bit audio)
+        audio_data, sample_rate = sf.read(file_path, dtype="int16")
+
+        # Ensure the sample rate matches the model's input requirement
+        assert sample_rate == 16000, "Audio file must be at 16kHz sample rate!"
+
+        # Break audio data into chunks and feed them to the model
+        for start_idx in range(0, len(audio_data), chunk_size):
+            audio_chunk = audio_data[start_idx : start_idx + chunk_size]
+
+            # Ensure the chunk is exactly the size needed (pad if necessary)
+            if len(audio_chunk) < chunk_size:
+                audio_chunk = np.pad(
+                    audio_chunk, (0, chunk_size - len(audio_chunk)), mode="constant"
+                )
+
+            # Run the model's prediction on the audio chunk
+            prediction = owwModel.predict(audio_chunk)
+
+            # Log the results for each model
+            for model_name in owwModel.models:
+                score = owwModel.prediction_buffer[model_name][-1]  # Get the last score
+                detection_status = (
+                    "Wakeword Detected!" if score > 0.1 else "No wakeword"
+                )
+                log_to_csv(model_name, detection_status, test_mode)
+
+
+def select_audio_files():
+    """Open a dialog box to select audio files."""
+    root = Tk()
+    root.withdraw()  # Hide the root window
+    # Allow the user to select multiple files
+    audio_file_paths = filedialog.askopenfilenames(
+        title="Select Audio Files", filetypes=[("WAV files", "*.wav")]
     )
-
-    for model, count in sorted_wakewords:
-        print(f"{model}: {count} detections")
-
-    # Exit the program gracefully
-    sys.exit(0)
-
-
-# Register signal handler for Ctrl+C
-signal.signal(signal.SIGINT, signal_handler)
+    return list(audio_file_paths)
 
 
 if __name__ == "__main__":
-    # Generate output string header
-    print("\n\n")
-    print("#" * 100)
-    print(
-        "Listening for wakewords... Press Ctrl+C to stop and see activations summary."
-    )
-    print("#" * 100)
-    print("\n" * (n_models * 3))
+    #    test_mode = "true_positive"  # You can change this to "false_positive"
+    test_mode = "false_positive"  # You can change this to "false_positive"
 
-    while True:
-        try:
-            # Get audio
-            audio = np.frombuffer(mic_stream.read(CHUNK), dtype=np.int16)
+    # Open a dialog to select audio files
+    audio_file_paths = select_audio_files()
 
-            # Feed to openWakeWord model
-            prediction = owwModel.predict(audio)
+    if audio_file_paths:
+        # Process the selected audio files
+        process_audio_files(audio_file_paths, chunk_size=1280, test_mode=test_mode)
 
-            # Column titles
-            n_spaces = 16
-            output_string_header = """
-                Model Name         | Score | Wakeword Status
-                --------------------------------------
-                """
+    print(f"Testing completed in {test_mode} mode. Log updated.")
 
-            for mdl in owwModel.prediction_buffer.keys():
-                # Add scores in formatted table
-                scores = list(owwModel.prediction_buffer[mdl])
-                curr_score = format(scores[-1], ".20f").replace("-", "")
-                score_value = scores[-1]
+    # Frequency (Hz) and duration (ms)
+    frequency = 1000  # Set Frequency To 1000 Hertz
+    duration = 2000  # Set Duration To 500 ms == 0.5 second
 
-                output_string_header += f"""{mdl}{" "*(n_spaces - len(mdl))}   | {curr_score[0:5]} | {"--"+" "*20 if score_value <= 0.1 else "Wakeword Detected!"}
-                """
-
-                # Increment count if wake word detected (score > 0.5)
-                if score_value > 0.5:
-                    wakeword_count[mdl] += 1
-
-            # Print results table
-            print("\033[F" * (4 * n_models + 1))
-            print(output_string_header, "                             ", end="\r")
-
-        except Exception as e:
-            # Handle audio input issues or other exceptions gracefully
-            print(f"Error: {e}")
-
-
-"""
-
-
-####################################################################################################
-Wakeword Detection Summary:
-####################################################################################################
-
-false positives
-
-
-hey_computer7: 99 detections
-hey_computer6: 45 detections
-heycomputer5: 43 detections
-hey_computer10: 37 detections
-hey_llama: 27 detections
-hey_lama: 21 detections
-hey_computer9: 20 detections
-hey_cumputer: 14 detections
-heycomputer3: 14 detections
-heycomputer4: 13 detections
-hey_llama2: 12 detections
-heylama: 11 detections
-hey_computer: 7 detections
-heycomputer: 6 detections
-heycomputer2: 6 detections
-hey_jarvis_v0.1: 5 detections
-hey_computer_personal: 4 detections
-hey_google: 2 detections
-hey_computer8: 1 detections
-hey_computer11: 1 detections
-
-"""
-
-
-"""
-true positives
-
-hey_computer6: 2207 detections
-hey_computer10: 2019 detections
-hey_computer7: 1306 detections
-hey_computer9: 1164 detections
-heycomputer4: 951 detections
-heycomputer5: 947 detections
-heycomputer3: 895 detections
-hey_computer8: 639 detections
-hey_cumputer: 599 detections
-heycomputer2: 183 detections
-heycomputer: 144 detections
-hey_computer (2): 47 detections
-hey_computer: 35 detections
-hey_llama: 30 detections
-hey_llama2: 28 detections
-hey_computer_personal: 24 detections
-hey_lama: 20 detections
-hey_computer11: 14 detections
-heycomputer1: 13 detections
-hey_mycroft_v0.1: 6 detections
-heylama: 2 detections
-
-
-"""
+    # Make the beep sound
+    winsound.Beep(frequency, duration)
