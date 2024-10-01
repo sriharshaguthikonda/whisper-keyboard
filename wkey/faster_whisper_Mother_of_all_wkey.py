@@ -33,7 +33,12 @@ from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 
 from faster_whisper import WhisperModel
-from voice_commands import execute_command, start_driver, driver  # , driver_pid
+from voice_commands import (
+    execute_command_fuzzy,
+    execute_command_run_with_tool,
+    start_driver,
+    driver,
+)  # , driver_pid
 from pause_all import is_sound_playing_windows_processing
 
 from ctypes import cast, POINTER
@@ -47,6 +52,9 @@ import pvporcupine
 from pvporcupine import KEYWORD_PATHS
 
 from openwakeword.model import Model
+
+
+import tkinter as tk
 
 
 # import clipboard
@@ -77,7 +85,10 @@ play_pause_pressed = False
 something_is_playing = False
 
 
-Hey_computer_STT_prompt = """ possible words in the transcript which will form a sentence : [open,start,menu,show,windows,search,desktop,minimize,everything,settings,lock,screen,the,computer,take,screenshot,capture,file,explorer,explore,files,run,dialog,command,task,manager,restore,all,calculator,notepad,word,excel,powerpoint,outlook,paint,console,powershell,edge,chrome,firefox,sound,control,panel,audio,volume,up,increase,down,decrease,play,media,music,stop,next,track,song,skip,previous,replay,device,disk,management,network,connections,system,properties,date,time,ping,google,check,internet,connection,flush,dns,reset,cache,restart,voicemeeter,set,display,fusion,monitor,profile,negative,invert]. there should be no puncuation in the output and all lower case.
+Hey_computer_STT_prompt = """ 
+1. possible words in the transcript which will form a sentence : [open start menu show windows search desktop minimize everything settings lock screen the computer take screenshot capture file explorer explore files run dialog command task manager restore all calculator notepad word excel powerpoint outlook paint console powershell edge chrome firefox sound control panel audio volume up increase down decrease play media music stop next track song skip previous replay device disk management network connections system properties date time ping google check internet connection flush dns reset cache restart voicemeeter set display fusion monitor profile negative invert]. 
+
+2. there should be no puncuation in the output and all lower case.
 """  # Optional
 
 
@@ -109,7 +120,7 @@ audio_data_lock = threading.Lock()
 """
 
 
-PRE_RECORDING_DURATION = 3  # seconds
+PRE_RECORDING_DURATION = 2  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
@@ -733,20 +744,27 @@ def beep(sound):
 """
 
 
+# Function to get clipboard content using Tkinter
 def get_clipboard_content():
     try:
-        content = klembord.get("text/plain") or ""
+        r = tk.Tk()
+        r.withdraw()
+        content = r.clipboard_get()
+        r.destroy()
         return content
-    except Exception as e:
+    except tk.TclError:
         return None
 
 
-# Function to set clipboard content using klembord
+# Function to set clipboard content using Tkinter
 def set_clipboard_content(text):
     try:
-        # Set the clipboard content as plain text using klembord
-        text_str = str(text)
-        klembord.set_text(text_str)
+        r = tk.Tk()
+        r.withdraw()
+        r.clipboard_clear()
+        r.clipboard_append(text)
+        r.update()  # Now it stays on the clipboard after the window is closed
+        r.destroy()
     except Exception as e:
         print(f"Error setting clipboard content: {e}")
 
@@ -757,23 +775,14 @@ def clean_transcript():
             transcript, keyword_index = transcript_queue.get()
 
             if keyword_index == 1:
-                # Execute command when keyword_index is 4
-                threading.Thread(target=execute_command, args=(transcript,)).start()
+                if not execute_command_run_with_tool(transcript):
+                    execute_command_fuzzy(transcript)
+                else:
+                    pass
             else:
-                # Get current clipboard content
-                # original_clipboard_content = get_clipboard_content() or ""
-
-                # Create the new clipboard content by appending the transcript
-                #                 new_clipboard_content = (
-                #                     f"{original_clipboard_content}\n{transcript}".strip())
-
-                # Set the clipboard to the new content
                 set_clipboard_content(transcript)
-
-                # Simulate paste using pyautogui
+                time.sleep(0.5)  # Ensure clipboard is updated
                 pyautogui.hotkey("ctrl", "v")
-
-                # Beep to signal paste success
                 beep(PASTE_BEEP)
                 print("Transcript pasted")
 
