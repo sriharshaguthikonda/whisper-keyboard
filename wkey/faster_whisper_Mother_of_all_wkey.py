@@ -56,13 +56,15 @@ from openwakeword.model import Model
 
 import tkinter as tk
 
+import torch
+from speechbrain.pretrained import SepformerSeparation as separator
 
-# import clipboard
-# import win32clipboard as clipboard
-import klembord
-
-# Initialize klembord for clipboard operations
-klembord.init()
+# Load speech enhancement model (named speechbrain_model for clarity)
+speechbrain_model = separator.from_hparams(
+    source="speechbrain/sepformer-wham16k-enhancement",
+    savedir="pretrained_models/sepformer-wham16k-enhancement",
+    run_opts={"device": "cuda"},
+)
 
 
 # Initial setup and global variables
@@ -297,6 +299,16 @@ def adjust_vad_threshold():
         return 0.9  # Very high threshold to avoid false positives
 
 
+import torch
+
+# Load speech enhancement model (named speechbrain_model for clarity)
+speechbrain_model = separator.from_hparams(
+    source="speechbrain/sepformer-wham16k-enhancement",
+    savedir="pretrained_models/sepformer-wham16k-enhancement",
+    run_opts={"device": "cuda"},
+)
+
+
 def stop_recording(keyword_index):
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
@@ -312,7 +324,6 @@ def stop_recording(keyword_index):
         stop_delay_threshold = (
             2  # Time to wait before stopping after no speech is detected
         )
-
     while silent_time < stop_delay_threshold:
         if stream.active:
             if isinstance(audio_buffer, list):
@@ -345,16 +356,24 @@ def stop_recording(keyword_index):
     pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
 
     # Convert main recording to numpy array
-    audio_buffer = np.concatenate(
-        [pre_recording_data, audio_buffer],
-        axis=0,
-    )
-    audio_buffer_queue.put((audio_buffer, keyword_index))
+    audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
 
-    # this thread has to go if play_pause_pressed check is happening below!
-    threading.Thread(target=restore_volume_all()).start()
+    # Convert audio buffer to tensor for the model
+    mic_tensor = torch.tensor(audio_buffer, dtype=torch.float32)
 
-    # clearing the audio buffer - if not it will cause concat transcripts
+    # Apply speech enhancement using the speechbrain_model
+    enhanced_sources = speechbrain_model.separate_batch(mic_tensor.unsqueeze(0))
+
+    # Replace the original audio buffer with the enhanced output (taking first source)
+    enhanced_audio = enhanced_sources[:, :, 0].detach().cpu().numpy().flatten()
+
+    # Push the enhanced audio buffer to the queue
+    audio_buffer_queue.put((enhanced_audio, keyword_index))
+
+    # Start a thread to restore volume (asynchronous task)
+    threading.Thread(target=restore_volume_all).start()
+
+    # Clear the audio buffer to prevent concat issues
     audio_buffer = np.array([], dtype="float32")
 
     if play_pause_pressed:
@@ -479,7 +498,7 @@ def monitor_microphone_availability():
 # Hardcoded model paths
 MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer9.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
 ]
 
 # Load the OpenWakeWord models
@@ -494,7 +513,7 @@ CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
     0: 0.1,  # Threshold for "hey_lama"
-    1: 0.1,  # Threshold for "hey_computer10"
+    1: 0.3,  # Threshold for "hey_computer10"
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -710,7 +729,7 @@ def process_audio_async():
                         "false_positive",
                     ),
                 ).start()
-            print(transcript)
+            print("\033[1;35m" + transcript + "\033[0m")
         except queue.Empty:
             continue
         except Exception as e:

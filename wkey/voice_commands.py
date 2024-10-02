@@ -1,6 +1,10 @@
 # voice_commands.py
 import os
 import pyautogui
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+from comtypes import CLSCTX_ALL
+
+
 import re
 import string
 from fuzzywuzzy import process
@@ -12,6 +16,8 @@ from selenium.webdriver.edge.options import Options
 from selenium.common.exceptions import WebDriverException, SessionNotCreatedException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
+
+
 import time
 import subprocess
 
@@ -53,7 +59,10 @@ options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your prof
 # Add remote allow origins
 options.add_argument("--remote-allow-origins=*")
 
-# Optional: Add headless and disable GPU for background processing
+# Start minimized
+options.add_argument("--start-minimized")
+
+# Optional: Run in headless mode (no GUI)
 # options.add_argument("--headless")
 # options.add_argument("--disable-gpu")
 
@@ -599,12 +608,36 @@ def open_sound_control_panel():
     os.system("control mmsys.cpl")
 
 
-def volume_up():
-    pyautogui.press("volumeup")
+def get_volume():
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    volume = interface.QueryInterface(IAudioEndpointVolume)
+    return volume
 
 
-def volume_down():
-    pyautogui.press("volumedown")
+def volume_up(steps=1):
+    volume = get_volume()
+    current_volume = volume.GetMasterVolumeLevelScalar()
+    new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
+    volume.SetMasterVolumeLevelScalar(new_volume, None)
+    print(f"Volume increased to {new_volume * 100:.0f}%")
+
+
+def volume_down(steps=1):
+    volume = get_volume()
+    current_volume = volume.GetMasterVolumeLevelScalar()
+    new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
+    volume.SetMasterVolumeLevelScalar(new_volume, None)
+    print(f"Volume decreased to {new_volume * 100:.0f}%")
+
+
+def set_volume(level):
+    if 0.0 <= level <= 1.0:
+        volume = get_volume()
+        volume.SetMasterVolumeLevelScalar(level, None)
+        print(f"Volume set to {level * 100:.0f}%")
+    else:
+        print("Volume level must be between 0.0 and 1.0")
 
 
 def mute_volume():
@@ -1027,16 +1060,55 @@ tools = [
         "type": "function",
         "function": {
             "name": "volume_up",
-            "description": "Increase the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Increase the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to increase the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
         "type": "function",
         "function": {
             "name": "volume_down",
-            "description": "Decrease the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Decrease the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to decrease the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_volume",
+            "description": "Set the system volume to a specific level",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "number",
+                        "description": "The volume level to set (between 0.0 and 1.0)",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    }
+                },
+                "required": ["level"],
+            },
         },
     },
     {
@@ -1054,12 +1126,7 @@ tools = [
             "description": "Play media; optionally specify a song",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "song": {
-                        "type": "string",
-                        "description": "The name of the song or media file to play",
-                    }
-                },
+                "properties": {},
                 "required": [],
             },
         },
