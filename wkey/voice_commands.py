@@ -1317,8 +1317,10 @@ def execute_command_run_with_tool(query):
         tools_messages = [
             {
                 "role": "system",
-                "content": """1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
-                2. if there is "and" in the query, then you will have to select two functions""",
+                "content": """
+                1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
+                2. if there is "and" in the query, then you will have to select two functions
+                """,
             },
             {
                 "role": "user",
