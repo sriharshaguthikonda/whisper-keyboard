@@ -109,8 +109,8 @@ def select_audio_files():
 
 
 if __name__ == "__main__":
-    #    test_mode = "true_positive"  # You can change this to "false_positive"
-    test_mode = "false_positive"  # You can change this to "false_positive"
+    test_mode = "true_positive"  # You can change this to "false_positive"
+    #     test_mode = "false_positive"  # You can change this to "false_positive"
 
     # Open a dialog to select audio files
     audio_file_paths = select_audio_files()

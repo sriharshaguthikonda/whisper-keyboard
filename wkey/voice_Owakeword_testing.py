@@ -124,7 +124,7 @@ if __name__ == "__main__":
                 """
 
                 # Increment count if wake word detected (score > 0.5)
-                if score_value > 0.5:
+                if score_value > 0.1:
                     wakeword_count[mdl] += 1
 
             # Print results table

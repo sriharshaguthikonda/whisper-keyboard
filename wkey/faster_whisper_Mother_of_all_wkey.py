@@ -9,7 +9,6 @@
 """
 
 import os
-import psutil
 import io
 import time
 import threading
@@ -26,7 +25,6 @@ import groq
 from groq import Groq
 
 import queue
-import asyncio
 
 
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
@@ -46,24 +44,12 @@ from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 
-from vosk import Model, KaldiRecognizer
 import pyaudio
-import pvporcupine
-from pvporcupine import KEYWORD_PATHS
+
 
 from openwakeword.model import Model
 
-
-import tkinter as tk
-
-
-# import clipboard
-# import win32clipboard as clipboard
-import klembord
-
-# Initialize klembord for clipboard operations
-klembord.init()
-
+import subprocess
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -306,7 +292,7 @@ def stop_recording(keyword_index):
 
     if keyword_index == 1:
         stop_delay_threshold = (
-            1  # Time to wait before stopping after no speech is detected
+            0.5  # Time to wait before stopping after no speech is detected
         )
     else:
         stop_delay_threshold = (
@@ -478,8 +464,8 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer9.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
 ]
 
 # Load the OpenWakeWord models
@@ -494,7 +480,7 @@ CHUNK = 1280  # Optimal chunk size for OpenWakeWord
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
     0: 0.1,  # Threshold for "hey_lama"
-    1: 0.1,  # Threshold for "hey_computer10"
+    1: 0.3,  # Threshold for "hey_computer10"
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -550,14 +536,14 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        print("Custom wake word 'hey_llama2' detected!")
+                        print("Custom wake word 'hey_llama' detected!")
                         threading.Thread(target=start_recording).start()
                         time.sleep(3)
                         threading.Thread(
                             target=stop_recording, args=(keyword_index,)
                         ).start()
-                    elif keyword_index == 1:  # Custom wake word: "hey_computer9"
-                        print("Custom wake word 'hey_computer9' detected!")
+                    elif keyword_index == 1:  # Custom wake word: "hey_computer10"
+                        print("Custom wake word 'hey_computer10' detected!")
                         threading.Thread(target=start_recording).start()
                         # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(1,)).start()
@@ -744,29 +730,14 @@ def beep(sound):
 """
 
 
-# Function to get clipboard content using Tkinter
-def get_clipboard_content():
-    try:
-        r = tk.Tk()
-        r.withdraw()
-        content = r.clipboard_get()
-        r.destroy()
-        return content
-    except tk.TclError:
-        return None
-
-
-# Function to set clipboard content using Tkinter
 def set_clipboard_content(text):
-    try:
-        r = tk.Tk()
-        r.withdraw()
-        r.clipboard_clear()
-        r.clipboard_append(text)
-        r.update()  # Now it stays on the clipboard after the window is closed
-        r.destroy()
-    except Exception as e:
-        print(f"Error setting clipboard content: {e}")
+    subprocess.run("clip", text=True, input=text)
+
+
+def get_clipboard_content():
+    return subprocess.run(
+        ["powershell", "-command", "Get-Clipboard"], capture_output=True, text=True
+    ).stdout.strip()
 
 
 def clean_transcript():

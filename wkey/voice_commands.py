@@ -29,6 +29,9 @@ from pydub.playback import play
 import queue
 
 
+import tkinter as tk
+
+
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=api_key)
@@ -155,7 +158,7 @@ def change_device():
 
 
 # Control playback
-def play_song():
+def play_music():
     try:
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
@@ -453,7 +456,7 @@ ACTIONS = {
     "volume down": lambda: pyautogui.press("volumedown"),
     "mute volume": lambda: pyautogui.press("volumemute"),
     # Media Controls
-    "play media": play_song,
+    "play media": play_music,
     "stop media": pause_song,
     "next track": next_track,
     "previous track": previous_track,
@@ -688,6 +691,79 @@ def open_negative_screen():
 
 
 """
+######## ########  ######  
+   ##       ##    ##    ## 
+   ##       ##    ##       
+   ##       ##     ######  
+   ##       ##          ## 
+   ##       ##    ##    ## 
+   ##       ##     ######  
+"""
+
+
+# Queue for sentences
+TTS_queue = queue.Queue()
+
+
+# Function to process the queue
+def process_TTS_queue(TTS_queue):
+    while True:
+        sentence = TTS_queue.get()
+        if sentence is None:  # Sentinel value to stop the worker
+            break
+        asyncio.run(text_to_speech(sentence, speed=1.5))
+        TTS_queue.task_done()
+
+
+threading.Thread(target=process_TTS_queue, args=(TTS_queue,), daemon=True).start()
+
+
+# Function to process the queue
+def process_TTS_Audio_play_queue(TTS_Audio_play_queue):
+    while True:
+        audio_fp = TTS_Audio_play_queue.get()
+        audio_fp.seek(0)
+
+        sound = AudioSegment.from_file(audio_fp, format="mp3")
+
+        # Play the adjusted audio
+        play(sound)
+        TTS_Audio_play_queue.task_done()
+
+
+# Queue for sentences
+TTS_Audio_play_queue = queue.Queue()
+
+# Start the worker thread
+threading.Thread(
+    target=process_TTS_Audio_play_queue, args=(TTS_Audio_play_queue,), daemon=True
+).start()
+
+
+# Function to convert text to speech using edge-tts and play using pydub with speed adjustment
+async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
+    try:
+        rate = "+" + str(int((speed - 1) * 100)) + "%"
+        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        audio_bytes = b""
+
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_bytes += chunk["data"]
+
+        if not audio_bytes:
+            raise ValueError("No audio received. verify that your params are correct.")
+
+        audio_fp = io.BytesIO(audio_bytes)
+        audio_fp.seek(0)
+
+        TTS_Audio_play_queue.put(audio_fp)
+
+    except Exception as e:
+        print(f"Error occurred during playback: {e}")
+
+
+"""
 ########   #######  ##     ## ######## ######## 
 ##     ## ##     ## ##     ##    ##    ##       
 ##     ## ##     ## ##     ##    ##    ##       
@@ -734,82 +810,64 @@ def route_query(query):
 
 def run_general(query):
     """Use the general model to answer the query since no tool is needed"""
-    response = client.chat.completions.create(
-        model=GENERAL_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": query},
-        ],
-    )
-    return response.choices[0].message.content
-
-
-"""
-######## ########  ######  
-   ##       ##    ##    ## 
-   ##       ##    ##       
-   ##       ##     ######  
-   ##       ##          ## 
-   ##       ##    ##    ## 
-   ##       ##     ######  
-"""
-
-
-# Function to process the queue
-def process_TTS_queue(TTS_queue):
-    while True:
-        sentence = TTS_queue.get()
-        if sentence is None:  # Sentinel value to stop the worker
-            break
-        asyncio.run(text_to_speech(sentence, speed=1.2))
-        TTS_queue.task_done()
-
-
-# Function to process the queue
-def process_TTS_Audio_play_queue(TTS_Audio_play_queue):
-    while True:
-        audio_fp = TTS_Audio_play_queue.get()
-        audio_fp.seek(0)
-
-        sound = AudioSegment.from_file(audio_fp, format="mp3")
-
-        # Play the adjusted audio
-        play(sound)
-        TTS_Audio_play_queue.task_done()
-
-
-# Queue for sentences
-TTS_Audio_play_queue = queue.Queue()
-
-# Start the worker thread
-threading.Thread(
-    target=process_TTS_Audio_play_queue, args=(TTS_Audio_play_queue,), daemon=True
-).start()
-
-
-# Function to convert text to speech using edge-tts and play using pydub with speed adjustment
-async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
+    response = ""
     try:
-        rate = "+" + str(int((speed - 1) * 100)) + "%"
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        audio_bytes = b""
-
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_bytes += chunk["data"]
-
-        if not audio_bytes:
-            raise ValueError(
-                "No audio was received. Please verify that your parameters are correct."
-            )
-
-        audio_fp = io.BytesIO(audio_bytes)
-        audio_fp.seek(0)
-
-        TTS_Audio_play_queue.put(audio_fp)
-
+        stream = client.chat.completions.create(
+            model=GENERAL_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": query},
+            ],
+            stream=True,
+        )
     except Exception as e:
-        print(f"Error occurred during playback: {e}")
+        if "Groq API limit reached" in str(e):
+            stream = ollama_chat(
+                model=GENERAL_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": query},
+                ],
+                stream=True,
+            )
+            response = ollama_chat(
+                user_input, system_message, ollama_model, conversation_history
+            )
+        else:
+            raise e
+
+    for chunk in stream:
+        print(chunk.choices[0].delta.content, end="")
+        chunk_text = chunk.choices[0].delta.content
+        response = f"{response}{chunk_text}"
+
+        #        if any(delimiter in response for delimiter in ".;!?"):
+        if any(delimiter in response for delimiter in ".:!?"):
+            response = response[1:]  # Remove the first character
+            sentence, response = split_sentence(response)
+            TTS_queue.put(sentence)
+
+
+# Define the function to split sentences with the condition
+def split_sentence(response):
+    delimiters = r"[.,;!?]"  # Delimiters for splitting
+    # Split the response based on delimiters
+    sentences = re.split(delimiters, response, maxsplit=1)
+
+    # If we have more than one part after the split
+    if len(sentences) > 1:
+        sentence, remaining_response = sentences[0], sentences[1]
+
+        # Check if the sentence has 10 words or more
+        if len(sentence.split()) < 15:
+            # If the sentence is too short, don't split
+            sentence = sentence + remaining_response
+            remaining_response = ""
+    else:
+        # No split happened, just return the original response
+        sentence, remaining_response = sentences[0], ""
+
+    return sentence.strip(), remaining_response.strip()
 
 
 """
@@ -1050,7 +1108,7 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "play_song",
+            "name": "play_music",
             "description": "Play media; optionally specify a song",
             "parameters": {
                 "type": "object",
@@ -1253,16 +1311,14 @@ def execute_command_run_with_tool(query):
     # Step 2: Handle the result of routing
     if route == "NO TOOL":
         # Use the general model if no tools are needed
-        response = run_general(query)
-        asyncio.run(
-            text_to_speech(text=response)
-        )  # Asynchronously call text-to-speech with the response
+        run_general(query)
     else:
         # Step 3: Handle tool usage
         tools_messages = [
             {
                 "role": "system",
-                "content": "you are a tool selection assistant. pick the best possible tool among tools for the given query",
+                "content": """1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
+                2. if there is "and" in the query, then you will have to select two functions""",
             },
             {
                 "role": "user",
@@ -1294,6 +1350,7 @@ def execute_command_run_with_tool(query):
                         # Call the function with the arguments
                         result = globals()[function_name](**function_args)
                         print(f"Executed {function_name} with result: {result}")
+                        # visual_feedback(function_name, result)
                     except Exception as e:
                         print(f"Error executing function {function_name}: {e}")
                 else:
@@ -1302,6 +1359,24 @@ def execute_command_run_with_tool(query):
             print("No tool calls were made by the model.")
 
     return True  # Function executed successfully
+
+
+def visual_feedback(function_name, result):
+    # Visual feedback
+    root = tk.Tk()
+    root.title("Function Execution Result")
+
+    # Set window size
+    root.geometry("800x600")
+
+    label = tk.Label(
+        root,
+        text=f"Executed {function_name} with result: {result}",
+        font=("Helvetica", 24),
+    )
+    label.pack(pady=200)
+
+    root.mainloop()
 
 
 """
