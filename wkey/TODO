@@ -27,6 +27,8 @@ git push
 
 
 
+git merge oww-func-call
+
 
 there audio-substract branch is combining previous commands into current commands
 
