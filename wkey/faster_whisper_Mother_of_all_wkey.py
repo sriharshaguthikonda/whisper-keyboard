@@ -191,7 +191,7 @@ def decrease_volume_all():
     if initial_volume is None or current_volume != initial_volume:
         initial_volume = current_volume
     print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-    set_volume(0.1)  # Set volume to 10%
+    set_volume(0.2)  # Set volume to 10%
 
 
 def restore_volume_all():
@@ -297,16 +297,6 @@ def adjust_vad_threshold():
         return 0.7  # Raise threshold for less sensitivity
     else:  # Very high noise level
         return 0.9  # Very high threshold to avoid false positives
-
-
-import torch
-
-# Load speech enhancement model (named speechbrain_model for clarity)
-speechbrain_model = separator.from_hparams(
-    source="speechbrain/sepformer-wham16k-enhancement",
-    savedir="pretrained_models/sepformer-wham16k-enhancement",
-    run_opts={"device": "cuda"},
-)
 
 
 def stop_recording(keyword_index):
