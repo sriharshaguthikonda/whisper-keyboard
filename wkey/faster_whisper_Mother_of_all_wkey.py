@@ -263,7 +263,7 @@ def start_recording():
     beep(START_BEEP)
     with recording_lock:
         recording = True
-    print("Listening...")
+    print("\033[94mListening...\033[0m")
 
 
 """
@@ -364,7 +364,7 @@ def stop_recording(keyword_index):
     beep(STOP_BEEP)
     with recording_lock:
         recording = False
-    print("Transcribing...")
+    print("\033[93mTranscribing...\033[0m")
 
 
 def on_press(key):
@@ -550,14 +550,16 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        print("Custom wake word 'hey_llama2' detected!")
+                        print("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
                         threading.Thread(target=start_recording).start()
                         time.sleep(3)
                         threading.Thread(
                             target=stop_recording, args=(keyword_index,)
                         ).start()
                     elif keyword_index == 1:  # Custom wake word: "hey_computer9"
-                        print("Custom wake word 'hey_computer9' detected!")
+                        print(
+                            "\033[92mCustom wake word 'hey_computer9' detected!\033[0m"
+                        )
                         threading.Thread(target=start_recording).start()
                         # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(1,)).start()

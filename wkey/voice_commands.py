@@ -1293,7 +1293,9 @@ def execute_command_run_with_tool(query):
                     try:
                         # Call the function with the arguments
                         result = globals()[function_name](**function_args)
-                        print(f"Executed {function_name} with result: {result}")
+                        print(
+                            f"\033[35mExecuted {function_name} with result: {result}\033[0m"
+                        )
                     except Exception as e:
                         print(f"Error executing function {function_name}: {e}")
                 else:
