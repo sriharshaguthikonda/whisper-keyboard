@@ -612,7 +612,8 @@ def get_volume():
     devices = AudioUtilities.GetSpeakers()
     interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
     volume = interface.QueryInterface(IAudioEndpointVolume)
-    return volume
+    current_volume = volume.GetMasterVolumeLevelScalar()
+    return round(current_volume, 2)
 
 
 def volume_up(steps=1):
@@ -698,9 +699,11 @@ def flush_dns():
 
 # Voicemeeter commands
 def restart_voicemeeter():
+    initial_volume = get_volume()
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
+    set_volume(initial_volume)
 
 
 # DisplayFusion commands
@@ -855,6 +858,17 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
    ##     #######   #######  ########  ######  
 """
 
+extra_tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "minimize_all_windows",
+            "description": "Minimize all windows",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
 tools = [
     {
         "type": "function",
@@ -907,14 +921,6 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "windows_search",
-            "description": "Open the Windows search bar",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "open_run_dialog",
             "description": "Open the Run dialog box",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -925,14 +931,6 @@ tools = [
         "function": {
             "name": "open_task_manager",
             "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "minimize_all_windows",
-            "description": "Minimize all windows",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1151,7 +1149,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "previous_track",
-            "description": "Go to the previous track",
+            "description": "Go to the previous track or play previous song",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1159,7 +1157,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "pause_song",
-            "description": "Pause media playback",
+            "description": "Pause media playback or pause spotify",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
