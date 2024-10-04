@@ -698,9 +698,11 @@ def flush_dns():
 
 # Voicemeeter commands
 def restart_voicemeeter():
+    initial_volume = get_volume()
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
+    set_volume(initial_volume)
 
 
 # DisplayFusion commands
