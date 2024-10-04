@@ -46,24 +46,18 @@ from comtypes import CLSCTX_ALL
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 
-from vosk import Model, KaldiRecognizer
 import pyaudio
-import pvporcupine
-from pvporcupine import KEYWORD_PATHS
 
 from openwakeword.model import Model
 
-
 import tkinter as tk
 
+from concurrent.futures import ThreadPoolExecutor
 
-# import clipboard
-# import win32clipboard as clipboard
-import klembord
+executor = ThreadPoolExecutor(max_workers=6)  # Change max_workers as needed
 
-# Initialize klembord for clipboard operations
-klembord.init()
 
+from collections import deque
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -120,17 +114,18 @@ audio_data_lock = threading.Lock()
 """
 
 
-PRE_RECORDING_DURATION = 2  # seconds
+PRE_RECORDING_DURATION = 3  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 buffer_index = 0
-audio_buffer = []
+
+# Preallocate a deque for the audio buffer with a maximum length
+audio_buffer = deque(maxlen=BUFFER_SIZE)  # BUFFER_SIZE can be based on your needs
 
 
 def audio_callback(indata, frames, time, status):
-    """Callback function for audio recording."""
     global buffer_index
     global audio_buffer
 
@@ -138,7 +133,7 @@ def audio_callback(indata, frames, time, status):
         print(f"Audio callback status: {status}")
     with recording_lock:
         if recording:
-            audio_buffer = np.append(audio_buffer, indata.flatten())
+            audio_buffer.extend(indata.flatten())  # This is correct for deque
         else:
             end_index = buffer_index + frames
             if end_index > BUFFER_SIZE:
@@ -228,7 +223,7 @@ def start_recording():
     global something_is_playing
 
     # this thread has to go if something_is_playing check is happening below
-    threading.Thread(target=decrease_volume_all()).start()
+    executor.submit(decrease_volume_all)
 
     try:
         if stream and stream.active:
@@ -254,7 +249,7 @@ def start_recording():
 
     if something_is_playing:
         # print("Stream started")
-        decrease_volume_all()
+        executor.submit(decrease_volume_all)
         play_pause_pressed = True
     else:
         # print("Stream started")
@@ -282,7 +277,9 @@ def adjust_vad_threshold():
 
     # Calculate RMS value of the audio buffer to assess noise levels
     if len(audio_buffer) > 0:
-        rms = np.sqrt(np.mean(audio_buffer**2))  # Calculate RMS
+        # Convert deque to NumPy array for RMS calculation
+        audio_data = np.array(audio_buffer)  # Convert deque to NumPy array
+        rms = np.sqrt(np.mean(audio_data**2))  # Calculate RMS
     else:
         rms = 0.0  # Default to 0 if no audio
 
@@ -315,17 +312,14 @@ def stop_recording(keyword_index):
 
     while silent_time < stop_delay_threshold:
         if stream.active:
-            if isinstance(audio_buffer, list):
-                audio_buffer = np.array(audio_buffer)
-
-            # Get the last frames of audio for VAD analysis
-            audio_frame = audio_buffer[-1600:].tobytes()
-            pcm = np.frombuffer(audio_frame, dtype=np.int16)
+            # Slice deque and convert to NumPy array for VAD analysis
+            audio_frame = np.array(
+                list(audio_buffer)[-1600:]
+            )  # Slice last 1600 samples
+            pcm = audio_frame.astype(np.int16)  # Convert to int16 for VAD analysis
 
             # Dynamically adjust VAD threshold based on conditions (e.g., noise level)
-            current_vad_threshold = (
-                adjust_vad_threshold()
-            )  # Custom function to adjust threshold
+            current_vad_threshold = adjust_vad_threshold()
             prediction = owwModel.predict(pcm)
             vad_score = max(prediction.values())  # Get the highest VAD score
 
@@ -344,21 +338,20 @@ def stop_recording(keyword_index):
 
     pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
 
-    # Convert main recording to numpy array
-    audio_buffer = np.concatenate(
-        [pre_recording_data, audio_buffer],
-        axis=0,
-    )
+    # Convert deque to NumPy array and concatenate with pre-recording buffer
+    audio_buffer_np = np.array(list(audio_buffer))  # Convert deque to NumPy array
+    audio_buffer = np.concatenate([pre_recording_data, audio_buffer_np], axis=0)
+
     audio_buffer_queue.put((audio_buffer, keyword_index))
 
-    # this thread has to go if play_pause_pressed check is happening below!
-    threading.Thread(target=restore_volume_all()).start()
+    # Restore volume after recording
+    executor.submit(restore_volume_all)
 
-    # clearing the audio buffer - if not it will cause concat transcripts
-    audio_buffer = np.array([], dtype="float32")
+    # Reset audio_buffer back to deque after processing
+    audio_buffer = deque(maxlen=BUFFER_SIZE)  # Reset audio buffer as a deque
 
     if play_pause_pressed:
-        restore_volume_all()
+        executor.submit(restore_volume_all)
         play_pause_pressed = False
 
     beep(STOP_BEEP)
@@ -369,12 +362,12 @@ def stop_recording(keyword_index):
 
 def on_press(key):
     if key == RECORD_KEY and not recording:
-        threading.Thread(target=start_recording).start()
+        executor.submit(start_recording)
 
 
 def on_release(key):
     if key == RECORD_KEY and recording:
-        threading.Thread(target=stop_recording, args=(None,)).start()
+        executor.submit(stop_recording, None)
 
 
 """
@@ -551,11 +544,9 @@ def listen_for_wake_word():
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
                         print("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
-                        threading.Thread(target=start_recording).start()
+                        executor.submit(start_recording)
                         time.sleep(3)
-                        threading.Thread(
-                            target=stop_recording, args=(keyword_index,)
-                        ).start()
+                        executor.submit(stop_recording, keyword_index)
                     elif keyword_index == 1:  # Custom wake word: "hey_computer9"
                         print(
                             "\033[92mCustom wake word 'hey_computer9' detected!\033[0m"
@@ -686,31 +677,27 @@ def process_audio_async():
                 transcript_queue.put((stripped_transcript, keyword_index))
 
                 # Start the audio saving thread
-                threading.Thread(
-                    target=save_audio,
-                    args=(
-                        audio_buffer_for_processing,
-                        keyword_index,
-                        "train",
-                        sample_rate,
-                        "true_positive",
-                    ),
-                ).start()
+                executor.submit(
+                    save_audio,
+                    audio_buffer_for_processing,
+                    keyword_index,
+                    "train",
+                    sample_rate,
+                    "true_positive",
+                )
 
             elif keyword_index is None:
                 transcript_queue.put((transcript, keyword_index))
             else:
-                threading.Thread(
-                    target=save_audio,
-                    args=(
-                        audio_buffer_for_processing,
-                        keyword_index,
-                        "train",
-                        sample_rate,
-                        "false_positive",
-                    ),
-                ).start()
-            print("\033[1;35m" + transcript + "\033[0m")
+                executor.submit(
+                    save_audio,
+                    audio_buffer_for_processing,
+                    keyword_index,
+                    "train",
+                    sample_rate,
+                    "false_positive",
+                )
+            print("\033[1;33m" + transcript + "\033[0m")
         except queue.Empty:
             continue
         except Exception as e:
@@ -812,13 +799,16 @@ def main():
 
     try:
         # Start the microphone monitoring thread
-        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+        #         threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+        executor.submit(monitor_microphone_availability)
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
-        threading.Thread(target=clean_transcript, daemon=True).start()
-        threading.Thread(target=process_audio_async, daemon=True).start()
-        threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        threading.Thread(target=start_driver, daemon=True).start()
+        # Use ThreadPoolExecutor for background processes
+
+        executor.submit(clean_transcript)
+        executor.submit(process_audio_async)
+        executor.submit(listen_for_wake_word)
+        executor.submit(start_driver)
 
         with stream:
             start_listener()
@@ -830,11 +820,14 @@ def main():
                 stream.stop()
             stream.close()
         cleanup()
-        restore_volume_all()
+        executor.submit(restore_volume_all)
         print("Cleanup completed. Exiting...")
         # Clean up (close the browser)
         if driver:
             driver.quit()
+        executor.shutdown(
+            wait=True
+        )  # Gracefully shutdown the executor, wait for threads to complete
 
 
 if __name__ == "__main__":
