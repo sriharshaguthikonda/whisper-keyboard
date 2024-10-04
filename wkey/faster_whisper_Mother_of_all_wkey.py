@@ -312,14 +312,10 @@ def stop_recording(keyword_index):
 
     while silent_time < stop_delay_threshold:
         if stream.active:
-            # Slice deque and convert to NumPy array for VAD analysis
-            audio_frame = np.array(
-                list(audio_buffer)[-1600:]
-            )  # Slice last 1600 samples
+            audio_frame = np.array(list(audio_buffer)[-1600:])  # Capture last frames
             pcm = audio_frame.astype(np.int16)  # Convert to int16 for VAD analysis
 
-            # Dynamically adjust VAD threshold based on conditions (e.g., noise level)
-            current_vad_threshold = adjust_vad_threshold()
+            current_vad_threshold = adjust_vad_threshold()  # Adjust threshold
             prediction = owwModel.predict(pcm)
             vad_score = max(prediction.values())  # Get the highest VAD score
 
@@ -329,26 +325,28 @@ def stop_recording(keyword_index):
             else:
                 silent_time += 0.1  # Increment silent time if no speech is detected
 
-            # Check if the hard stop limit is reached
+            # Check for the hard stop limit
             if time.time() - recording_start_time > hard_stop_limit:
                 print("Hard stop limit reached, stopping recording.")
                 break
 
             time.sleep(0.1)
 
+    # Combine the audio buffers correctly
     pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
-
-    # Convert deque to NumPy array and concatenate with pre-recording buffer
     audio_buffer_np = np.array(list(audio_buffer))  # Convert deque to NumPy array
-    audio_buffer = np.concatenate([pre_recording_data, audio_buffer_np], axis=0)
 
-    audio_buffer_queue.put((audio_buffer, keyword_index))
+    # Combine and ensure the combined audio is continuous
+    combined_audio = np.concatenate([pre_recording_data, audio_buffer_np], axis=0)
+
+    # Send combined audio for transcription
+    audio_buffer_queue.put((combined_audio, keyword_index))
 
     # Restore volume after recording
     executor.submit(restore_volume_all)
 
-    # Reset audio_buffer back to deque after processing
-    audio_buffer = deque(maxlen=BUFFER_SIZE)  # Reset audio buffer as a deque
+    # Clear the audio buffer (deque) for the next recording
+    audio_buffer.clear()
 
     if play_pause_pressed:
         executor.submit(restore_volume_all)
