@@ -3,6 +3,7 @@ import os
 import pyautogui
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
+from ctypes import cast, POINTER
 
 
 import re
@@ -20,16 +21,21 @@ from selenium.webdriver.common.by import By
 
 import time
 import subprocess
-
+import psutil
 
 from groq import Groq
+import ollama
 from dotenv import load_dotenv
 import json
 
 import io
 import edge_tts
+import pyttsx4
+
 import asyncio
 import threading
+
+
 from pydub import AudioSegment
 from pydub.playback import play
 import queue
@@ -44,6 +50,7 @@ ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
 TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
 GENERAL_MODEL = "llama3-70b-8192"
+ollama_model = "llama3.2:latest"
 
 
 # Path to your Edge WebDriver
@@ -60,7 +67,7 @@ options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your prof
 options.add_argument("--remote-allow-origins=*")
 
 # Start minimized
-options.add_argument("--start-minimized")
+# options.add_argument("--start-minimized")
 
 # Optional: Run in headless mode (no GUI)
 # options.add_argument("--headless")
@@ -157,7 +164,11 @@ def change_device():
         except Exception as e:
             print(f"Error while trying to play after reconnection: {e}")
         time.sleep(2)
-        driver.find_element(By.XPATH, '//*[text()="This web browser"]').click()
+        driver.find_element(
+            # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
+            By.XPATH,
+            '//*[text()="This web browser"]',
+        ).click()
         # Click the panel
     except Exception as e:
         print(f"Error while trying to play after reconnection: {e}")
@@ -608,37 +619,55 @@ def open_sound_control_panel():
     os.system("control mmsys.cpl")
 
 
+def kill_process_by_name(process_name):
+    for proc in psutil.process_iter(["pid", "name"]):
+        if proc.info["name"] == process_name:
+            proc.kill()
+            print(
+                f"Process {process_name} with PID {proc.info['pid']} has been killed."
+            )
+            return
+    print(f"No process named {process_name} found.")
+
+
 def get_volume():
     devices = AudioUtilities.GetSpeakers()
     interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    volume = interface.QueryInterface(IAudioEndpointVolume)
+    volume = cast(interface, POINTER(IAudioEndpointVolume))
     current_volume = volume.GetMasterVolumeLevelScalar()
     return round(current_volume, 2)
 
 
 def volume_up(steps=1):
-    volume = get_volume()
-    current_volume = volume.GetMasterVolumeLevelScalar()
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
-    volume.SetMasterVolumeLevelScalar(new_volume, None)
+    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
     print(f"Volume increased to {new_volume * 100:.0f}%")
 
 
 def volume_down(steps=1):
-    volume = get_volume()
-    current_volume = volume.GetMasterVolumeLevelScalar()
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
-    volume.SetMasterVolumeLevelScalar(new_volume, None)
+    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
     print(f"Volume decreased to {new_volume * 100:.0f}%")
 
 
 def set_volume(level):
     if 0.0 <= level <= 1.0:
-        volume = get_volume()
-        volume.SetMasterVolumeLevelScalar(level, None)
+        volume_interface = get_volume_interface()
+        volume_interface.SetMasterVolumeLevelScalar(level, None)
         print(f"Volume set to {level * 100:.0f}%")
     else:
         print("Volume level must be between 0.0 and 1.0")
+
+
+def get_volume_interface():
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
+    return volume_interface
 
 
 def mute_volume():
@@ -690,7 +719,26 @@ def open_date_and_time():
 
 # System commands
 def ping_google():
-    os.system("ping www.google.com")
+    try:
+        # Run the ping command and capture the output
+        result = subprocess.run(
+            ["ping", "www.google.com", "-n", "4"], capture_output=True, text=True
+        )
+
+        # Find the line with average ping time
+        match = re.search(r"Average = (\d+)ms", result.stdout)
+
+        if match:
+            avg_ping = match.group(1)
+            asyncio.run(
+                text_to_speech(
+                    text=f"The average ping to Google was {avg_ping} milleseconds, {avg_ping} milleseconds"
+                )
+            )
+        else:
+            return "Could not determine the average ping."
+    except Exception as e:
+        return f"Error occurred: {str(e)}"
 
 
 def flush_dns():
@@ -700,14 +748,17 @@ def flush_dns():
 # Voicemeeter commands
 def restart_voicemeeter():
     initial_volume = get_volume()
+    print(initial_volume)
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
+    time.sleep(2)
     set_volume(initial_volume)
 
 
 # DisplayFusion commands
 def load_display_fusion_profile(profile_name):
+    subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
     subprocess.run(
         [
             "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
@@ -721,6 +772,41 @@ def open_negative_screen():
     subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     )
+
+
+invert_screen = open_negative_screen
+
+
+from datetime import datetime
+
+# Replace 'J:\\' with the actual path to the backup directory
+backup_directory = "J:\\"
+
+
+def last_backup():
+    # List all files in the directory
+    backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
+    if not backup_files:
+        asyncio.run(text_to_speech("No backup files found."))
+
+    # Get the most recent backup file by modification date
+    latest_backup = max(
+        backup_files, key=lambda f: os.path.getmtime(os.path.join(backup_directory, f))
+    )
+    last_modified_time = os.path.getmtime(os.path.join(backup_directory, latest_backup))
+    last_backup_date = datetime.fromtimestamp(last_modified_time)
+
+    # Calculate days since the last backup
+    days_ago = (datetime.now() - last_backup_date).days
+    asyncio.run(text_to_speech(f"Latest backup was {days_ago} days ago."))
+
+
+def open_vscode():
+    # Path to the Visual Studio Code executable
+    vscode_path = (
+        r"C:\Users\deletable\AppData\Local\Programs\Microsoft VS Code\Code.exe"
+    )
+    subprocess.Popen([vscode_path])
 
 
 """
@@ -768,16 +854,111 @@ def route_query(query):
         return "NO TOOL"
 
 
+"""
+# Function to run the general model and stream text chunks to TTS immediately
 def run_general(query):
-    """Use the general model to answer the query since no tool is needed"""
-    response = client.chat.completions.create(
+    "Stream response chunks to TTS immediately as they arrive"
+    stream = client.chat.completions.create(
         model=GENERAL_MODEL,
         messages=[
             {"role": "system", "content": "You are a helpful assistant."},
             {"role": "user", "content": query},
         ],
+        stream=True,
     )
-    return response.choices[0].message.content
+
+    current_sentence = ""
+    sentence_endings = [".", "!", "?"]  # Sentence-ending punctuation
+    word_buffer = ""  # To accumulate small chunks of words
+
+    for chunk in stream:
+        # Safeguard for chunk choices
+        if not chunk.choices or not chunk.choices[0].delta:
+            print("Invalid chunk received, skipping...")
+            continue
+
+        chunk_text = chunk.choices[0].delta.content
+
+        # Ensure that the chunk text is not None
+        if chunk_text is None:
+            print("Received NoneType chunk, skipping...")
+            continue
+
+        # Accumulate the chunk text
+        word_buffer += chunk_text
+
+        # Only process the buffer when it forms a coherent word (ends with a space or punctuation)
+        if word_buffer and (
+            word_buffer.endswith(" ") or word_buffer[-1] in sentence_endings
+        ):
+            current_sentence += word_buffer
+            word_buffer = ""  # Reset buffer after processing
+
+        # Print colored text when a sentence forms
+        if (
+            any(current_sentence.endswith(end) for end in sentence_endings)
+            and len(current_sentence.split()) > 5
+        ):
+            # Strip markdown-like symbols for TTS
+            stripped_text = re.sub(r"[\*_]", "", current_sentence)
+
+            # Ensure we don't send empty or None to TTS
+            if stripped_text:
+                TTS_queue.put(stripped_text)  # Send to TTS
+            else:
+                print("Stripped text is empty, skipping TTS...")
+
+            print(current_sentence)  # Print the sentence with colors
+            # Reset the current sentence after sending to TTS
+            current_sentence = ""
+"""
+
+
+# Function to run Ollama's model and stream text chunks to TTS immediately
+def run_ollama(query):
+    """Stream response chunks to TTS immediately as they arrive"""
+
+    # Initialize Ollama client for local server
+    client = ollama.Client(host="http://localhost:11434")
+
+    # Start the chat request with streaming enabled
+    stream = client.chat(
+        model=ollama_model,  # Replace with your preferred model
+        messages=[{"role": "user", "content": query}],
+        stream=True,
+    )
+
+    current_sentence = ""
+    word_buffer = ""  # To accumulate small chunks of words
+
+    for chunk in stream:
+        # Safeguard for chunk content
+        print(chunk["message"]["content"], end="", flush=True)
+        if not chunk.get("message") or not chunk["message"].get("content"):
+            continue
+
+        chunk_text = chunk["message"]["content"].replace(
+            "\n", " "
+        )  # Remove unintended newlines
+
+        # Accumulate the chunk text
+        word_buffer += chunk_text
+
+        # Process the buffer when it contains a sentence-ending punctuation
+        sentence_endings = ".!? "
+        if word_buffer and any(word_buffer.endswith(end) for end in sentence_endings):
+            current_sentence += word_buffer
+            word_buffer = ""  # Reset buffer after processing
+
+            # If a coherent chunk or sentence is formed, send it to TTS
+            if any(current_sentence.endswith(end) for end in sentence_endings):
+                # Strip markdown-like symbols for TTS
+                stripped_text = re.sub(r"[\*_]", "", current_sentence)
+
+                # Send text to TTS immediately
+                if stripped_text:
+                    TTS_queue.put(stripped_text)  # Send to TTS queue
+                    current_sentence = ""  # Reset after sending to TTS
 
 
 """
@@ -792,17 +973,17 @@ def run_general(query):
 
 
 # Function to process the queue
-def process_TTS_queue(TTS_queue):
+def process_TTS_queue():
     while True:
         sentence = TTS_queue.get()
         if sentence is None:  # Sentinel value to stop the worker
             break
-        asyncio.run(text_to_speech(sentence, speed=1.2))
+        asyncio.run(text_to_speech(sentence, speed=1.3))
         TTS_queue.task_done()
 
 
 # Function to process the queue
-def process_TTS_Audio_play_queue(TTS_Audio_play_queue):
+def process_TTS_Audio_play_queue():
     while True:
         audio_fp = TTS_Audio_play_queue.get()
         audio_fp.seek(0)
@@ -816,16 +997,20 @@ def process_TTS_Audio_play_queue(TTS_Audio_play_queue):
 
 # Queue for sentences
 TTS_Audio_play_queue = queue.Queue()
+TTS_queue = queue.Queue()
 
 # Start the worker thread
-threading.Thread(
-    target=process_TTS_Audio_play_queue, args=(TTS_Audio_play_queue,), daemon=True
-).start()
+threading.Thread(target=process_TTS_Audio_play_queue, daemon=True).start()
+
+
+# Start the worker thread
+threading.Thread(target=process_TTS_queue, daemon=True).start()
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
 async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
     try:
+        # Online TTS using edge-tts
         rate = "+" + str(int((speed - 1) * 100)) + "%"
         communicate = edge_tts.Communicate(text, voice, rate=rate)
         audio_bytes = b""
@@ -842,10 +1027,33 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         audio_fp = io.BytesIO(audio_bytes)
         audio_fp.seek(0)
 
+        # Place the audio data in the playback queue
         TTS_Audio_play_queue.put(audio_fp)
 
     except Exception as e:
-        print(f"Error occurred during playback: {e}")
+        print(f"Error occurred during online TTS playback: {e}")
+        print("Falling back to offline TTS...")
+        fallback_offline_tts(text, speed, volume)
+
+
+# Offline TTS fallback using pyttsx4
+def fallback_offline_tts(text, speed=1.2, volume=1):
+    try:
+        # Initialize pyttsx4 engine
+        engine = pyttsx4.init()
+
+        # Set the speed (words per minute)
+        engine.setProperty("rate", int(200 * speed))
+
+        # Set the volume (0.0 to 1.0)
+        engine.setProperty("volume", volume)
+
+        # Speak the text
+        engine.say(text)
+        engine.runAndWait()
+
+    except Exception as e:
+        print(f"Offline TTS failed: {e}")
 
 
 """
@@ -1309,6 +1517,30 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "invert_screen",
+            "description": "Open the Negative Screen application",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "last_backup",
+            "description": "Determine how many days ago the latest backup was created.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_vscode",
+            "description": "Open Visual Studio Code on the user's machine.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -1318,7 +1550,8 @@ def execute_command_run_with_tool(query):
     # Step 2: Handle the result of routing
     if route == "NO TOOL":
         # Use the general model if no tools are needed
-        response = run_general(query)
+        response = run_ollama(query)
+        print(response)
         asyncio.run(
             text_to_speech(text=response)
         )  # Asynchronously call text-to-speech with the response

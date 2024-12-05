@@ -145,27 +145,26 @@ Wakeword Detection Summary:
 
 false positives
 
-
-hey_computer7: 99 detections
-hey_computer6: 45 detections
-heycomputer5: 43 detections
-hey_computer10: 37 detections
-hey_llama: 27 detections
-hey_lama: 21 detections
-hey_computer9: 20 detections
-hey_cumputer: 14 detections
-heycomputer3: 14 detections
-heycomputer4: 13 detections
-hey_llama2: 12 detections
-heylama: 11 detections
-hey_computer: 7 detections
-heycomputer: 6 detections
-heycomputer2: 6 detections
-hey_jarvis_v0.1: 5 detections
-hey_computer_personal: 4 detections
-hey_google: 2 detections
-hey_computer8: 1 detections
-hey_computer11: 1 detections
+hey_computer_pos_train: 201 detections
+hey_computer7: 131 detections
+hey_computer6: 38 detections
+heycomputer5: 29 detections
+hey_computer10: 27 detections
+hey_lama: 16 detections
+hey_llama: 16 detections
+hey_computer_pos_neg_train: 15 detections
+hey_computer9: 13 detections
+heycomputer: 7 detections
+hey_cumputer: 7 detections
+heycomputer3: 6 detections
+heycomputer4: 6 detections
+hey_computer: 5 detections
+hey_llama2: 4 detections
+hey_jarvis_v0.1: 4 detections
+hey_computer_50k: 3 detections
+hey_mycroft_v0.1: 2 detections
+heylama: 2 detections
+rey_lama: 2 detections
 
 """
 

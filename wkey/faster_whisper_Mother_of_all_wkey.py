@@ -9,14 +9,13 @@
 """
 
 import os
-import psutil
+
 import io
 import time
 import threading
 import winsound
-
-
 import pyautogui
+
 import numpy as np
 import sounddevice as sd
 import pythoncom
@@ -24,9 +23,9 @@ from scipy.io.wavfile import write as wav_write
 
 import groq
 from groq import Groq
+import torch
 
 import queue
-import asyncio
 
 
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
@@ -37,25 +36,24 @@ from voice_commands import (
     execute_command_fuzzy,
     execute_command_run_with_tool,
     start_driver,
+    get_volume,
+    set_volume,
     driver,
 )  # , driver_pid
 from pause_all import is_sound_playing_windows_processing
-
-from ctypes import cast, POINTER
-from comtypes import CLSCTX_ALL
-from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 
 
 import pyaudio
 
 from openwakeword.model import Model
 
-import tkinter as tk
-
 from concurrent.futures import ThreadPoolExecutor
 
 executor = ThreadPoolExecutor(max_workers=6)  # Change max_workers as needed
 
+
+import win32clipboard
+import ctypes
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -65,24 +63,43 @@ audio_buffer_queue = queue.Queue()
 load_dotenv()
 key_label = os.environ.get("WKEY", "f24")
 RECORD_KEY = Key[key_label]
+
+"""
+
+
+# Get the key label from environment variables, default to 'f24' if not set
+key_label = os.environ.get("WKEY", "ctrl_r")  # Use 'ctrl_r' for right control key
+
+# Map the key label to the actual Key
+RECORD_KEY = getattr(Key, key_label, None)
+"""
 keyboard_controller = KeyboardController()
 recording = False
 stream = None
 audio_buffer = np.array([], dtype="float32")
 sample_rate = 16000
-model = WhisperModel("small.en", device="cuda", num_workers=8)
+
+# Check if CUDA is available
+if torch.cuda.is_available():
+    model = WhisperModel("small.en", device="cuda", num_workers=8)
+    print("Initialized WhisperModel on CUDA")
+else:
+    print("CUDA device not available. Please ensure your system supports CUDA.")
+
 groq_model = "distil-whisper-large-v3-en"
 # "whisper-large-v3"
 play_pause_pressed = False
 something_is_playing = False
 
 
-Hey_computer_STT_prompt = """ 
-1. possible words in the transcript which will form a sentence : [open start menu show windows search desktop minimize everything settings lock screen the computer take screenshot capture file explorer explore files run dialog command task manager restore all calculator notepad word excel powerpoint outlook paint console powershell edge chrome firefox sound control panel audio volume up increase down decrease play media music stop next track song skip previous replay device disk management network connections system properties date time ping google check internet connection flush dns reset cache restart voicemeeter set display fusion monitor profile negative invert]. 
+Hey_computer_STT_prompt = None
+"""
+Hey_computer_STT_prompt = "
+1. possible words in the transcript which will form a sentence : [open start menu show windows search desktop minimize everything settings lock screen the take screenshot capture file explorer explore files run dialog command task manager restore all calculator notepad word excel powerpoint outlook paint console powershell edge chrome firefox sound control panel audio volume up increase down decrease play media music stop next track song skip previous replay device disk management network connections system properties date time ping google check internet connection flush dns reset cache restart voicemeeter set display fusion monitor profile negative invert]. 
 
 2. there should be no puncuation in the output and all lower case.
-"""  # Optional
-
+"  # Optional
+"""
 
 p = pyaudio.PyAudio()
 wake_stream = p.open(
@@ -114,6 +131,7 @@ audio_data_lock = threading.Lock()
 
 PRE_RECORDING_DURATION = 3  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
+BUFFER_SIZE_FOR_F24 = 32000
 channels = 1
 
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
@@ -161,23 +179,9 @@ stream = sd.InputStream(
 """
 
 
-def get_current_volume():
-    devices = AudioUtilities.GetSpeakers()
-    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    volume = cast(interface, POINTER(IAudioEndpointVolume))
-    return volume.GetMasterVolumeLevelScalar()
-
-
-def set_volume(volume_level):
-    devices = AudioUtilities.GetSpeakers()
-    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    volume = cast(interface, POINTER(IAudioEndpointVolume))
-    volume.SetMasterVolumeLevelScalar(volume_level, None)
-
-
 def decrease_volume_all():
     global initial_volume
-    current_volume = get_current_volume()
+    current_volume = get_volume()
     if initial_volume is None or current_volume != initial_volume:
         initial_volume = current_volume
     print(f"Decreasing volume from {initial_volume * 100}% to 10%")
@@ -187,7 +191,6 @@ def decrease_volume_all():
 def restore_volume_all():
     global initial_volume
     if initial_volume is not None:
-        print(f"Restoring volume to {initial_volume * 100}%")
         set_volume(initial_volume)  # Restore to initial volume
         initial_volume = None  # Reset initial volume after restoring
 
@@ -299,6 +302,10 @@ def stop_recording(keyword_index):
     if keyword_index == 1:
         stop_delay_threshold = (
             1  # Time to wait before stopping after no speech is detected
+        )
+    elif keyword_index is None:
+        stop_delay_threshold = (
+            0.3  # Time to wait before stopping after no speech is detected
         )
     else:
         stop_delay_threshold = (
@@ -472,6 +479,7 @@ def monitor_microphone_availability():
 MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\rey_lama.onnx",
 ]
 
 # Load the OpenWakeWord models
@@ -481,12 +489,15 @@ owwModel = Model(
 )
 
 
-CHUNK = 1280  # Optimal chunk size for OpenWakeWord
+CHUNK = 5120  # Optimal chunk size for OpenWakeWord
+# originally 1280
+
 
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
     0: 0.1,  # Threshold for "hey_lama"
-    1: 0.3,  # Threshold for "hey_computer10"
+    1: 0.1,  # Threshold for "hey_computer10"
+    2: 0.1,
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -520,7 +531,7 @@ def listen_for_wake_word():
                 max_score = 0.0
 
                 # Limit to only the most recent prediction scores for speed
-                recent_predictions = list(owwModel.prediction_buffer.values())[-8:]
+                recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
 
                 # Find the highest score among detected keywords
                 for idx, scores in enumerate(recent_predictions):
@@ -542,10 +553,10 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        print("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
+                        """print("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
                         executor.submit(start_recording)
                         time.sleep(3)
-                        executor.submit(stop_recording, keyword_index)
+                        executor.submit(stop_recording, keyword_index)"""
                     elif keyword_index == 1:  # Custom wake word: "hey_computer9"
                         print(
                             "\033[92mCustom wake word 'hey_computer9' detected!\033[0m"
@@ -553,6 +564,11 @@ def listen_for_wake_word():
                         threading.Thread(target=start_recording).start()
                         # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(1,)).start()
+                    elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
+                        print("\033[92mCustom wake word 'rey_lama' detected!\033[0m")
+                        executor.submit(start_recording)
+                        time.sleep(3)
+                        executor.submit(stop_recording, keyword_index)
                     else:
                         print("Unknown wake word detected!", keyword_index)
 
@@ -629,6 +645,7 @@ def transcribe_with_groq(audio_buffer, keyword_index):
         )
         return transcription.text
     except Exception as e:
+        transcribe_with_local_model(audio_buffer)
         print(f"Groq API error: {e}")
         raise
 
@@ -638,6 +655,7 @@ def transcribe_with_local_model(audio_buffer):
         audio_buffer, language="en", suppress_blank=True, vad_filter=True
     )
     transcript = " ".join([segment["text"] for segment in segments])
+    print(transcript)
     return transcript
 
 
@@ -664,29 +682,54 @@ def process_audio_async():
                 # Find the index of the keyword
                 if "computer" in transcript_lower:
                     keyword_position = transcript_lower.index("computer")
-                else:
+                    stripped_transcript = transcript_lower
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("computer") :
+                    ]
+                    transcript_queue.put((stripped_transcript, keyword_index))
+                    # Start the audio saving thread
+                    executor.submit(
+                        save_audio,
+                        audio_buffer_for_processing,
+                        keyword_index,
+                        "train",
+                        sample_rate,
+                        "true_positive_hey_computer",
+                    )
+                elif "lama" in transcript_lower:
                     keyword_position = transcript_lower.index("lama")
-
-                # Strip the part of the transcript before the keyword
-                stripped_transcript = transcript[
-                    keyword_position:
-                ]  # Keep from the keyword to the end
-
-                # Put the stripped transcript on the queue
-                transcript_queue.put((stripped_transcript, keyword_index))
-
-                # Start the audio saving thread
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("lama") :
+                    ]
+                    transcript_queue.put((stripped_transcript, keyword_index))
+                    executor.submit(
+                        save_audio,
+                        audio_buffer_for_processing,
+                        keyword_index,
+                        "train",
+                        sample_rate,
+                        "true_positive_hey_llama",
+                    )
+            elif keyword_index is None:
+                transcript_queue.put((transcript, keyword_index))
+            elif keyword_index == 2:
                 executor.submit(
                     save_audio,
                     audio_buffer_for_processing,
                     keyword_index,
                     "train",
                     sample_rate,
-                    "true_positive",
+                    "false_positive_rey_lama",
                 )
-
-            elif keyword_index is None:
-                transcript_queue.put((transcript, keyword_index))
+            elif keyword_index == 0:
+                executor.submit(
+                    save_audio,
+                    audio_buffer_for_processing,
+                    keyword_index,
+                    "train",
+                    sample_rate,
+                    "false_positive_hey_lama",
+                )
             else:
                 executor.submit(
                     save_audio,
@@ -694,7 +737,7 @@ def process_audio_async():
                     keyword_index,
                     "train",
                     sample_rate,
-                    "false_positive",
+                    "false_positive_hey_computer",
                 )
             print("\033[1;33m" + transcript + "\033[0m")
         except queue.Empty:
@@ -732,29 +775,35 @@ def beep(sound):
 """
 
 
-# Function to get clipboard content using Tkinter
+def set_clipboard_content(text):
+    success = False
+    while not success:
+        try:
+            win32clipboard.OpenClipboard(0)
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardText(text)
+            win32clipboard.CloseClipboard()
+            success = True
+        except win32clipboard.Error:
+            print("Failed to open the clipboard. Retrying in 1 second...")
+            time.sleep(0.5)
+
+
 def get_clipboard_content():
     try:
-        r = tk.Tk()
-        r.withdraw()
-        content = r.clipboard_get()
-        r.destroy()
-        return content
-    except tk.TclError:
-        return None
+        win32clipboard.OpenClipboard(0)
+        data = win32clipboard.GetClipboardData()
+        win32clipboard.CloseClipboard()
+        return data
+    except win32clipboard.Error:
+        print("Failed to open the clipboard. Returning an empty string.")
+        return ""
 
 
-# Function to set clipboard content using Tkinter
-def set_clipboard_content(text):
-    try:
-        r = tk.Tk()
-        r.withdraw()
-        r.clipboard_clear()
-        r.clipboard_append(text)
-        r.update()  # Now it stays on the clipboard after the window is closed
-        r.destroy()
-    except Exception as e:
-        print(f"Error setting clipboard content: {e}")
+def send_input(text):
+    for char in text:
+        ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 0, 0)
+        ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)  # Release key
 
 
 def clean_transcript():
@@ -769,8 +818,11 @@ def clean_transcript():
                     pass
             else:
                 set_clipboard_content(transcript)
-                time.sleep(0.5)  # Ensure clipboard is updated
-                pyautogui.hotkey("ctrl", "v")
+                ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
+                ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
+                # pyautogui.write(transcript)  # No delay, types out instantly
                 beep(PASTE_BEEP)
                 print("Transcript pasted")
 
