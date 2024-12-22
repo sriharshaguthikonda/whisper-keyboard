@@ -304,9 +304,10 @@ def stop_recording(keyword_index):
             1  # Time to wait before stopping after no speech is detected
         )
     elif keyword_index is None:
-        stop_delay_threshold = (
+        """stop_delay_threshold = (
             0.3  # Time to wait before stopping after no speech is detected
-        )
+        )"""
+
     else:
         stop_delay_threshold = (
             2  # Time to wait before stopping after no speech is detected
