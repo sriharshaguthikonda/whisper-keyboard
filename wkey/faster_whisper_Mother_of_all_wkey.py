@@ -55,24 +55,6 @@ executor = ThreadPoolExecutor(max_workers=6)  # Change max_workers as needed
 import win32clipboard
 import ctypes
 
-import logging
-
-
-# Set up logging
-log_directory = "logs"
-if not os.path.exists(log_directory):
-    os.makedirs(log_directory)
-
-log_filename = os.path.join(log_directory, f"whisper_keyboard.log")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler(log_filename),
-        logging.StreamHandler(),  # This will also print to console
-    ],
-)
-
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
 transcript_queue = queue.Queue()
@@ -103,9 +85,9 @@ sample_rate = 16000
 # Check if CUDA is available
 if torch.cuda.is_available():
     model = WhisperModel("small.en", device="cuda", num_workers=8)
-    logging.info("Initialized WhisperModel on CUDA")
+    print("Initialized WhisperModel on CUDA")
 else:
-    logging.error("CUDA device not available. Please ensure your system supports CUDA.")
+    print("CUDA device not available. Please ensure your system supports CUDA.")
 
 # groq_model = "distil-whisper-large-v3-en"
 groq_model = "whisper-large-v3-turbo"
@@ -170,7 +152,7 @@ def audio_callback(indata, frames, time, status):
     global audio_buffer
 
     if status:
-        logging.warning(f"Audio callback status: {status}")
+        print(f"Audio callback status: {status}")
     with recording_lock:
         if recording:
             audio_buffer = np.append(audio_buffer, indata.flatten())
@@ -209,7 +191,7 @@ def decrease_volume_all():
     current_volume = get_volume()
     if initial_volume is None or current_volume != initial_volume:
         initial_volume = current_volume
-    logging.info(f"Decreasing volume from {initial_volume * 100}% to 10%")
+    print(f"Decreasing volume from {initial_volume * 100}% to 10%")
     set_volume(0.1)  # Set volume to 10%
 
 
@@ -252,12 +234,12 @@ def start_recording():
 
     try:
         if stream and stream.active:
-            # logging.info("stream is active")
+            # print("stream is active")
             pass
         else:
             try:
                 device_info = sd.default.device
-                logging.info(f"Using device: {device_info}")
+                print(f"Using device: {device_info}")
                 stream = sd.InputStream(
                     callback=audio_callback,
                     device=None,
@@ -267,23 +249,23 @@ def start_recording():
                 )
                 stream.start()
             except Exception as e:
-                logging.error(f"Failed to start stream: {e}")
+                print(f"Failed to start stream: {e}")
                 time.sleep(2)
     except NameError:
         pass
 
     if something_is_playing:
-        # logging.info("Stream started")
+        # print("Stream started")
         decrease_volume_all()
         play_pause_pressed = True
     else:
-        # logging.info("Stream started")
+        # print("Stream started")
         pass
 
     beep(START_BEEP)
     with recording_lock:
         recording = True
-    logging.info("Listening...")
+    print("\033[94mListening...\033[0m")
 
 
 """
@@ -317,32 +299,6 @@ def adjust_vad_threshold():
         return 0.9  # Very high threshold to avoid false positives
 
 
-def audio_buffer_concat_and_queue(pre_recording_data, keyword_index):
-    global recording, play_pause_pressed, audio_buffer
-
-    # Convert main recording to numpy array
-    audio_buffer = np.concatenate(
-        [pre_recording_data, audio_buffer],
-        axis=0,
-    )
-    audio_buffer_queue.put((audio_buffer, keyword_index))
-
-    # this thread has to go if play_pause_pressed check is happening below!
-    restore_volume_all()
-
-    # clearing the audio buffer - if not it will cause concat transcripts
-    audio_buffer = np.array([], dtype="float32")
-
-    if play_pause_pressed:
-        restore_volume_all()
-        play_pause_pressed = False
-
-    beep(STOP_BEEP)
-    with recording_lock:
-        recording = False
-    logging.info("Transcribing...")
-
-
 def stop_recording(keyword_index):
     global stream, recording, play_pause_pressed, audio_buffer, sample_rate
 
@@ -354,21 +310,19 @@ def stop_recording(keyword_index):
 
     if keyword_index == 1:
         stop_delay_threshold = (
-            0.5  # Time to wait before stopping after no speech is detected
+            1  # Time to wait before stopping after no speech is detected
         )
     elif keyword_index == 2:
         stop_delay_threshold = (
-            0.5  # Time to wait before stopping after no speech is detected
+            1  # Time to wait before stopping after no speech is detected
         )
     elif keyword_index is None:
-        """ stop_delay_threshold = (
+        stop_delay_threshold = (
             0.3  # Time to wait before stopping after no speech is detected
-        )"""
+        )
         pre_recording_data = np.roll(
             pre_recording_buffer_f24, -buffer_index, axis=0
         ).flatten()
-        audio_buffer_concat_and_queue(pre_recording_data, keyword_index)
-        return
     else:
         stop_delay_threshold = (
             2  # Time to wait before stopping after no speech is detected
@@ -391,19 +345,38 @@ def stop_recording(keyword_index):
 
             if vad_score > current_vad_threshold:
                 silent_time = 0  # Reset silent time if speech is detected
-                logging.info("Voice detected, continuing recording...")
+                print("Voice detected, continuing recording...")
             else:
                 silent_time += 0.1  # Increment silent time if no speech is detected
 
             # Check if the hard stop limit is reached
             if time.time() - recording_start_time > hard_stop_limit:
-                logging.info("Hard stop limit reached, stopping recording.")
+                print("Hard stop limit reached, stopping recording.")
                 break
 
             time.sleep(0.1)
 
-    audio_buffer_concat_and_queue(pre_recording_data, keyword_index)
-    return
+    # Convert main recording to numpy array
+    audio_buffer = np.concatenate(
+        [pre_recording_data, audio_buffer],
+        axis=0,
+    )
+    audio_buffer_queue.put((audio_buffer, keyword_index))
+
+    # this thread has to go if play_pause_pressed check is happening below!
+    restore_volume_all()
+
+    # clearing the audio buffer - if not it will cause concat transcripts
+    audio_buffer = np.array([], dtype="float32")
+
+    if play_pause_pressed:
+        restore_volume_all()
+        play_pause_pressed = False
+
+    beep(STOP_BEEP)
+    with recording_lock:
+        recording = False
+    print("\033[93mTranscribing...\033[0m")
 
 
 # Define a debounce time (in seconds) to prevent rapid key presses
@@ -471,7 +444,7 @@ def save_audio(
 
     # Save the audio file using scipy.io.wavfile.write
     wav_write(filename, sample_rate, audio_data_int16)
-    logging.info(f"Audio saved as {filename}")
+    print(f"Audio saved as {filename}")
 
 
 """
@@ -504,26 +477,26 @@ def monitor_microphone_availability():
     global wake_stream, p
     while True:
         if not check_microphone():
-            logging.warning("No microphone detected. Pausing wake word detection...")
+            print("No microphone detected. Pausing wake word detection...")
             if wake_stream:
                 try:
                     wake_stream.stop_stream()
                     wake_stream.close()
                 except OSError as e:
-                    logging.error(f"Error stopping stream: {e}")
+                    print(f"Error stopping stream: {e}")
                 finally:
                     wake_stream = None
         else:
             if wake_stream is None:
-                logging.info("Microphone detected. Resuming wake word detection...")
+                print("Microphone detected. Resuming wake word detection...")
                 try:
                     wake_stream.start_stream()
                 except OSError as e:
-                    logging.error(f"Failed to restart wake stream: {e}")
+                    print(f"Failed to restart wake stream: {e}")
                     reinitialize_pyaudio()  # Reinitialize PyAudio
                     wake_stream = None
                 except Exception as e:
-                    logging.error(f"Unexpected error: {e}")
+                    print(f"Unexpected error: {e}")
 
         time.sleep(10)
 
@@ -570,7 +543,7 @@ last_detection_time = 0  # Time when the last wake word was detected
 
 def listen_for_wake_word():
     global wake_stream, last_detection_time, recording
-    logging.info("Listening for wake words...")
+    print("Listening for wake words...")
 
     while True:
         try:
@@ -606,36 +579,38 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        """logging.info("Custom wake word 'hey_llama2' detected!")
+                        """print("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
                         start_recording()
                         time.sleep(3)
                         stop_recording(keyword_index)"""
                     elif keyword_index == 1:  # Custom wake word: "hey_computer9"
-                        logging.info("Custom wake word 'hey_computer9' detected!")
+                        print(
+                            "\033[92mCustom wake word 'hey_computer9' detected!\033[0m"
+                        )
                         start_recording()
                         # time.sleep(1)
                         stop_recording(keyword_index)
                     elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
-                        logging.info("Custom wake word 'rey_lama' detected!")
+                        print("\033[92mCustom wake word 'rey_lama' detected!\033[0m")
                         start_recording()
                         time.sleep(3)
                         stop_recording(keyword_index)
                     else:
-                        logging.info("Unknown wake word detected!", keyword_index)
+                        print("Unknown wake word detected!", keyword_index)
 
             else:
-                logging.info("Waiting for microphone...")
+                print("Waiting for microphone...")
                 time.sleep(5)
 
         except OSError as e:
-            logging.error(f"Audio stream error: {e}")
+            print(f"Audio stream error: {e}")
             if wake_stream:
                 try:
                     if wake_stream.is_active():
                         wake_stream.stop_stream()
                     wake_stream.close()
                 except OSError:
-                    logging.error("Stream already closed or failed to close.")
+                    print("Stream already closed or failed to close.")
 
             wake_stream = None
 
@@ -651,11 +626,11 @@ def cleanup():
                 wake_stream.stop_stream()
             wake_stream.close()
         except OSError as e:
-            logging.error(f"Error during cleanup: {e}")
+            print(f"Error during cleanup: {e}")
         wake_stream = None
     # porcupine.delete()
     p.terminate()
-    logging.info("Cleanup completed.")
+    print("Cleanup completed.")
 
 
 """
@@ -696,7 +671,7 @@ def transcribe_with_groq(audio_buffer, keyword_index):
         )
         return transcription.text
     except Exception as e:
-        logging.error(f"Groq API error: {e}")  # Log the error
+        print(f"Groq API error: {e}")  # Log the error
         return transcribe_with_local_model(
             audio_buffer, keyword_index
         )  # Call local model after logging
@@ -713,7 +688,7 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
         # Initialize Faster Whisper model
         #         model_path = "path_to_your_faster_whisper_model"  # Replace with your model path
         #         model = WhisperModel(device="cuda", compute_type="float16")
-        #         model = WhisperModel("small.en", device="cuda", num_workers=8)
+        model = WhisperModel("small.en", device="cuda", num_workers=8)
 
         # Convert audio buffer (NumPy array) to WAV format in-memory
         byte_io = io.BytesIO()
@@ -725,10 +700,10 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
 
         # Combine transcribed text from all segments
         transcription = " ".join(segment.text for segment in segments)
-        logging.info(transcription)
+        print(transcription)
         return transcription
     except Exception as e:
-        logging.error(f"Faster Whisper error: {e}")
+        print(f"Faster Whisper error: {e}")
         # You can optionally call your fallback transcription function here
         return "Transcription failed"
 
@@ -737,7 +712,7 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
         audio_buffer, language="en", suppress_blank=True, vad_filter=True
     )
     transcript = " ".join([segment["text"] for segment in segments])
-    logging.info(transcript)
+    print(transcript)
     return transcript"""
 
 
@@ -754,9 +729,7 @@ def process_audio_async():
                     audio_buffer_for_processing, keyword_index
                 )
             except groq.RateLimitError:
-                logging.error(
-                    "Groq API rate limit reached, switching to local transcription."
-                )
+                print("Groq API rate limit reached, switching to local transcription.")
 
             transcript_lower = transcript.lower()
             if (
@@ -822,11 +795,11 @@ def process_audio_async():
                     sample_rate,
                     "false_positive_hey_computer",
                 )
-            logging.info(transcript)
+            print("\033[1;33m" + transcript + "\033[0m")
         except queue.Empty:
             continue
         except Exception as e:
-            logging.error(f"An error occurred during transcription: {e}")
+            print(f"An error occurred during transcription: {e}")
 
 
 def start_listener():
@@ -834,7 +807,7 @@ def start_listener():
         with Listener(on_press=on_press, on_release=on_release) as listener:
             listener.join()
     except KeyboardInterrupt:
-        logging.info("Ctrl+C pressed. Exiting...")
+        print("Ctrl+C pressed. Exiting...")
 
 
 def beep(sound):
@@ -868,7 +841,7 @@ def set_clipboard_content(text):
             win32clipboard.CloseClipboard()
             success = True
         except win32clipboard.Error:
-            logging.error("Failed to open the clipboard. Retrying in 1 second...")
+            print("Failed to open the clipboard. Retrying in 1 second...")
             time.sleep(0.5)
 
 
@@ -879,7 +852,7 @@ def get_clipboard_content():
         win32clipboard.CloseClipboard()
         return data
     except win32clipboard.Error:
-        logging.error("Failed to open the clipboard. Returning an empty string.")
+        print("Failed to open the clipboard. Returning an empty string.")
         return ""
 
 
@@ -907,10 +880,10 @@ def clean_transcript():
                 ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
                 # pyautogui.write(transcript)  # No delay, types out instantly
                 beep(PASTE_BEEP)
-                logging.info("Transcript pasted")
+                print("Transcript pasted")
 
         except Exception as e:
-            logging.error(f"An error occurred in clean_transcript: {e}")
+            print(f"An error occurred in clean_transcript: {e}")
 
 
 """
@@ -929,7 +902,7 @@ def main():
     global driver
     global driver_pid
 
-    logging.info("wkey is active. Hold down %s to start dictating.", RECORD_KEY)
+    print("wkey is active. Hold down", RECORD_KEY, " to start dictating.")
 
     try:
         #        transcribe_with_local_model(pre_recording_buffer, 1)
@@ -947,7 +920,7 @@ def main():
         with stream:
             start_listener()
     except KeyboardInterrupt:
-        logging.info("Ctrl+C pressed. Exiting...")
+        print("Ctrl+C pressed. Exiting...")
     finally:
         if stream:
             if stream.active:
@@ -955,7 +928,7 @@ def main():
             stream.close()
         cleanup()
         restore_volume_all()
-        logging.info("Cleanup completed. Exiting...")
+        print("Cleanup completed. Exiting...")
         # Clean up (close the browser)
         if driver:
             driver.quit()

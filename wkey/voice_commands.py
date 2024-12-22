@@ -33,6 +33,7 @@ import edge_tts
 import pyttsx4
 
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 
@@ -40,21 +41,6 @@ from pydub import AudioSegment
 from pydub.playback import play
 import queue
 
-import logging
-from datetime import datetime
-import os
-
-# Set up logging
-log_directory = "logs"
-if not os.path.exists(log_directory):
-    os.makedirs(log_directory)
-
-log_filename = os.path.join(log_directory, f"voice_commands.log")
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
-)
 
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
@@ -63,7 +49,8 @@ client = Groq(api_key=api_key)
 # Define models
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
-TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
+# TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
+TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
@@ -111,7 +98,7 @@ def start_driver():
         session_id = driver.session_id
         executor_url = driver.command_executor._url
     except Exception as e:
-        logging.error(f"Error terminating WebDriver process: {e}")
+        print(f"Error terminating WebDriver process: {e}")
 
 
 """
@@ -126,9 +113,9 @@ def reconnect_driver():
         if session_id and executor_url:
             driver = webdriver.Remote(command_executor=executor_url, options=options)
             driver.session_id = session_id
-            logging.info("Reconnected to the existing session.")
+            print("Reconnected to the existing session.")
     except (SessionNotCreatedException, WebDriverException) as e:
-        logging.error(f"Failed to reconnect to the session: {str(e)}")
+        print(f"Failed to reconnect to the session: {str(e)}")
 
         # Attempt to start a new session
         try:
@@ -142,9 +129,9 @@ def reconnect_driver():
             time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
-            logging.info("Started a new session.")
+            print("Started a new session.")
         except Exception as new_session_error:
-            logging.error(f"Failed to start a new session: {new_session_error}")
+            print(f"Failed to start a new session: {new_session_error}")
 
 
 # Start the WebDriver in a separate thread
@@ -164,15 +151,12 @@ def reconnect_driver():
 
 def change_device():
     try:
-        if driver is None:
-            logging.error("WebDriver is not initialized.")
-            return
         devices_button = driver.find_element(
             By.XPATH, "//button[@aria-label='Connect to a device']"
         )
         # Click the button
         devices_button.click()
-        logging.info("Playback started.")
+        print("Playback started.")
         # Locate the element containing "This web browser"
         # Wait for the panel to appear
         # wait = WebDriverWait(driver, 10)
@@ -180,7 +164,7 @@ def change_device():
         try:
             driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
         except Exception as e:
-            logging.error(f"Error while trying to play after reconnection: {e}")
+            print(f"Error while trying to play after reconnection: {e}")
         time.sleep(2)
         driver.find_element(
             # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
@@ -189,31 +173,28 @@ def change_device():
         ).click()
         # Click the panel
     except Exception as e:
-        logging.error(f"Error while trying to play after reconnection: {e}")
+        print(f"Error while trying to play after reconnection: {e}")
 
 
 # Control playback
 def play_song():
     try:
-        if driver is None:
-            logging.error("WebDriver is not initialized.")
-            return
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
     except Exception as e:
         error_message = str(e)
         if "disconnected" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 play_button = driver.find_element(
                     By.XPATH, "//button[@aria-label='Play']"
                 )
                 play_button.click()
-                logging.info("Playback started after reconnection.")
+                print("Playback started after reconnection.")
             except Exception as e:
-                logging.error(f"Error while trying to play after reconnection: {e}")
+                print(f"Error while trying to play after reconnection: {e}")
 
         elif "target window already closed" in error_message:
             driver.quit()
@@ -223,91 +204,82 @@ def play_song():
                     By.XPATH, "//button[@aria-label='Play']"
                 )
                 play_button.click()
-                logging.info("Playback started after reconnection.")
+                print("Playback started after reconnection.")
             except Exception as e:
-                logging.error(f"Error while trying to play after reconnection: {e}")
+                print(f"Error while trying to play after reconnection: {e}")
 
         else:
-            logging.error(f"Error while trying to play: {e}")
+            print(f"Error while trying to play: {e}")
 
 
 def pause_song():
     try:
-        if driver is None:
-            logging.error("WebDriver is not initialized.")
-            return
         pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
         pause_button.click()
-        logging.info("Playback paused.")
+        print("Playback paused.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 pause_button = driver.find_element(
                     "xpath", "//button[@aria-label='Pause']"
                 )
                 pause_button.click()
-                logging.info("Playback paused after reconnection.")
+                print("Playback paused after reconnection.")
             except Exception as e:
-                logging.error(f"Error while trying to pause after reconnection: {e}")
+                print(f"Error while trying to pause after reconnection: {e}")
         else:
-            logging.error(f"Error while trying to pause: {e}")
+            print(f"Error while trying to pause: {e}")
 
 
 def next_track():
     try:
-        if driver is None:
-            logging.error("WebDriver is not initialized.")
-            return
         next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
         next_button.click()
-        logging.info("Next track.")
+        print("Next track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 next_button = driver.find_element(
                     "xpath", "//button[@aria-label='Next']"
                 )
                 next_button.click()
-                logging.info("Next track after reconnection.")
+                print("Next track after reconnection.")
             except Exception as e:
-                logging.error(
+                print(
                     f"Error while trying to skip to next track after reconnection: {e}"
                 )
         else:
-            logging.error(f"Error while trying to skip to next track: {e}")
+            print(f"Error while trying to skip to next track: {e}")
 
 
 def previous_track():
     try:
-        if driver is None:
-            logging.error("WebDriver is not initialized.")
-            return
         prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
         prev_button.click()
-        logging.info("Previous track.")
+        print("Previous track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 prev_button = driver.find_element(
                     "xpath", "//button[@aria-label='Previous']"
                 )
                 prev_button.click()
-                logging.info("Previous track after reconnection.")
+                print("Previous track after reconnection.")
             except Exception as e:
-                logging.error(
+                print(
                     f"Error while trying to go to previous track after reconnection: {e}"
                 )
         else:
-            logging.error(f"Error while trying to go to previous track: {e}")
+            print(f"Error while trying to go to previous track: {e}")
 
 
 """
@@ -542,7 +514,7 @@ ACTIONS = {
 ######   ##     ## ## ## ## ##          ##     ##  ##     ## ## ## ##  ######  
 ##       ##     ## ##  #### ##          ##     ##  ##     ## ##  ####       ## 
 ##       ##     ## ##   ### ##    ##    ##     ##  ##     ## ##   ### ##    ## 
-########  #######  ##    ##  ######     ##    ####  #######  ##    ##  ######  
+##        #######  ##    ##  ######     ##    ####  #######  ##    ##  ######  
 """
 
 
@@ -653,11 +625,11 @@ def kill_process_by_name(process_name):
     for proc in psutil.process_iter(["pid", "name"]):
         if proc.info["name"] == process_name:
             proc.kill()
-            logging.info(
+            print(
                 f"Process {process_name} with PID {proc.info['pid']} has been killed."
             )
             return
-    logging.info(f"No process named {process_name} found.")
+    print(f"No process named {process_name} found.")
 
 
 def get_volume():
@@ -673,7 +645,7 @@ def volume_up(steps=1):
     current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
     volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    logging.info(f"Volume increased to {new_volume * 100:.0f}%")
+    print(f"Volume increased to {new_volume * 100:.0f}%")
 
 
 def volume_down(steps=1):
@@ -681,16 +653,16 @@ def volume_down(steps=1):
     current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
     volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    logging.info(f"Volume decreased to {new_volume * 100:.0f}%")
+    print(f"Volume decreased to {new_volume * 100:.0f}%")
 
 
 def set_volume(level):
     if 0.0 <= level <= 1.0:
         volume_interface = get_volume_interface()
         volume_interface.SetMasterVolumeLevelScalar(level, None)
-        logging.info(f"Volume set to {level * 100:.0f}%")
+        print(f"Volume set to {level * 100:.0f}%")
     else:
-        logging.info("Volume level must be between 0.0 and 1.0")
+        print("Volume level must be between 0.0 and 1.0")
 
 
 def get_volume_interface():
@@ -708,22 +680,22 @@ def mute_volume():
 def play_media(song=None):
     # Logic to play song if provided
     if song:
-        logging.info(f"Playing {song}")
+        print(f"Playing {song}")
     else:
-        logging.info("Playing default media")
+        print("Playing default media")
 
 
 def stop_media():
     pause_song()
-    logging.info("Stopping media")
+    print("Stopping media")
 
 
 def next_track():
-    logging.info("Next track")
+    print("Next track")
 
 
 def previous_track():
-    logging.info("Previous track")
+    print("Previous track")
 
 
 # Custom or complex operations
@@ -778,7 +750,7 @@ def flush_dns():
 # Voicemeeter commands
 def restart_voicemeeter():
     initial_volume = get_volume()
-    logging.info(initial_volume)
+    print(initial_volume)
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
@@ -788,17 +760,7 @@ def restart_voicemeeter():
 
 # DisplayFusion commands
 def load_display_fusion_profile(profile_name):
-    # Kill the DisplayFusion process
-    kill_process = subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
-    if kill_process.returncode == 0:
-        logging.info("DisplayFusion process killed successfully.")
-    else:
-        logging.info("Failed to kill DisplayFusion process.")
-
-    # Wait for a short period to ensure the process is killed
-    time.sleep(2)
-
-    # Load the DisplayFusion profile
+    subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
     subprocess.run(
         [
             "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
@@ -809,8 +771,6 @@ def load_display_fusion_profile(profile_name):
 
 
 def open_negative_screen():
-    subprocess.run(["taskkill", "/F", "/IM", "NegativeScreen-custom-multi-monitor.exe"])
-    time.sleep(2)
     subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     )
@@ -889,10 +849,10 @@ def route_query(query):
     routing_decision = response.choices[0].message.content.strip()
 
     if "Function" in routing_decision:
-        logging.info("function decided")
+        print("function decided")
         return "Function"
     else:
-        logging.info("no function needed")
+        print("no function needed")
         return "NO TOOL"
 
 
@@ -916,14 +876,14 @@ def run_general(query):
     for chunk in stream:
         # Safeguard for chunk choices
         if not chunk.choices or not chunk.choices[0].delta:
-            logging.info("Invalid chunk received, skipping...")
+            print("Invalid chunk received, skipping...")
             continue
 
         chunk_text = chunk.choices[0].delta.content
 
         # Ensure that the chunk text is not None
         if chunk_text is None:
-            logging.info("Received NoneType chunk, skipping...")
+            print("Received NoneType chunk, skipping...")
             continue
 
         # Accumulate the chunk text
@@ -948,9 +908,9 @@ def run_general(query):
             if stripped_text:
                 TTS_queue.put(stripped_text)  # Send to TTS
             else:
-                logging.info("Stripped text is empty, skipping TTS...")
+                print("Stripped text is empty, skipping TTS...")
 
-            logging.info(current_sentence)  # Print the sentence with colors
+            print(current_sentence)  # Print the sentence with colors
             # Reset the current sentence after sending to TTS
             current_sentence = ""
 """
@@ -975,7 +935,7 @@ def run_ollama(query):
 
     for chunk in stream:
         # Safeguard for chunk content
-        logging.info(chunk["message"]["content"], end="", flush=True)
+        print(chunk["message"]["content"], end="", flush=True)
         if not chunk.get("message") or not chunk["message"].get("content"):
             continue
 
@@ -1014,6 +974,10 @@ def run_ollama(query):
 """
 
 
+# Create a ThreadPoolExecutor instance
+executor = ThreadPoolExecutor(max_workers=2)
+
+
 # Function to process the queue
 def process_TTS_queue():
     while True:
@@ -1028,11 +992,10 @@ def process_TTS_queue():
 def process_TTS_Audio_play_queue():
     while True:
         audio_fp = TTS_Audio_play_queue.get()
+        if audio_fp is None:  # Add sentinel check
+            break
         audio_fp.seek(0)
-
         sound = AudioSegment.from_file(audio_fp, format="mp3")
-
-        # Play the adjusted audio
         play(sound)
         TTS_Audio_play_queue.task_done()
 
@@ -1041,13 +1004,23 @@ def process_TTS_Audio_play_queue():
 TTS_Audio_play_queue = queue.Queue()
 TTS_queue = queue.Queue()
 
-executor = ThreadPoolExecutor(max_workers=8)  # Change max_workers as needed
-
-# Start the worker thread
+# Submit tasks to the executor instead of creating threads directly
 executor.submit(process_TTS_Audio_play_queue)
-
-# Start the worker thread
 executor.submit(process_TTS_queue)
+
+
+# Add cleanup function to be called when shutting down
+def cleanup():
+    # Signal the worker threads to stop
+    TTS_queue.put(None)
+    TTS_Audio_play_queue.put(None)
+
+    # Shutdown the executor gracefully
+    executor.shutdown(wait=True)
+
+    # Cleanup other resources if needed
+    if driver:
+        driver.quit()
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
@@ -1074,8 +1047,8 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         TTS_Audio_play_queue.put(audio_fp)
 
     except Exception as e:
-        logging.error(f"Error occurred during online TTS playback: {e}")
-        logging.info("Falling back to offline TTS...")
+        print(f"Error occurred during online TTS playback: {e}")
+        print("Falling back to offline TTS...")
         fallback_offline_tts(text, speed, volume)
 
 
@@ -1096,7 +1069,7 @@ def fallback_offline_tts(text, speed=1.2, volume=1):
         engine.runAndWait()
 
     except Exception as e:
-        logging.error(f"Offline TTS failed: {e}")
+        print(f"Offline TTS failed: {e}")
 
 
 """
@@ -1400,7 +1373,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "previous_track",
-            "description": "Go to the previous track or play previous song",
+            "description": "play previous song or play previous music track",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1588,63 +1561,73 @@ tools = [
 
 
 def execute_command_run_with_tool(query):
-    route = route_query(query)  # Step 1: Determine if a tool is needed
+    # Step 1: Handle tool usage
+    tools_messages = [
+        {
+            "role": "system",
+            "content": """You are a specialized assistant for controlling computer functions. Your role is to:
+1. Carefully analyze user queries to determine the most appropriate tool/function
+2. Select the SINGLE most relevant tool from the available options
+3. Only use tools that exactly match the user's intent
+4. For system controls (volume, media, windows), be very precise in tool selection
+5. If no exact tool matches the query, do not force a tool selection
 
-    # Step 2: Handle the result of routing
-    if route == "NO TOOL":
-        # Use the general model if no tools are needed
-        response = run_ollama(query)
-        logging.info(response)
-        asyncio.run(
-            text_to_speech(text=response)
-        )  # Asynchronously call text-to-speech with the response
-    else:
-        # Step 3: Handle tool usage
-        tools_messages = [
-            {
-                "role": "system",
-                "content": "you are a tool selection assistant. pick the best possible tool among tools for the given query",
-            },
-            {
-                "role": "user",
-                "content": query,
-            },
-        ]
-        # Step 4: Get the response from the model that handles tool usage
+Examples:
+- "play music" → use play_song()
+- "volume up" → use volume_up()
+- "open chrome" → use open_chrome()
+- "minimize everything" → use minimize_all_windows()
+- "check internet speed" → ping_google()
+
+Only respond with tool calls, no conversational responses.""",
+        },
+        {
+            "role": "user",
+            "content": query,
+        },
+    ]
+
+    try:
+        # Step 2: Get the response from the model
         response = client.chat.completions.create(
             model=TOOL_USE_MODEL,
             messages=tools_messages,
             tools=tools,
-            tool_choice="auto",  # Automatically decide which tool to use
+            tool_choice="auto",
             max_tokens=4096,
         )
+
         response_message = response.choices[0].message
-        logging.info(response_message)
+        print(response_message)
         tool_calls = response_message.tool_calls
 
-        # Step 5: Call the functions dynamically based on the model's tool calls
+        # Step 3: Execute tool calls
         if tool_calls:
             for tool_call in tool_calls:
-                # Extract arguments and function name
                 function_args = json.loads(tool_call.function.arguments)
                 function_name = tool_call.function.name
 
-                # Dynamically call the function using globals()
                 if function_name in globals():
                     try:
-                        # Call the function with the arguments
                         result = globals()[function_name](**function_args)
-                        logging.info(
+                        print(
                             f"\033[35mExecuted {function_name} with result: {result}\033[0m"
                         )
                     except Exception as e:
-                        logging.error(f"Error executing function {function_name}: {e}")
+                        print(f"Error executing function {function_name}: {str(e)}")
+                        return False
                 else:
-                    logging.error(f"Function {function_name} not found in globals.")
+                    print(f"Function {function_name} not found")
+                    return False
         else:
-            logging.info("No tool calls were made by the model.")
+            print("No matching tool found for the query")
+            return False
 
-    return True  # Function executed successfully
+        return True
+
+    except Exception as e:
+        print(f"Error in execute_command_run_with_tool: {str(e)}")
+        return False
 
 
 """
@@ -1701,8 +1684,8 @@ def execute_command_fuzzy(transcript):
 
         if action:
             action()  # Execute the corresponding action
-            logging.info(f"Executing command: {cmd}")
+            print(f"Executing command: {cmd}")
         else:
-            logging.info(f"No matching command found for: {cmd}")
+            print(f"No matching command found for: {cmd}")
 
     return True
