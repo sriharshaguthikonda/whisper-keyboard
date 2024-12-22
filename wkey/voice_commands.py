@@ -49,6 +49,7 @@ client = Groq(api_key=api_key)
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
 TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
+TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
@@ -1545,7 +1546,7 @@ tools = [
 
 
 def execute_command_run_with_tool(query):
-    route = route_query(query)  # Step 1: Determine if a tool is needed
+    """route = route_query(query)  # Step 1: Determine if a tool is needed
 
     # Step 2: Handle the result of routing
     if route == "NO TOOL":
@@ -1555,51 +1556,66 @@ def execute_command_run_with_tool(query):
         asyncio.run(
             text_to_speech(text=response)
         )  # Asynchronously call text-to-speech with the response
+    else:"""
+    # Step 3: Handle tool usage
+    tools_messages = [
+        {
+            "role": "system",
+            "content": """You are a specialized assistant for controlling computer functions. Your role is to:
+                1. Carefully analyze user queries to determine the most appropriate tool/function
+                2. Select the SINGLE most relevant tool from the available options
+                3. Only use tools that exactly match the user's intent
+                4. For system controls (volume, media, windows), be very precise in tool selection
+                5. If no exact tool matches the query, do not force a tool selection
+
+                Examples:
+                - "play music" → use play_song()
+                - "volume up" → use volume_up()
+                - "open chrome" → use open_chrome()
+                - "minimize everything" → use minimize_all_windows()
+                - "check internet speed" → ping_google()
+
+                Only respond with tool calls, no conversational responses.""",
+        },
+        {
+            "role": "user",
+            "content": query,
+        },
+    ]
+
+    # Step 4: Get the response from the model that handles tool usage
+    response = client.chat.completions.create(
+        model=TOOL_USE_MODEL,
+        messages=tools_messages,
+        tools=tools,
+        tool_choice="auto",  # Automatically decide which tool to use
+        max_tokens=4096,
+    )
+    response_message = response.choices[0].message
+    print(response_message)
+    tool_calls = response_message.tool_calls
+
+    # Step 5: Call the functions dynamically based on the model's tool calls
+    if tool_calls:
+        for tool_call in tool_calls:
+            # Extract arguments and function name
+            function_args = json.loads(tool_call.function.arguments)
+            function_name = tool_call.function.name
+
+            # Dynamically call the function using globals()
+            if function_name in globals():
+                try:
+                    # Call the function with the arguments
+                    result = globals()[function_name](**function_args)
+                    print(
+                        f"\033[35mExecuted {function_name} with result: {result}\033[0m"
+                    )
+                except Exception as e:
+                    print(f"Error executing function {function_name}: {e}")
+            else:
+                print(f"Function {function_name} not found in globals.")
     else:
-        # Step 3: Handle tool usage
-        tools_messages = [
-            {
-                "role": "system",
-                "content": "you are a tool selection assistant. pick the best possible tool among tools for the given query",
-            },
-            {
-                "role": "user",
-                "content": query,
-            },
-        ]
-        # Step 4: Get the response from the model that handles tool usage
-        response = client.chat.completions.create(
-            model=TOOL_USE_MODEL,
-            messages=tools_messages,
-            tools=tools,
-            tool_choice="auto",  # Automatically decide which tool to use
-            max_tokens=4096,
-        )
-        response_message = response.choices[0].message
-        print(response_message)
-        tool_calls = response_message.tool_calls
-
-        # Step 5: Call the functions dynamically based on the model's tool calls
-        if tool_calls:
-            for tool_call in tool_calls:
-                # Extract arguments and function name
-                function_args = json.loads(tool_call.function.arguments)
-                function_name = tool_call.function.name
-
-                # Dynamically call the function using globals()
-                if function_name in globals():
-                    try:
-                        # Call the function with the arguments
-                        result = globals()[function_name](**function_args)
-                        print(
-                            f"\033[35mExecuted {function_name} with result: {result}\033[0m"
-                        )
-                    except Exception as e:
-                        print(f"Error executing function {function_name}: {e}")
-                else:
-                    print(f"Function {function_name} not found in globals.")
-        else:
-            print("No tool calls were made by the model.")
+        print("No tool calls were made by the model.")
 
     return True  # Function executed successfully
 
