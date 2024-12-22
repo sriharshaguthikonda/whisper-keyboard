@@ -33,14 +33,28 @@ import edge_tts
 import pyttsx4
 
 import asyncio
-import threading
+from concurrent.futures import ThreadPoolExecutor
 
 
 from pydub import AudioSegment
 from pydub.playback import play
 import queue
 
-from browser_manager import BrowserManager
+import logging
+from datetime import datetime
+import os
+
+# Set up logging
+log_directory = "logs"
+if not os.path.exists(log_directory):
+    os.makedirs(log_directory)
+
+log_filename = os.path.join(log_directory, f"voice_commands.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler(log_filename), logging.StreamHandler()],
+)
 
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
@@ -83,69 +97,217 @@ driver_pid = None
 session_id = None
 executor_url = None
 
-# Replace the old webdriver initialization code with BrowserManager
-browser = BrowserManager(
-    webdriver_path=webdriver_path,
-    user_data_dir=r"C:\Users\deletable\AppData\Local\Microsoft\Edge\User Data",  # Update this path to match your system
-    profile_dir="Profile 1",  # Make sure this matches your Edge profile
-    headless=False,
-)
-
 
 def start_driver():
+    global driver, driver_pid, session_id, executor_url
+
     try:
-        browser.start_driver()
-        time.sleep(2)  # Small delay to ensure browser is ready
-        if browser.driver and not browser.check_driver_health():
-            logging.error("Browser failed to start properly")
-            browser.restart_driver()
+        driver = webdriver.Edge(service=service, options=options)
+        time.sleep(6)
+        driver.get("https://open.spotify.com/collection/tracks")
+        # driver.execute_script("window.focus();")
+        time.sleep(5)  # Wait for the page to load
+        driver_pid = driver.service.process.pid
+        session_id = driver.session_id
+        executor_url = driver.command_executor._url
     except Exception as e:
-        logging.error(f"Error starting browser: {e}")
+        logging.error(f"Error terminating WebDriver process: {e}")
 
 
 """
 https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 """
 
-# Remove these functions as they're no longer needed:
-# - reconnect_driver
-# - All the old browser control implementations
+
+def reconnect_driver():
+    global driver, session_id, executor_url, options
+
+    try:
+        if session_id and executor_url:
+            driver = webdriver.Remote(command_executor=executor_url, options=options)
+            driver.session_id = session_id
+            logging.info("Reconnected to the existing session.")
+    except (SessionNotCreatedException, WebDriverException) as e:
+        logging.error(f"Failed to reconnect to the session: {str(e)}")
+
+        # Attempt to start a new session
+        try:
+            # options = webdriver.EdgeOptions()
+            # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
+
+            driver = webdriver.Edge(
+                options=options,
+                service_log_path="C:/Users/deletable/Downloads/edgedriver_win64/msedgedriver.log",
+            )
+            time.sleep(3)
+            driver.get("https://open.spotify.com/collection/tracks")
+            time.sleep(3)
+            logging.info("Started a new session.")
+        except Exception as new_session_error:
+            logging.error(f"Failed to start a new session: {new_session_error}")
+
+
+# Start the WebDriver in a separate thread
+# Allow time to log in (if not using a persistent session)
+# time.sleep(60)  # Uncomment if you need time to log in manually
+
+"""
+ ######  ########   #######  ######## #### ######## ##    ## 
+##    ## ##     ## ##     ##    ##     ##  ##        ##  ##  
+##       ##     ## ##     ##    ##     ##  ##         ####   
+ ######  ########  ##     ##    ##     ##  ######      ##    
+      ## ##        ##     ##    ##     ##  ##          ##    
+##    ## ##        ##     ##    ##     ##  ##          ##    
+ ######  ##         #######     ##    #### ##          ##    
+"""
 
 
 def change_device():
     try:
-        browser.change_device()
+        if driver is None:
+            logging.error("WebDriver is not initialized.")
+            return
+        devices_button = driver.find_element(
+            By.XPATH, "//button[@aria-label='Connect to a device']"
+        )
+        # Click the button
+        devices_button.click()
+        logging.info("Playback started.")
+        # Locate the element containing "This web browser"
+        # Wait for the panel to appear
+        # wait = WebDriverWait(driver, 10)
+        time.sleep(2)
+        try:
+            driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
+        except Exception as e:
+            logging.error(f"Error while trying to play after reconnection: {e}")
+        time.sleep(2)
+        driver.find_element(
+            # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
+            By.XPATH,
+            '//*[text()="This web browser"]',
+        ).click()
+        # Click the panel
     except Exception as e:
-        logging.error(f"Error changing device: {e}")
+        logging.error(f"Error while trying to play after reconnection: {e}")
 
 
 # Control playback
 def play_song():
     try:
-        browser.play_song()
+        if driver is None:
+            logging.error("WebDriver is not initialized.")
+            return
+        play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
+        play_button.click()
+        change_device()
     except Exception as e:
-        logging.error(f"Error playing song: {e}")
+        error_message = str(e)
+        if "disconnected" in error_message:
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            reconnect_driver()
+            try:
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
+                )
+                play_button.click()
+                logging.info("Playback started after reconnection.")
+            except Exception as e:
+                logging.error(f"Error while trying to play after reconnection: {e}")
+
+        elif "target window already closed" in error_message:
+            driver.quit()
+            start_driver()
+            try:
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
+                )
+                play_button.click()
+                logging.info("Playback started after reconnection.")
+            except Exception as e:
+                logging.error(f"Error while trying to play after reconnection: {e}")
+
+        else:
+            logging.error(f"Error while trying to play: {e}")
 
 
 def pause_song():
     try:
-        browser.pause_song()
+        if driver is None:
+            logging.error("WebDriver is not initialized.")
+            return
+        pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
+        pause_button.click()
+        logging.info("Playback paused.")
     except Exception as e:
-        logging.error(f"Error pausing song: {e}")
+        error_message = str(e)
+        if "disconnected: not connected to DevTools" in error_message:
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            reconnect_driver()
+            try:
+                pause_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Pause']"
+                )
+                pause_button.click()
+                logging.info("Playback paused after reconnection.")
+            except Exception as e:
+                logging.error(f"Error while trying to pause after reconnection: {e}")
+        else:
+            logging.error(f"Error while trying to pause: {e}")
 
 
 def next_track():
     try:
-        browser.next_track()
+        if driver is None:
+            logging.error("WebDriver is not initialized.")
+            return
+        next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
+        next_button.click()
+        logging.info("Next track.")
     except Exception as e:
-        logging.error(f"Error skipping track: {e}")
+        error_message = str(e)
+        if "disconnected: not connected to DevTools" in error_message:
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            reconnect_driver()
+            try:
+                next_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Next']"
+                )
+                next_button.click()
+                logging.info("Next track after reconnection.")
+            except Exception as e:
+                logging.error(
+                    f"Error while trying to skip to next track after reconnection: {e}"
+                )
+        else:
+            logging.error(f"Error while trying to skip to next track: {e}")
 
 
 def previous_track():
     try:
-        browser.previous_track()
+        if driver is None:
+            logging.error("WebDriver is not initialized.")
+            return
+        prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
+        prev_button.click()
+        logging.info("Previous track.")
     except Exception as e:
-        logging.error(f"Error going to previous track: {e}")
+        error_message = str(e)
+        if "disconnected: not connected to DevTools" in error_message:
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            reconnect_driver()
+            try:
+                prev_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Previous']"
+                )
+                prev_button.click()
+                logging.info("Previous track after reconnection.")
+            except Exception as e:
+                logging.error(
+                    f"Error while trying to go to previous track after reconnection: {e}"
+                )
+        else:
+            logging.error(f"Error while trying to go to previous track: {e}")
 
 
 """
@@ -380,7 +542,7 @@ ACTIONS = {
 ######   ##     ## ## ## ## ##          ##     ##  ##     ## ## ## ##  ######  
 ##       ##     ## ##  #### ##          ##     ##  ##     ## ##  ####       ## 
 ##       ##     ## ##   ### ##    ##    ##     ##  ##     ## ##   ### ##    ## 
-##        #######  ##    ##  ######     ##    ####  #######  ##    ##  ######  
+########  #######  ##    ##  ######     ##    ####  #######  ##    ##  ######  
 """
 
 
@@ -491,11 +653,11 @@ def kill_process_by_name(process_name):
     for proc in psutil.process_iter(["pid", "name"]):
         if proc.info["name"] == process_name:
             proc.kill()
-            print(
+            logging.info(
                 f"Process {process_name} with PID {proc.info['pid']} has been killed."
             )
             return
-    print(f"No process named {process_name} found.")
+    logging.info(f"No process named {process_name} found.")
 
 
 def get_volume():
@@ -511,7 +673,7 @@ def volume_up(steps=1):
     current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
     volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    print(f"Volume increased to {new_volume * 100:.0f}%")
+    logging.info(f"Volume increased to {new_volume * 100:.0f}%")
 
 
 def volume_down(steps=1):
@@ -519,16 +681,16 @@ def volume_down(steps=1):
     current_volume = volume_interface.GetMasterVolumeLevelScalar()
     new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
     volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    print(f"Volume decreased to {new_volume * 100:.0f}%")
+    logging.info(f"Volume decreased to {new_volume * 100:.0f}%")
 
 
 def set_volume(level):
     if 0.0 <= level <= 1.0:
         volume_interface = get_volume_interface()
         volume_interface.SetMasterVolumeLevelScalar(level, None)
-        print(f"Volume set to {level * 100:.0f}%")
+        logging.info(f"Volume set to {level * 100:.0f}%")
     else:
-        print("Volume level must be between 0.0 and 1.0")
+        logging.info("Volume level must be between 0.0 and 1.0")
 
 
 def get_volume_interface():
@@ -546,22 +708,22 @@ def mute_volume():
 def play_media(song=None):
     # Logic to play song if provided
     if song:
-        print(f"Playing {song}")
+        logging.info(f"Playing {song}")
     else:
-        print("Playing default media")
+        logging.info("Playing default media")
 
 
 def stop_media():
     pause_song()
-    print("Stopping media")
+    logging.info("Stopping media")
 
 
 def next_track():
-    print("Next track")
+    logging.info("Next track")
 
 
 def previous_track():
-    print("Previous track")
+    logging.info("Previous track")
 
 
 # Custom or complex operations
@@ -616,7 +778,7 @@ def flush_dns():
 # Voicemeeter commands
 def restart_voicemeeter():
     initial_volume = get_volume()
-    print(initial_volume)
+    logging.info(initial_volume)
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
@@ -626,7 +788,17 @@ def restart_voicemeeter():
 
 # DisplayFusion commands
 def load_display_fusion_profile(profile_name):
-    subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
+    # Kill the DisplayFusion process
+    kill_process = subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
+    if kill_process.returncode == 0:
+        logging.info("DisplayFusion process killed successfully.")
+    else:
+        logging.info("Failed to kill DisplayFusion process.")
+
+    # Wait for a short period to ensure the process is killed
+    time.sleep(2)
+
+    # Load the DisplayFusion profile
     subprocess.run(
         [
             "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
@@ -637,6 +809,8 @@ def load_display_fusion_profile(profile_name):
 
 
 def open_negative_screen():
+    subprocess.run(["taskkill", "/F", "/IM", "NegativeScreen-custom-multi-monitor.exe"])
+    time.sleep(2)
     subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     )
@@ -715,10 +889,10 @@ def route_query(query):
     routing_decision = response.choices[0].message.content.strip()
 
     if "Function" in routing_decision:
-        print("function decided")
+        logging.info("function decided")
         return "Function"
     else:
-        print("no function needed")
+        logging.info("no function needed")
         return "NO TOOL"
 
 
@@ -742,14 +916,14 @@ def run_general(query):
     for chunk in stream:
         # Safeguard for chunk choices
         if not chunk.choices or not chunk.choices[0].delta:
-            print("Invalid chunk received, skipping...")
+            logging.info("Invalid chunk received, skipping...")
             continue
 
         chunk_text = chunk.choices[0].delta.content
 
         # Ensure that the chunk text is not None
         if chunk_text is None:
-            print("Received NoneType chunk, skipping...")
+            logging.info("Received NoneType chunk, skipping...")
             continue
 
         # Accumulate the chunk text
@@ -774,9 +948,9 @@ def run_general(query):
             if stripped_text:
                 TTS_queue.put(stripped_text)  # Send to TTS
             else:
-                print("Stripped text is empty, skipping TTS...")
+                logging.info("Stripped text is empty, skipping TTS...")
 
-            print(current_sentence)  # Print the sentence with colors
+            logging.info(current_sentence)  # Print the sentence with colors
             # Reset the current sentence after sending to TTS
             current_sentence = ""
 """
@@ -801,7 +975,7 @@ def run_ollama(query):
 
     for chunk in stream:
         # Safeguard for chunk content
-        print(chunk["message"]["content"], end="", flush=True)
+        logging.info(chunk["message"]["content"], end="", flush=True)
         if not chunk.get("message") or not chunk["message"].get("content"):
             continue
 
@@ -867,12 +1041,13 @@ def process_TTS_Audio_play_queue():
 TTS_Audio_play_queue = queue.Queue()
 TTS_queue = queue.Queue()
 
-# Start the worker thread
-threading.Thread(target=process_TTS_Audio_play_queue, daemon=True).start()
-
+executor = ThreadPoolExecutor(max_workers=8)  # Change max_workers as needed
 
 # Start the worker thread
-threading.Thread(target=process_TTS_queue, daemon=True).start()
+executor.submit(process_TTS_Audio_play_queue)
+
+# Start the worker thread
+executor.submit(process_TTS_queue)
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
@@ -899,8 +1074,8 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         TTS_Audio_play_queue.put(audio_fp)
 
     except Exception as e:
-        print(f"Error occurred during online TTS playback: {e}")
-        print("Falling back to offline TTS...")
+        logging.error(f"Error occurred during online TTS playback: {e}")
+        logging.info("Falling back to offline TTS...")
         fallback_offline_tts(text, speed, volume)
 
 
@@ -921,7 +1096,7 @@ def fallback_offline_tts(text, speed=1.2, volume=1):
         engine.runAndWait()
 
     except Exception as e:
-        print(f"Offline TTS failed: {e}")
+        logging.error(f"Offline TTS failed: {e}")
 
 
 """
@@ -1419,7 +1594,7 @@ def execute_command_run_with_tool(query):
     if route == "NO TOOL":
         # Use the general model if no tools are needed
         response = run_ollama(query)
-        print(response)
+        logging.info(response)
         asyncio.run(
             text_to_speech(text=response)
         )  # Asynchronously call text-to-speech with the response
@@ -1444,7 +1619,7 @@ def execute_command_run_with_tool(query):
             max_tokens=4096,
         )
         response_message = response.choices[0].message
-        print(response_message)
+        logging.info(response_message)
         tool_calls = response_message.tool_calls
 
         # Step 5: Call the functions dynamically based on the model's tool calls
@@ -1459,15 +1634,15 @@ def execute_command_run_with_tool(query):
                     try:
                         # Call the function with the arguments
                         result = globals()[function_name](**function_args)
-                        print(
+                        logging.info(
                             f"\033[35mExecuted {function_name} with result: {result}\033[0m"
                         )
                     except Exception as e:
-                        print(f"Error executing function {function_name}: {e}")
+                        logging.error(f"Error executing function {function_name}: {e}")
                 else:
-                    print(f"Function {function_name} not found in globals.")
+                    logging.error(f"Function {function_name} not found in globals.")
         else:
-            print("No tool calls were made by the model.")
+            logging.info("No tool calls were made by the model.")
 
     return True  # Function executed successfully
 
@@ -1526,16 +1701,8 @@ def execute_command_fuzzy(transcript):
 
         if action:
             action()  # Execute the corresponding action
-            print(f"Executing command: {cmd}")
+            logging.info(f"Executing command: {cmd}")
         else:
-            print(f"No matching command found for: {cmd}")
+            logging.info(f"No matching command found for: {cmd}")
 
     return True
-
-
-# Update cleanup to use browser manager
-def cleanup():
-    try:
-        browser.quit()
-    except Exception as e:
-        logging.error(f"Error during browser cleanup: {e}")

@@ -1,6 +1,7 @@
 import os
 import time
 import logging
+import shutil
 from typing import Optional
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
@@ -33,6 +34,10 @@ class BrowserManager:
         self.retry_delay = 2
         self.spotify_url = "https://open.spotify.com/collection/tracks"
         self.setup_logging()
+        self.last_restart_time = 0
+        self.restart_cooldown = 30  # Seconds between restart attempts
+        self.device_picker_attempts = 0
+        self.max_device_picker_attempts = 3
 
     def setup_logging(self):
         """Set up logging configuration"""
@@ -124,41 +129,77 @@ class BrowserManager:
             raise
 
     def create_new_session(self):
-        """Create a fresh browser session"""
+        """Create a fresh browser session with crash recovery"""
+        current_time = time.time()
+        if current_time - self.last_restart_time < self.restart_cooldown:
+            self.logger.warning("Waiting for cooldown before restart...")
+            time.sleep(self.restart_cooldown - (current_time - self.last_restart_time))
+
+        # Clean up any crashed browser processes
+        self.cleanup_crashed_processes()
+
+        # Clean up user data if necessary
+        if self.device_picker_attempts >= self.max_device_picker_attempts:
+            self.cleanup_user_data()
+            self.device_picker_attempts = 0
+
         options = self.create_options()
         service = Service(self.webdriver_path)
 
-        for attempt in range(self.max_retries):
+        try:
+            self.driver = webdriver.Edge(service=service, options=options)
+            self.save_session()
+            self.logger.info("New session created successfully")
+
+            # Navigate and wait for page load
+            self.driver.get(self.spotify_url)
+            WebDriverWait(self.driver, 30).until(
+                lambda driver: driver.execute_script("return document.readyState")
+                == "complete"
+            )
+
+            # Wait for login or player to be present
+            WebDriverWait(self.driver, 30).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        "//button[@data-testid='login-button' or @aria-label='Play' or @aria-label='Pause']",
+                    )
+                )
+            )
+
+            self.last_restart_time = time.time()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to create session: {e}")
+            return False
+
+    def cleanup_crashed_processes(self):
+        """Kill any hanging Edge processes"""
+        import psutil
+
+        for proc in psutil.process_iter(["pid", "name"]):
             try:
-                self.driver = webdriver.Edge(service=service, options=options)
-                self.save_session()
-                self.logger.info("New session created successfully")
+                if "msedge.exe" in proc.info["name"].lower():
+                    proc.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
 
-                # Navigate to Spotify and wait for load
-                self.driver.get(self.spotify_url)
-                try:
-                    WebDriverWait(self.driver, 20).until(
-                        EC.presence_of_element_located(
-                            (
-                                By.XPATH,
-                                "//button[@data-testid='login-button' or @aria-label='Play' or @aria-label='Pause']",
-                            )
-                        )
-                    )
-                    self.logger.info("Spotify page loaded successfully")
-                except TimeoutException:
-                    self.logger.warning(
-                        "Spotify page load timed out, may need manual login"
-                    )
-
-                return
+    def cleanup_user_data(self):
+        """Clean up corrupted user data"""
+        if self.user_data_dir and os.path.exists(self.user_data_dir):
+            backup_dir = f"{self.user_data_dir}_backup_{int(time.time())}"
+            try:
+                # Backup existing data
+                shutil.copytree(self.user_data_dir, backup_dir)
+                # Remove problematic files
+                for item in ["Singleton", "SingletonLock", "SingletonCookie"]:
+                    path = os.path.join(self.user_data_dir, item)
+                    if os.path.exists(path):
+                        os.remove(path)
+                self.logger.info("User data cleaned up")
             except Exception as e:
-                self.logger.error(f"Attempt {attempt + 1} failed: {e}")
-                if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay)
-                    self.logger.info(f"Retrying... Attempt {attempt + 2}")
-
-        raise WebDriverException("Failed to create new session after multiple attempts")
+                self.logger.error(f"Failed to clean user data: {e}")
 
     def check_driver_health(self) -> bool:
         """Verify if the current driver session is healthy"""
@@ -262,27 +303,44 @@ class BrowserManager:
         return self.safe_execute(_previous)
 
     def change_device(self):
-        """Change playback device with error handling"""
+        """Enhanced device picker with retries"""
 
         def _change_device():
-            devices_button = self.find_element_safely(
-                By.XPATH, "//button[@aria-label='Connect to a device']"
+            self.device_picker_attempts += 1
+
+            # Wait for devices button
+            devices_button = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable(
+                    (By.XPATH, "//button[@aria-label='Connect to a device']")
+                )
             )
             devices_button.click()
             self.logger.info("Device button clicked")
-            time.sleep(2)
 
-            device_picker = self.find_element_safely(
-                By.XPATH, '//*[@id="device-picker"]'
+            # Wait for device picker with longer timeout
+            WebDriverWait(self.driver, 15).until(
+                EC.presence_of_element_located(
+                    (By.XPATH, "//*[@id='device-picker-header']")
+                )
             )
-            device_picker.click()
-            self.logger.info("Device picker clicked")
-            time.sleep(2)
 
-            browser_option = self.find_element_safely(
-                By.XPATH, '//*[text()="This web browser"]'
+            # Find and click device picker with retry
+            for attempt in range(3):
+                try:
+                    device_picker = self.find_element_safely(
+                        By.XPATH, '//*[@id="device-picker"]'
+                    )
+                    self.driver.execute_script("arguments[0].click();", device_picker)
+                    break
+                except Exception:
+                    time.sleep(2)
+
+            # Select browser option
+            browser_option = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, '//*[text()="This web browser"]'))
             )
-            browser_option.click()
-            self.logger.info("Browser option selected")
+            self.driver.execute_script("arguments[0].click();", browser_option)
+
+            self.device_picker_attempts = 0  # Reset on success
 
         return self.safe_execute(_change_device)
