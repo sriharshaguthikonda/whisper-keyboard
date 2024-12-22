@@ -86,18 +86,22 @@ executor_url = None
 # Replace the old webdriver initialization code with BrowserManager
 browser = BrowserManager(
     webdriver_path=webdriver_path,
-    user_data_dir=r"C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data",
-    profile_dir="Profile 1",
-    headless=False
+    user_data_dir=r"C:\Users\deletable\AppData\Local\Microsoft\Edge\User Data",  # Update this path to match your system
+    profile_dir="Profile 1",  # Make sure this matches your Edge profile
+    headless=False,
 )
+
 
 def start_driver():
     try:
         browser.start_driver()
-        browser.driver.get("https://open.spotify.com/collection/tracks")
-        time.sleep(5)  # Initial load wait
+        time.sleep(2)  # Small delay to ensure browser is ready
+        if browser.driver and not browser.check_driver_health():
+            logging.error("Browser failed to start properly")
+            browser.restart_driver()
     except Exception as e:
         logging.error(f"Error starting browser: {e}")
+
 
 """
 https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
@@ -106,6 +110,7 @@ https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 # Remove these functions as they're no longer needed:
 # - reconnect_driver
 # - All the old browser control implementations
+
 
 def change_device():
     try:
@@ -1526,6 +1531,7 @@ def execute_command_fuzzy(transcript):
             print(f"No matching command found for: {cmd}")
 
     return True
+
 
 # Update cleanup to use browser manager
 def cleanup():

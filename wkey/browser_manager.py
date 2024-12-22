@@ -31,6 +31,7 @@ class BrowserManager:
         self.session_file = "browser_session.pkl"
         self.max_retries = 3
         self.retry_delay = 2
+        self.spotify_url = "https://open.spotify.com/collection/tracks"
         self.setup_logging()
 
     def setup_logging(self):
@@ -104,7 +105,19 @@ class BrowserManager:
         try:
             driver = webdriver.Remote(command_executor=session_data["executor_url"])
             driver.session_id = session_data["session_id"]
-            self.logger.info("Session recovered successfully")
+
+            # Verify Spotify is loaded
+            driver.get(self.spotify_url)
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located(
+                    (
+                        By.XPATH,
+                        "//button[@data-testid='login-button' or @aria-label='Play' or @aria-label='Pause']",
+                    )
+                )
+            )
+
+            self.logger.info("Session recovered successfully with Spotify loaded")
             return driver
         except Exception as e:
             self.logger.error(f"Failed to recover session: {e}")
@@ -120,6 +133,24 @@ class BrowserManager:
                 self.driver = webdriver.Edge(service=service, options=options)
                 self.save_session()
                 self.logger.info("New session created successfully")
+
+                # Navigate to Spotify and wait for load
+                self.driver.get(self.spotify_url)
+                try:
+                    WebDriverWait(self.driver, 20).until(
+                        EC.presence_of_element_located(
+                            (
+                                By.XPATH,
+                                "//button[@data-testid='login-button' or @aria-label='Play' or @aria-label='Pause']",
+                            )
+                        )
+                    )
+                    self.logger.info("Spotify page loaded successfully")
+                except TimeoutException:
+                    self.logger.warning(
+                        "Spotify page load timed out, may need manual login"
+                    )
+
                 return
             except Exception as e:
                 self.logger.error(f"Attempt {attempt + 1} failed: {e}")
