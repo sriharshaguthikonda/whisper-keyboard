@@ -178,36 +178,37 @@ def change_device():
 
 # Control playback
 def play_song():
+    global driver
+    
+    # Check if driver is None or not active
+    if driver is None:
+        print("Initializing Spotify WebDriver...")
+        start_driver()
+        
     try:
+        # Verify driver is responsive
+        try:
+            driver.current_url
+        except (WebDriverException, AttributeError):
+            print("WebDriver not responsive, reconnecting...")
+            reconnect_driver()
+            
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
+        
     except Exception as e:
         error_message = str(e)
-        if "disconnected" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+        if "disconnected" in error_message or "NoneType" in error_message:
+            print("Attempting to reconnect due to disconnection...")
             reconnect_driver()
             try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
-                )
+                play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
                 play_button.click()
                 print("Playback started after reconnection.")
+                change_device()
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
-
-        elif "target window already closed" in error_message:
-            driver.quit()
-            start_driver()
-            try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
-                )
-                play_button.click()
-                print("Playback started after reconnection.")
-            except Exception as e:
-                print(f"Error while trying to play after reconnection: {e}")
-
         else:
             print(f"Error while trying to play: {e}")
 

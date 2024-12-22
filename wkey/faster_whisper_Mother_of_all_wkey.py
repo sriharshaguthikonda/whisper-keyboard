@@ -399,7 +399,7 @@ def on_release(key):
     if key == RECORD_KEY and recording:
         if current_time - last_key_press_time > DEBOUNCE_TIME:
             last_key_press_time = current_time
-            executor.submit(stop_recording, None)
+            stop_recording(None)
 
 
 """
