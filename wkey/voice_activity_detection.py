@@ -1,88 +1,65 @@
 import webrtcvad
 import numpy as np
-import sounddevice as sd
-import time
-import queue
+from collections import deque
 
 
 class VoiceDetector:
-    def __init__(self):
-        # Initialize VAD with moderate aggressiveness
-        self.vad = webrtcvad.Vad(2)
+    def __init__(self, aggressiveness=2):
+        self.vad = webrtcvad.Vad(aggressiveness)
         self.sample_rate = 16000
         self.frame_duration = 30  # ms
         self.frame_size = int(self.sample_rate * self.frame_duration / 1000)
-        self.audio_queue = queue.Queue()
-        self.is_running = True
 
-    def audio_callback(self, indata, frames, time_info, status):
-        """Callback for sounddevice to handle incoming audio"""
-        if status:
-            print(f"Status: {status}")
+        # Speech detection smoothing parameters
+        self.speech_history = deque(maxlen=8)  # Maintain history of last 8 frames
+        self.speech_threshold = (
+            0.4  # Consider speech if 40% of recent frames had speech
+        )
+        self.gap_tolerance = 3  # Number of silent frames to tolerate
+
+    def is_speech(self, audio_chunk):
+        """
+        Detect if speech is present in an audio chunk with gap tolerance.
+        audio_chunk should be float32 numpy array with values between -1 and 1
+        """
         try:
             # Convert float32 to int16
-            audio_chunk = (indata * 32767).astype(np.int16)
-            self.audio_queue.put(audio_chunk)
-        except Exception as e:
-            print(f"Error in callback: {e}")
+            audio_int16 = (audio_chunk * 32767).astype(np.int16)
+            audio_bytes = audio_int16.tobytes()
 
-    def process_audio(self):
-        """Process audio chunks from the queue"""
-        while self.is_running:
-            try:
-                audio_chunk = self.audio_queue.get(timeout=1)
-                is_speech = self.vad.is_speech(audio_chunk.tobytes(), self.sample_rate)
-                if is_speech:
-                    print("\033[92m● Voice Active\033[0m")  # Green dot
+            # Get raw speech detection
+            is_speech_current = self.vad.is_speech(audio_bytes, self.sample_rate)
+
+            # Add current detection to history
+            self.speech_history.append(is_speech_current)
+
+            # Count recent speech frames
+            recent_speech_ratio = sum(self.speech_history) / len(self.speech_history)
+
+            # Count consecutive silent frames
+            silent_frames = 0
+            for frame in reversed(self.speech_history):
+                if not frame:
+                    silent_frames += 1
                 else:
-                    print("\033[91m● Silent\033[0m")  # Red dot
-            except queue.Empty:
-                continue
-            except Exception as e:
-                print(f"Error processing audio: {e}")
+                    break
 
-    def start(self):
-        """Start voice detection"""
-        try:
-            # List available devices
-            print("\nAvailable audio devices:")
-            print(sd.query_devices())
-
-            # Get default device
-            device_info = sd.query_devices(None, "input")
-            print(f"\nUsing device: {device_info['name']}")
-
-            # Start the audio stream
-            stream = sd.InputStream(
-                channels=1,
-                dtype=np.float32,
-                samplerate=self.sample_rate,
-                blocksize=self.frame_size,
-                callback=self.audio_callback,
+            # Consider it speech if:
+            # 1. Current frame is speech OR
+            # 2. Recent history has enough speech AND not too many consecutive silent frames
+            return is_speech_current or (
+                recent_speech_ratio >= self.speech_threshold
+                and silent_frames <= self.gap_tolerance
             )
 
-            print("\nStarting voice detection...")
-            with stream:
-                import threading
-
-                process_thread = threading.Thread(target=self.process_audio)
-                process_thread.start()
-
-                while True:
-                    time.sleep(0.1)
-
-        except KeyboardInterrupt:
-            print("\nStopping voice detection...")
         except Exception as e:
-            print(f"Error: {e}")
-        finally:
-            self.is_running = False
-
-
-def main():
-    detector = VoiceDetector()
-    detector.start()
+            print(f"VAD error: {e}")
+            return False
 
 
 if __name__ == "__main__":
-    main()
+    # Simple test
+    detector = VoiceDetector()
+    # Create 30ms of silence
+    silence = np.zeros(480, dtype=np.float32)
+    print(f"Silence detection: {detector.is_speech(silence)}")
