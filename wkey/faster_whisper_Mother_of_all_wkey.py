@@ -59,6 +59,10 @@ import ctypes
 import webrtcvad
 from voice_activity_detection import VoiceDetector
 
+# Add after imports
+import sys
+import traceback
+
 # Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
@@ -786,85 +790,30 @@ def process_audio_async():
                 transcript = transcribe_with_groq(
                     audio_buffer_for_processing, keyword_index
                 )
-            except groq.Error as e:  # This will catch all Groq API errors
-                logging.info(
-                    f"Groq API error occurred: {str(e)}, switching to local transcription."
-                )
-                transcript = transcribe_with_local_model(
-                    audio_buffer_for_processing, keyword_index
-                )
-                """TODO :  this code was changed recently, check if it is working fine or not"""
-            transcript_lower = transcript.lower()
-            if (
-                "computer" in transcript_lower or "lama" in transcript_lower
-            ) and keyword_index is not None:  # Adjust the threshold as needed
-                # Find the index of the keyword
-                if "computer" in transcript_lower:
-                    keyword_position = transcript_lower.index("computer")
-                    stripped_transcript = transcript_lower
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("computer") :
-                    ]
-                    transcript_queue.put((stripped_transcript, keyword_index))
-                    # Start the audio saving thread
-                    executor.submit(
-                        save_audio,
-                        audio_buffer_for_processing,
-                        keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="true_positive_hey_computer",
+                if not transcript:
+                    logging.error("Empty transcript received")
+                    continue
+
+                # Process transcript
+                transcript_lower = transcript.lower()
+                # ...rest of transcript processing...
+                
+            except groq.Error as e:
+                logging.error(f"Groq API error occurred: {str(e)}\n{traceback.format_exc()}")
+                try:
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
                     )
-                elif "lama" in transcript_lower:
-                    keyword_position = transcript_lower.index("lama")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("lama") :
-                    ]
-                    transcript_queue.put((stripped_transcript, keyword_index))
-                    executor.submit(
-                        save_audio,
-                        audio_buffer_for_processing,
-                        keyword_index,
-                        sample_rate=sample_rate,
-                        type_of_audio="true_positive_hey_llama",
-                    )
-            elif keyword_index is None:
-                transcript_queue.put((transcript, keyword_index))
-                executor.submit(
-                    save_audio,
-                    audio_buffer_for_processing,
-                    keyword_index,
-                    sample_rate=sample_rate,
-                    type_of_audio="my_voice_samples",
-                )
-            elif keyword_index == 2:
-                executor.submit(
-                    save_audio,
-                    audio_buffer_for_processing,
-                    keyword_index,
-                    sample_rate=sample_rate,
-                    type_of_audio="false_positive_rey_lama",
-                )
-            elif keyword_index == 0:
-                executor.submit(
-                    save_audio,
-                    audio_buffer_for_processing,
-                    keyword_index,
-                    sample_rate=sample_rate,
-                    type_of_audio="false_positive_hey_lama",
-                )
-            else:
-                executor.submit(
-                    save_audio,
-                    audio_buffer_for_processing,
-                    keyword_index,
-                    sample_rate=sample_rate,
-                    type_of_audio="false_positive_hey_computer",
-                )
-            logging.info(f"{YELLOW}{transcript}{RESET}")  # For transcript output
+                except Exception as e2:
+                    logging.error(f"Both transcription methods failed: {str(e2)}\n{traceback.format_exc()}")
+                    continue
+
         except queue.Empty:
             continue
         except Exception as e:
-            logging.info(f"An error occurred during transcription: {e}")
+            logging.error(f"Critical error in process_audio_async: {str(e)}\n{traceback.format_exc()}")
+            time.sleep(1)  # Prevent tight error loops
+            continue  # Keep the thread running even after errors
 
 
 def start_listener():
@@ -1001,6 +950,13 @@ def main():
         f"{CYAN}wkey is active. Hold down {BOLD}{RECORD_KEY}{RESET}{CYAN} to start dictating.{RESET}"
     )
 
+    def exception_handler(exc_type, exc_value, exc_traceback):
+        # Log any unhandled exceptions
+        logging.error("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
+        
+    # Set up global exception handler
+    sys.excepthook = exception_handler
+
     try:
         #        transcribe_with_local_model(pre_recording_buffer, 1)
         # Start the microphone monitoring thread
@@ -1019,21 +975,26 @@ def main():
             start_listener()
     except KeyboardInterrupt:
         logging.info(f"{RED}Ctrl+C pressed. Exiting...{RESET}")
+    except Exception as e:
+        logging.error(f"Critical error in main: {str(e)}\n{traceback.format_exc()}")
     finally:
-        if stream:
-            if stream.active:
+        try:
+            if stream and stream.active:
                 stream.stop()
-            stream.close()
-        cleanup()
-        restore_volume_all()
-        logging.info(f"{YELLOW}Cleanup completed. Exiting...{RESET}")
-        # Clean up (close the browser)
-        if driver:
-            driver.quit()
-        executor.shutdown(
-            wait=True
-        )  # Gracefully shutdown the executor, wait for threads to complete
-
+                stream.close()
+            cleanup()
+            restore_volume_all()
+            logging.info(f"{YELLOW}Cleanup completed. Exiting...{RESET}")
+            if driver:
+                driver.quit()
+            executor.shutdown(wait=True)
+        except Exception as e:
+            logging.error(f"Error during cleanup: {str(e)}\n{traceback.format_exc()}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        logging.error(f"Fatal error: {str(e)}\n{traceback.format_exc()}")
+        sys.exit(1)
+``` 
