@@ -780,8 +780,8 @@ def process_audio_async():
     while True:
         try:
             audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
-            if audio_buffer_for_processing is None:
-                break
+            """if audio_buffer_for_processing is None:
+                break"""
             try:
                 transcript = transcribe_with_groq(
                     audio_buffer_for_processing, keyword_index
