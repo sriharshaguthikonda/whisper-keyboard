@@ -262,13 +262,12 @@ def start_recording():
     global play_pause_pressed
     global something_is_playing
 
-    # this thread has to go if something_is_playing check is happening below
+    logging.info("Starting recording...")
     decrease_volume_all()
 
     try:
         if stream and stream.active:
-            # print("stream is active")
-            pass
+            logging.info("Stream is already active.")
         else:
             try:
                 device_info = sd.default.device
@@ -282,18 +281,15 @@ def start_recording():
                 )
                 stream.start()
             except Exception as e:
-                logging.info(f"Failed to start stream: {e}")
+                logging.error(f"Failed to start stream: {e}", exc_info=True)
                 time.sleep(2)
     except NameError:
         pass
 
     if something_is_playing:
-        # logging.info("Stream started")
+        logging.info("Something is playing, decreasing volume.")
         decrease_volume_all()
         play_pause_pressed = True
-    else:
-        # logging.info("Stream started")
-        pass
 
     beep(START_BEEP)
     with recording_lock:
@@ -345,6 +341,7 @@ def stop_recording(keyword_index):
         recording_start_time, \
         vad_detector
 
+    logging.info("Stopping recording...")
     hard_stop_limit = 5  # Maximum recording time in seconds
     silent_time = 0
     recording_start_time = time.time()
@@ -398,7 +395,7 @@ def stop_recording(keyword_index):
                     silent_time += 0.1  # Increment silent time if no speech is detected
 
             except Exception as e:
-                logging.error(f"VAD error: {e}")
+                logging.error(f"VAD error: {e}", exc_info=True)
                 silent_time += 0.1  # Increment on error
 
             # Check if the hard stop limit is reached
@@ -573,7 +570,7 @@ MODEL_PATHS = [
 # Load the OpenWakeWord models
 # Load the OpenWakeWord models with VAD threshold
 owwModel = Model(
-    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.5
+    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.3
 )
 
 
@@ -780,12 +777,20 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
     return transcript"""
 
 
+"""TODO :  this code was changed recently, check if it is working fine or not
+TODO :   the saving functions in process_audio_async have been removed from here for testing of the fatal slinet crashes 
+TODO :  these are in the older version of the code in other branches of the whisper keyboard"""
+
+
 def process_audio_async():
     while True:
         try:
             audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
-            if audio_buffer_for_processing is None:
-                break
+            logging.info(f"Processing audio buffer for keyword index: {keyword_index}")
+            """if audio_buffer_for_processing is None:
+                break"""
+
+            transcript = None
             try:
                 transcript = transcribe_with_groq(
                     audio_buffer_for_processing, keyword_index
@@ -794,26 +799,68 @@ def process_audio_async():
                     logging.error("Empty transcript received")
                     continue
 
-                # Process transcript
+                logging.info(f"Transcription received: {transcript}")  # Debug log
                 transcript_lower = transcript.lower()
-                # ...rest of transcript processing...
-                
+
+                # Process wake word transcripts
+                if keyword_index is not None:
+                    if "computer" in transcript_lower or "lama" in transcript_lower:
+                        if "computer" in transcript_lower:
+                            keyword_position = transcript_lower.index("computer")
+                            stripped_transcript = transcript_lower[
+                                keyword_position + len("computer") :
+                            ]
+
+                            logging.info(
+                                f"Processing computer command: {stripped_transcript}"
+                            )
+                            transcript_queue.put(
+                                (stripped_transcript.strip(), keyword_index)
+                            )
+                        elif "lama" in transcript_lower:
+                            keyword_position = transcript_lower.index("lama")
+                            stripped_transcript = transcript_lower[
+                                keyword_position + len("lama") :
+                            ]
+
+                            logging.info(
+                                f"Processing lama command: {stripped_transcript}"
+                            )
+                            transcript_queue.put(
+                                (stripped_transcript.strip(), keyword_index)
+                            )
+                # Process direct key press transcripts
+                else:
+                    logging.info("Processing direct transcription")
+                    transcript_queue.put((transcript, keyword_index))
+
             except groq.Error as e:
-                logging.error(f"Groq API error occurred: {str(e)}\n{traceback.format_exc()}")
+                logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
                 try:
                     transcript = transcribe_with_local_model(
                         audio_buffer_for_processing, keyword_index
                     )
+                    if transcript and transcript != "Transcription failed":
+                        transcript_queue.put((transcript, keyword_index))
                 except Exception as e2:
-                    logging.error(f"Both transcription methods failed: {str(e2)}\n{traceback.format_exc()}")
+                    logging.error(
+                        f"Both transcription methods failed: {str(e2)}", exc_info=True
+                    )
                     continue
 
         except queue.Empty:
             continue
         except Exception as e:
-            logging.error(f"Critical error in process_audio_async: {str(e)}\n{traceback.format_exc()}")
+            logging.error(
+                f"Critical error in process_audio_async: {str(e)}", exc_info=True
+            )
             time.sleep(1)  # Prevent tight error loops
             continue  # Keep the thread running even after errors
+
+
+"""TODO :  this code was changed recently, check if it is working fine or not
+TODO :   the saving functions in process_audio_async have been removed from here for testing of the fatal slinet crashes 
+TODO :  these are in the older version of the code in other branches of the whisper keyboard"""
 
 
 def start_listener():
@@ -952,8 +999,10 @@ def main():
 
     def exception_handler(exc_type, exc_value, exc_traceback):
         # Log any unhandled exceptions
-        logging.error("Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback))
-        
+        logging.error(
+            "Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
     # Set up global exception handler
     sys.excepthook = exception_handler
 
@@ -991,10 +1040,10 @@ def main():
         except Exception as e:
             logging.error(f"Error during cleanup: {str(e)}\n{traceback.format_exc()}")
 
+
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
         logging.error(f"Fatal error: {str(e)}\n{traceback.format_exc()}")
         sys.exit(1)
-``` 

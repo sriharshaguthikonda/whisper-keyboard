@@ -40,7 +40,17 @@ from concurrent.futures import ThreadPoolExecutor
 from pydub import AudioSegment
 from pydub.playback import play
 import queue
+import logging
 
+# Set up logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("voice_commands.log"),
+        logging.StreamHandler(),  # This will also print to console
+    ],
+)
 
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
@@ -89,6 +99,7 @@ def start_driver():
     global driver, driver_pid, session_id, executor_url
 
     try:
+        logging.info("Starting WebDriver...")
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
         driver.get("https://open.spotify.com/collection/tracks")
@@ -97,8 +108,9 @@ def start_driver():
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
         executor_url = driver.command_executor._url
+        logging.info("WebDriver started successfully.")
     except Exception as e:
-        print(f"Error terminating WebDriver process: {e}")
+        logging.error(f"Error starting WebDriver: {e}", exc_info=True)
 
 
 """
@@ -110,15 +122,17 @@ def reconnect_driver():
     global driver, session_id, executor_url, options
 
     try:
+        logging.info("Reconnecting to WebDriver session...")
         if session_id and executor_url:
             driver = webdriver.Remote(command_executor=executor_url, options=options)
             driver.session_id = session_id
-            print("Reconnected to the existing session.")
+            logging.info("Reconnected to the existing session.")
     except (SessionNotCreatedException, WebDriverException) as e:
-        print(f"Failed to reconnect to the session: {str(e)}")
+        logging.error(f"Failed to reconnect to the session: {str(e)}", exc_info=True)
 
         # Attempt to start a new session
         try:
+            logging.info("Attempting to start a new WebDriver session...")
             # options = webdriver.EdgeOptions()
             # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
 
@@ -129,9 +143,11 @@ def reconnect_driver():
             time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
-            print("Started a new session.")
+            logging.info("Started a new session.")
         except Exception as new_session_error:
-            print(f"Failed to start a new session: {new_session_error}")
+            logging.error(
+                f"Failed to start a new session: {new_session_error}", exc_info=True
+            )
 
 
 # Start the WebDriver in a separate thread
@@ -151,12 +167,13 @@ def reconnect_driver():
 
 def change_device():
     try:
+        logging.info("Changing playback device...")
         devices_button = driver.find_element(
             By.XPATH, "//button[@aria-label='Connect to a device']"
         )
         # Click the button
         devices_button.click()
-        print("Playback started.")
+        logging.info("Playback started.")
         # Locate the element containing "This web browser"
         # Wait for the panel to appear
         # wait = WebDriverWait(driver, 10)
@@ -164,7 +181,9 @@ def change_device():
         try:
             driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
         except Exception as e:
-            print(f"Error while trying to play after reconnection: {e}")
+            logging.error(
+                f"Error while trying to play after reconnection: {e}", exc_info=True
+            )
         time.sleep(2)
         driver.find_element(
             # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
@@ -173,114 +192,132 @@ def change_device():
         ).click()
         # Click the panel
     except Exception as e:
-        print(f"Error while trying to play after reconnection: {e}")
+        logging.error(
+            f"Error while trying to play after reconnection: {e}", exc_info=True
+        )
 
 
 # Control playback
 def play_song():
     global driver
-    
+
     # Check if driver is None or not active
     if driver is None:
-        print("Initializing Spotify WebDriver...")
+        logging.info("Initializing Spotify WebDriver...")
         start_driver()
-        
+
     try:
         # Verify driver is responsive
         try:
             driver.current_url
         except (WebDriverException, AttributeError):
-            print("WebDriver not responsive, reconnecting...")
+            logging.info("WebDriver not responsive, reconnecting...")
             reconnect_driver()
-            
+
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
-        
+
     except Exception as e:
         error_message = str(e)
         if "disconnected" in error_message or "NoneType" in error_message:
-            print("Attempting to reconnect due to disconnection...")
+            logging.info("Attempting to reconnect due to disconnection...")
             reconnect_driver()
             try:
-                play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
+                )
                 play_button.click()
-                print("Playback started after reconnection.")
+                logging.info("Playback started after reconnection.")
                 change_device()
             except Exception as e:
-                print(f"Error while trying to play after reconnection: {e}")
+                logging.error(
+                    f"Error while trying to play after reconnection: {e}", exc_info=True
+                )
         else:
-            print(f"Error while trying to play: {e}")
+            logging.error(f"Error while trying to play: {e}", exc_info=True)
 
 
 def pause_song():
     try:
+        logging.info("Pausing playback...")
         pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
         pause_button.click()
-        print("Playback paused.")
+        logging.info("Playback paused.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 pause_button = driver.find_element(
                     "xpath", "//button[@aria-label='Pause']"
                 )
                 pause_button.click()
-                print("Playback paused after reconnection.")
+                logging.info("Playback paused after reconnection.")
             except Exception as e:
-                print(f"Error while trying to pause after reconnection: {e}")
+                logging.error(
+                    f"Error while trying to pause after reconnection: {e}",
+                    exc_info=True,
+                )
         else:
-            print(f"Error while trying to pause: {e}")
+            logging.error(f"Error while trying to pause: {e}", exc_info=True)
 
 
 def next_track():
     try:
+        logging.info("Skipping to next track...")
         next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
         next_button.click()
-        print("Next track.")
+        logging.info("Next track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 next_button = driver.find_element(
                     "xpath", "//button[@aria-label='Next']"
                 )
                 next_button.click()
-                print("Next track after reconnection.")
+                logging.info("Next track after reconnection.")
             except Exception as e:
-                print(
-                    f"Error while trying to skip to next track after reconnection: {e}"
+                logging.error(
+                    f"Error while trying to skip to next track after reconnection: {e}",
+                    exc_info=True,
                 )
         else:
-            print(f"Error while trying to skip to next track: {e}")
+            logging.error(
+                f"Error while trying to skip to next track: {e}", exc_info=True
+            )
 
 
 def previous_track():
     try:
+        logging.info("Skipping to previous track...")
         prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
         prev_button.click()
-        print("Previous track.")
+        logging.info("Previous track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
                 prev_button = driver.find_element(
                     "xpath", "//button[@aria-label='Previous']"
                 )
                 prev_button.click()
-                print("Previous track after reconnection.")
+                logging.info("Previous track after reconnection.")
             except Exception as e:
-                print(
-                    f"Error while trying to go to previous track after reconnection: {e}"
+                logging.error(
+                    f"Error while trying to go to previous track after reconnection: {e}",
+                    exc_info=True,
                 )
         else:
-            print(f"Error while trying to go to previous track: {e}")
+            logging.error(
+                f"Error while trying to go to previous track: {e}", exc_info=True
+            )
 
 
 """
@@ -1620,9 +1657,6 @@ Only respond with tool calls, no conversational responses.""",
                 else:
                     print(f"Function {function_name} not found")
                     return False
-        else:
-            print("No matching tool found for the query")
-            return False
 
         return True
 
