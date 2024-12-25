@@ -1,6 +1,11 @@
 # voice_commands.py
 import os
 import pyautogui
+from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+from comtypes import CLSCTX_ALL
+from ctypes import cast, POINTER
+
+
 import re
 import string
 from fuzzywuzzy import process
@@ -12,35 +17,68 @@ from selenium.webdriver.edge.options import Options
 from selenium.common.exceptions import WebDriverException, SessionNotCreatedException
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
+
+
 import time
 import subprocess
-
+import psutil
 
 from groq import Groq
+import ollama
 from dotenv import load_dotenv
 import json
 
 import io
 import edge_tts
+import pyttsx4
+
 import asyncio
 import threading
+from concurrent.futures import ThreadPoolExecutor
+
+
 from pydub import AudioSegment
 from pydub.playback import play
 import queue
+import logging
 
-
-import tkinter as tk
-
+# Set up logging configuration
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.FileHandler("voice_commands.log"),
+        logging.StreamHandler(),  # This will also print to console
+    ],
+)
 
 load_dotenv()
+global api_key
 api_key = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=api_key)
+global Groq_client
+Groq_client = Groq(api_key=api_key)
+
+
+def initialize_groq_client():
+    global api_key, Groq_client
+    if api_key is None:
+        load_dotenv()
+        api_key = os.getenv("GROQ_API_KEY")
+    else:
+        pass
+    Groq_client = Groq(api_key=api_key)
+    return Groq_client
+
 
 # Define models
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
-TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
+# TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
+# TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
+TOOL_USE_MODEL = "llama-3.1-8b-instant"
+
 GENERAL_MODEL = "llama3-70b-8192"
+ollama_model = "llama3.2:latest"
 
 
 # Path to your Edge WebDriver
@@ -56,7 +94,10 @@ options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your prof
 # Add remote allow origins
 options.add_argument("--remote-allow-origins=*")
 
-# Optional: Add headless and disable GPU for background processing
+# Start minimized
+# options.add_argument("--start-minimized")
+
+# Optional: Run in headless mode (no GUI)
 # options.add_argument("--headless")
 # options.add_argument("--disable-gpu")
 
@@ -74,6 +115,7 @@ def start_driver():
     global driver, driver_pid, session_id, executor_url
 
     try:
+        logging.info("Starting WebDriver...")
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
         driver.get("https://open.spotify.com/collection/tracks")
@@ -82,8 +124,9 @@ def start_driver():
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
         executor_url = driver.command_executor._url
+        logging.info("WebDriver started successfully.")
     except Exception as e:
-        print(f"Error terminating WebDriver process: {e}")
+        logging.error(f"Error starting WebDriver: {e}", exc_info=True)
 
 
 """
@@ -95,15 +138,17 @@ def reconnect_driver():
     global driver, session_id, executor_url, options
 
     try:
+        logging.info("Reconnecting to WebDriver session...")
         if session_id and executor_url:
             driver = webdriver.Remote(command_executor=executor_url, options=options)
             driver.session_id = session_id
-            print("Reconnected to the existing session.")
+            logging.info("Reconnected to the existing session.")
     except (SessionNotCreatedException, WebDriverException) as e:
-        print(f"Failed to reconnect to the session: {str(e)}")
+        logging.error(f"Failed to reconnect to the session: {str(e)}", exc_info=True)
 
         # Attempt to start a new session
         try:
+            logging.info("Attempting to start a new WebDriver session...")
             # options = webdriver.EdgeOptions()
             # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
 
@@ -114,9 +159,11 @@ def reconnect_driver():
             time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
-            print("Started a new session.")
+            logging.info("Started a new session.")
         except Exception as new_session_error:
-            print(f"Failed to start a new session: {new_session_error}")
+            logging.error(
+                f"Failed to start a new session: {new_session_error}", exc_info=True
+            )
 
 
 # Start the WebDriver in a separate thread
@@ -136,12 +183,13 @@ def reconnect_driver():
 
 def change_device():
     try:
+        logging.info("Changing playback device...")
         devices_button = driver.find_element(
             By.XPATH, "//button[@aria-label='Connect to a device']"
         )
         # Click the button
         devices_button.click()
-        print("Playback started.")
+        logging.info("Playback started.")
         # Locate the element containing "This web browser"
         # Wait for the panel to appear
         # wait = WebDriverWait(driver, 10)
@@ -149,12 +197,20 @@ def change_device():
         try:
             driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
         except Exception as e:
-            print(f"Error while trying to play after reconnection: {e}")
+            logging.error(
+                f"Error while trying to play after reconnection: {e}", exc_info=True
+            )
         time.sleep(2)
-        driver.find_element(By.XPATH, '//*[text()="This web browser"]').click()
+        driver.find_element(
+            # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
+            By.XPATH,
+            '//*[text()="This web browser"]',
+        ).click()
         # Click the panel
     except Exception as e:
-        print(f"Error while trying to play after reconnection: {e}")
+        logging.error(
+            f"Error while trying to play after reconnection: {e}", exc_info=True
+        )
 
 
 # Control playback
@@ -163,104 +219,106 @@ def play_music():
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
+
     except Exception as e:
         error_message = str(e)
-        if "disconnected" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+        if "disconnected" in error_message or "NoneType" in error_message:
+            logging.info("Attempting to reconnect due to disconnection...")
             reconnect_driver()
             try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Play\"]').click()"
                 )
-                play_button.click()
-                print("Playback started after reconnection.")
+                logging.info("Playback started after reconnection.")
+                change_device()
             except Exception as e:
-                print(f"Error while trying to play after reconnection: {e}")
-
-        elif "target window already closed" in error_message:
-            driver.quit()
-            start_driver()
-            try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
+                logging.error(
+                    f"Error while trying to play after reconnection: {e}", exc_info=True
                 )
-                play_button.click()
-                print("Playback started after reconnection.")
-            except Exception as e:
-                print(f"Error while trying to play after reconnection: {e}")
-
         else:
-            print(f"Error while trying to play: {e}")
+            logging.error(f"Error while trying to play: {e}", exc_info=True)
 
 
 def pause_song():
     try:
-        pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
-        pause_button.click()
-        print("Playback paused.")
+        logging.info("Pausing playback...")
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Pause\"]').click()"
+        )
+        logging.info("Playback paused.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                pause_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Pause']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Pause\"]').click()"
                 )
-                pause_button.click()
-                print("Playback paused after reconnection.")
+                logging.info("Playback paused after reconnection.")
             except Exception as e:
-                print(f"Error while trying to pause after reconnection: {e}")
+                logging.error(
+                    f"Error while trying to pause after reconnection: {e}",
+                    exc_info=True,
+                )
         else:
-            print(f"Error while trying to pause: {e}")
+            logging.error(f"Error while trying to pause: {e}", exc_info=True)
 
 
 def next_track():
     try:
-        next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
-        next_button.click()
-        print("Next track.")
+        logging.info("Skipping to next track...")
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Next\"]').click()"
+        )
+        logging.info("Next track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                next_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Next']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Next\"]').click()"
                 )
-                next_button.click()
-                print("Next track after reconnection.")
+                logging.info("Next track after reconnection.")
             except Exception as e:
-                print(
-                    f"Error while trying to skip to next track after reconnection: {e}"
+                logging.error(
+                    f"Error while trying to skip to next track after reconnection: {e}",
+                    exc_info=True,
                 )
         else:
-            print(f"Error while trying to skip to next track: {e}")
+            logging.error(
+                f"Error while trying to skip to next track: {e}", exc_info=True
+            )
 
 
 def previous_track():
     try:
-        prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
-        prev_button.click()
-        print("Previous track.")
+        logging.info("Skipping to previous track...")
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Previous\"]').click()"
+        )
+        logging.info("Previous track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                prev_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Previous']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Previous\"]').click()"
                 )
-                prev_button.click()
-                print("Previous track after reconnection.")
+                logging.info("Previous track after reconnection.")
             except Exception as e:
-                print(
-                    f"Error while trying to go to previous track after reconnection: {e}"
+                logging.error(
+                    f"Error while trying to go to previous track after reconnection: {e}",
+                    exc_info=True,
                 )
         else:
-            print(f"Error while trying to go to previous track: {e}")
+            logging.error(
+                f"Error while trying to go to previous track: {e}", exc_info=True
+            )
 
 
 """
@@ -602,12 +660,53 @@ def open_sound_control_panel():
     os.system("control mmsys.cpl")
 
 
-def volume_up():
-    pyautogui.press("volumeup")
+def kill_process_by_name(process_name):
+    for proc in psutil.process_iter(["pid", "name"]):
+        if proc.info["name"] == process_name:
+            proc.kill()
+            print(
+                f"Process {process_name} with PID {proc.info['pid']} has been killed."
+            )
+            return
+    print(f"No process named {process_name} found.")
 
 
-def volume_down():
-    pyautogui.press("volumedown")
+def get_volume():
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
+    return round(current_volume, 2)
+
+
+def volume_up(steps=1):
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
+    new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
+    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+    print(f"Volume increased to {new_volume * 100:.0f}%")
+
+
+def volume_down(steps=1):
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
+    new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
+    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+    print(f"Volume decreased to {new_volume * 100:.0f}%")
+
+
+def set_volume(level):
+    if 0.0 <= level <= 1.0:
+        volume_interface = get_volume_interface()
+        volume_interface.SetMasterVolumeLevelScalar(level, None)
+        print(f"Volume set to {level * 100:.0f}%")
+    else:
+        print("Volume level must be between 0.0 and 1.0")
+
+
+def get_volume_interface():
+    devices = AudioUtilities.GetSpeakers()
+    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+    volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
+    return volume_interface
 
 
 def mute_volume():
@@ -659,7 +758,26 @@ def open_date_and_time():
 
 # System commands
 def ping_google():
-    os.system("ping www.google.com")
+    try:
+        # Run the ping command and capture the output
+        result = subprocess.run(
+            ["ping", "www.google.com", "-n", "4"], capture_output=True, text=True
+        )
+
+        # Find the line with average ping time
+        match = re.search(r"Average = (\d+)ms", result.stdout)
+
+        if match:
+            avg_ping = match.group(1)
+            asyncio.run(
+                text_to_speech(
+                    text=f"The average ping to Google was {avg_ping} milleseconds, {avg_ping} milleseconds"
+                )
+            )
+        else:
+            return "Could not determine the average ping."
+    except Exception as e:
+        return f"Error occurred: {str(e)}"
 
 
 def flush_dns():
@@ -668,13 +786,18 @@ def flush_dns():
 
 # Voicemeeter commands
 def restart_voicemeeter():
+    initial_volume = get_volume()
+    print(initial_volume)
     subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     )
+    time.sleep(2)
+    set_volume(initial_volume)
 
 
 # DisplayFusion commands
 def load_display_fusion_profile(profile_name):
+    subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
     subprocess.run(
         [
             "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
@@ -688,6 +811,197 @@ def open_negative_screen():
     subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     )
+
+
+invert_screen = open_negative_screen
+
+
+from datetime import datetime
+
+# Replace 'J:\\' with the actual path to the backup directory
+backup_directory = "J:\\"
+
+
+def last_backup():
+    # List all files in the directory
+    backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
+    if not backup_files:
+        asyncio.run(text_to_speech("No backup files found."))
+
+    # Get the most recent backup file by modification date
+    latest_backup = max(
+        backup_files, key=lambda f: os.path.getmtime(os.path.join(backup_directory, f))
+    )
+    last_modified_time = os.path.getmtime(os.path.join(backup_directory, latest_backup))
+    last_backup_date = datetime.fromtimestamp(last_modified_time)
+
+    # Calculate days since the last backup
+    days_ago = (datetime.now() - last_backup_date).days
+    asyncio.run(text_to_speech(f"Latest backup was {days_ago} days ago."))
+
+
+def open_vscode():
+    # Path to the Visual Studio Code executable
+    vscode_path = (
+        r"C:\Users\deletable\AppData\Local\Programs\Microsoft VS Code\Code.exe"
+    )
+    subprocess.Popen([vscode_path])
+
+
+"""
+########   #######  ##     ## ######## ######## 
+##     ## ##     ## ##     ##    ##    ##       
+##     ## ##     ## ##     ##    ##    ##       
+########  ##     ## ##     ##    ##    ######   
+##   ##   ##     ## ##     ##    ##    ##       
+##    ##  ##     ## ##     ##    ##    ##       
+##     ##  #######   #######     ##    ######## 
+"""
+
+
+def route_query(query):
+    """Routing logic to let LLM decide if tools are needed"""
+    routing_prompt = f"""
+    Given the following user query, determine if any tools are needed to answer it.
+    If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
+    If no tools are needed, respond with 'NO TOOL'.
+
+    User query: {query}
+
+    Response:
+    """
+    if not Groq_client:
+        Groq_client = initialize_groq_client()
+    else:
+        pass
+
+    response = Groq_client.chat.completions.create(
+        model=ROUTING_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
+            },
+            {"role": "user", "content": routing_prompt},
+        ],
+        max_tokens=20,  # We only need a short response
+    )
+
+    routing_decision = response.choices[0].message.content.strip()
+
+    if "Function" in routing_decision:
+        print("function decided")
+        return "Function"
+    else:
+        print("no function needed")
+        return "NO TOOL"
+
+
+"""
+# Function to run the general model and stream text chunks to TTS immediately
+def run_general(query):
+    "Stream response chunks to TTS immediately as they arrive"
+    stream = client.chat.completions.create(
+        model=GENERAL_MODEL,
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": query},
+        ],
+        stream=True,
+    )
+
+    current_sentence = ""
+    sentence_endings = [".", "!", "?"]  # Sentence-ending punctuation
+    word_buffer = ""  # To accumulate small chunks of words
+
+    for chunk in stream:
+        # Safeguard for chunk choices
+        if not chunk.choices or not chunk.choices[0].delta:
+            print("Invalid chunk received, skipping...")
+            continue
+
+        chunk_text = chunk.choices[0].delta.content
+
+        # Ensure that the chunk text is not None
+        if chunk_text is None:
+            print("Received NoneType chunk, skipping...")
+            continue
+
+        # Accumulate the chunk text
+        word_buffer += chunk_text
+
+        # Only process the buffer when it forms a coherent word (ends with a space or punctuation)
+        if word_buffer and (
+            word_buffer.endswith(" ") or word_buffer[-1] in sentence_endings
+        ):
+            current_sentence += word_buffer
+            word_buffer = ""  # Reset buffer after processing
+
+        # Print colored text when a sentence forms
+        if (
+            any(current_sentence.endswith(end) for end in sentence_endings)
+            and len(current_sentence.split()) > 5
+        ):
+            # Strip markdown-like symbols for TTS
+            stripped_text = re.sub(r"[\*_]", "", current_sentence)
+
+            # Ensure we don't send empty or None to TTS
+            if stripped_text:
+                TTS_queue.put(stripped_text)  # Send to TTS
+            else:
+                print("Stripped text is empty, skipping TTS...")
+
+            print(current_sentence)  # Print the sentence with colors
+            # Reset the current sentence after sending to TTS
+            current_sentence = ""
+"""
+
+
+# Function to run Ollama's model and stream text chunks to TTS immediately
+def run_ollama(query):
+    """Stream response chunks to TTS immediately as they arrive"""
+
+    # Initialize Ollama client for local server
+    ollama_client = ollama.Client(host="http://localhost:11434")
+
+    # Start the chat request with streaming enabled
+    stream = ollama_client.chat(
+        model=ollama_model,  # Replace with your preferred model
+        messages=[{"role": "user", "content": query}],
+        stream=True,
+    )
+
+    current_sentence = ""
+    word_buffer = ""  # To accumulate small chunks of words
+
+    for chunk in stream:
+        # Safeguard for chunk content
+        print(chunk["message"]["content"], end="", flush=True)
+        if not chunk.get("message") or not chunk["message"].get("content"):
+            continue
+
+        chunk_text = chunk["message"]["content"].replace(
+            "\n", " "
+        )  # Remove unintended newlines
+
+        # Accumulate the chunk text
+        word_buffer += chunk_text
+
+        # Process the buffer when it contains a sentence-ending punctuation
+        sentence_endings = ".!? "
+        if word_buffer and any(word_buffer.endswith(end) for end in sentence_endings):
+            current_sentence += word_buffer
+            word_buffer = ""  # Reset buffer after processing
+
+            # If a coherent chunk or sentence is formed, send it to TTS
+            if any(current_sentence.endswith(end) for end in sentence_endings):
+                # Strip markdown-like symbols for TTS
+                stripped_text = re.sub(r"[\*_]", "", current_sentence)
+
+                # Send text to TTS immediately
+                if stripped_text:
+                    TTS_queue.put(stripped_text)  # Send to TTS queue
+                    current_sentence = ""  # Reset after sending to TTS
 
 
 """
@@ -706,12 +1020,12 @@ TTS_queue = queue.Queue()
 
 
 # Function to process the queue
-def process_TTS_queue(TTS_queue):
+def process_TTS_queue():
     while True:
         sentence = TTS_queue.get()
         if sentence is None:  # Sentinel value to stop the worker
             break
-        asyncio.run(text_to_speech(sentence, speed=1.5))
+        asyncio.run(text_to_speech(sentence, speed=1.3))
         TTS_queue.task_done()
 
 
@@ -719,30 +1033,44 @@ threading.Thread(target=process_TTS_queue, args=(TTS_queue,), daemon=True).start
 
 
 # Function to process the queue
-def process_TTS_Audio_play_queue(TTS_Audio_play_queue):
+def process_TTS_Audio_play_queue():
     while True:
         audio_fp = TTS_Audio_play_queue.get()
+        if audio_fp is None:  # Add sentinel check
+            break
         audio_fp.seek(0)
-
         sound = AudioSegment.from_file(audio_fp, format="mp3")
-
-        # Play the adjusted audio
         play(sound)
         TTS_Audio_play_queue.task_done()
 
 
 # Queue for sentences
 TTS_Audio_play_queue = queue.Queue()
+TTS_queue = queue.Queue()
 
-# Start the worker thread
-threading.Thread(
-    target=process_TTS_Audio_play_queue, args=(TTS_Audio_play_queue,), daemon=True
-).start()
+# Submit tasks to the executor instead of creating threads directly
+executor.submit(process_TTS_Audio_play_queue)
+executor.submit(process_TTS_queue)
+
+
+# Add cleanup function to be called when shutting down
+def cleanup():
+    # Signal the worker threads to stop
+    TTS_queue.put(None)
+    TTS_Audio_play_queue.put(None)
+
+    # Shutdown the executor gracefully
+    executor.shutdown(wait=True)
+
+    # Cleanup other resources if needed
+    if driver:
+        driver.quit()
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
 async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
     try:
+        # Online TTS using edge-tts
         rate = "+" + str(int((speed - 1) * 100)) + "%"
         communicate = edge_tts.Communicate(text, voice, rate=rate)
         audio_bytes = b""
@@ -757,10 +1085,139 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         audio_fp = io.BytesIO(audio_bytes)
         audio_fp.seek(0)
 
+        # Place the audio data in the playback queue
         TTS_Audio_play_queue.put(audio_fp)
 
     except Exception as e:
-        print(f"Error occurred during playback: {e}")
+        print("Falling back to offline TTS...")
+        fallback_offline_tts(text, speed, volume)
+
+
+# Offline TTS fallback using pyttsx4
+def fallback_offline_tts(text, speed=1.2, volume=1):
+    try:
+        # Initialize pyttsx4 engine
+        engine = pyttsx4.init()
+
+        # Set the speed (words per minute)
+        engine.setProperty("rate", int(200 * speed))
+
+        # Set the volume (0.0 to 1.0)
+        engine.setProperty("volume", volume)
+
+        # Speak the text
+        engine.say(text)
+        engine.runAndWait()
+
+    except Exception as e:
+        print(f"Offline TTS failed: {e}")
+
+
+"""
+########   #######  ##     ## ######## ######## 
+##     ## ##     ## ##     ##    ##    ##       
+##     ## ##     ## ##     ##    ##    ##       
+########  ##     ## ##     ##    ##    ######   
+##   ##   ##     ## ##     ##    ##    ##       
+##    ##  ##     ## ##     ##    ##    ##       
+##     ##  #######   #######     ##    ######## 
+"""
+
+
+def route_query(query):
+    """Routing logic to let LLM decide if tools are needed"""
+    routing_prompt = f"""
+    Given the following user query, determine if any tools are needed to answer it.
+    If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
+    If no tools are needed, respond with 'NO TOOL'.
+
+    User query: {query}
+
+    Response:
+    """
+
+    response = client.chat.completions.create(
+        model=ROUTING_MODEL,
+        messages=[
+            {
+                "role": "system",
+                "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
+            },
+            {"role": "user", "content": routing_prompt},
+        ],
+        max_tokens=20,  # We only need a short response
+    )
+
+    routing_decision = response.choices[0].message.content.strip()
+
+    if "Function" in routing_decision:
+        print("function decided")
+        return "Function"
+    else:
+        print("no function needed")
+        return "NO TOOL"
+
+
+def run_general(query):
+    """Use the general model to answer the query since no tool is needed"""
+    response = ""
+    try:
+        stream = client.chat.completions.create(
+            model=GENERAL_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": query},
+            ],
+            stream=True,
+        )
+    except Exception as e:
+        if "Groq API limit reached" in str(e):
+            stream = ollama_chat(
+                model=GENERAL_MODEL,
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": query},
+                ],
+                stream=True,
+            )
+            response = ollama_chat(
+                user_input, system_message, ollama_model, conversation_history
+            )
+        else:
+            raise e
+
+    for chunk in stream:
+        print(chunk.choices[0].delta.content, end="")
+        chunk_text = chunk.choices[0].delta.content
+        response = f"{response}{chunk_text}"
+
+        #        if any(delimiter in response for delimiter in ".;!?"):
+        if any(delimiter in response for delimiter in ".:!?"):
+            response = response[1:]  # Remove the first character
+            sentence, response = split_sentence(response)
+            TTS_queue.put(sentence)
+
+
+# Define the function to split sentences with the condition
+def split_sentence(response):
+    delimiters = r"[.,;!?]"  # Delimiters for splitting
+    # Split the response based on delimiters
+    sentences = re.split(delimiters, response, maxsplit=1)
+
+    # If we have more than one part after the split
+    if len(sentences) > 1:
+        sentence, remaining_response = sentences[0], sentences[1]
+
+        # Check if the sentence has 10 words or more
+        if len(sentence.split()) < 15:
+            # If the sentence is too short, don't split
+            sentence = sentence + remaining_response
+            remaining_response = ""
+    else:
+        # No split happened, just return the original response
+        sentence, remaining_response = sentences[0], ""
+
+    return sentence.strip(), remaining_response.strip()
 
 
 """
@@ -880,6 +1337,17 @@ def split_sentence(response):
    ##     #######   #######  ########  ######  
 """
 
+extra_tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "minimize_all_windows",
+            "description": "Minimize all windows",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
 tools = [
     {
         "type": "function",
@@ -932,14 +1400,6 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "windows_search",
-            "description": "Open the Windows search bar",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "open_run_dialog",
             "description": "Open the Run dialog box",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -950,14 +1410,6 @@ tools = [
         "function": {
             "name": "open_task_manager",
             "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "minimize_all_windows",
-            "description": "Minimize all windows",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1085,16 +1537,55 @@ tools = [
         "type": "function",
         "function": {
             "name": "volume_up",
-            "description": "Increase the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Increase the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to increase the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
         "type": "function",
         "function": {
             "name": "volume_down",
-            "description": "Decrease the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "description": "Decrease the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to decrease the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_volume",
+            "description": "Set the system volume to a specific level",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "number",
+                        "description": "The volume level to set (between 0.0 and 1.0)",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    }
+                },
+                "required": ["level"],
+            },
         },
     },
     {
@@ -1112,12 +1603,7 @@ tools = [
             "description": "Play media; optionally specify a song",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "song": {
-                        "type": "string",
-                        "description": "The name of the song or media file to play",
-                    }
-                },
+                "properties": {},
                 "required": [],
             },
         },
@@ -1142,7 +1628,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "previous_track",
-            "description": "Go to the previous track",
+            "description": "play previous song or play previous music track",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1150,7 +1636,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "pause_song",
-            "description": "Pause media playback",
+            "description": "Pause media playback or pause spotify",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -1302,6 +1788,30 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "invert_screen",
+            "description": "Open the Negative Screen application",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "last_backup",
+            "description": "Determine how many days ago the latest backup was created.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_vscode",
+            "description": "Open Visual Studio Code on the user's machine.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
 ]
 
 
@@ -1311,16 +1821,16 @@ def execute_command_run_with_tool(query):
     # Step 2: Handle the result of routing
     if route == "NO TOOL":
         # Use the general model if no tools are needed
-        run_general(query)
+        response = run_general(query)
+        asyncio.run(
+            text_to_speech(text=response)
+        )  # Asynchronously call text-to-speech with the response
     else:
         # Step 3: Handle tool usage
         tools_messages = [
             {
                 "role": "system",
-                "content": """
-                1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
-                2. if there is "and" in the query, then you will have to select two functions
-                """,
+                "content": "you are a tool selection assistant. pick the best possible tool among tools for the given query",
             },
             {
                 "role": "user",
@@ -1331,36 +1841,48 @@ def execute_command_run_with_tool(query):
         response = client.chat.completions.create(
             model=TOOL_USE_MODEL,
             messages=tools_messages,
+            stream=False,
             tools=tools,
-            tool_choice="auto",  # Automatically decide which tool to use
+            tool_choice="auto",
             max_tokens=4096,
         )
+
         response_message = response.choices[0].message
-        print(response_message)
+        logging.info(f"Received response from Groq client: {response_message}")
         tool_calls = response_message.tool_calls
 
-        # Step 5: Call the functions dynamically based on the model's tool calls
+        # Step 3: Execute tool calls
         if tool_calls:
             for tool_call in tool_calls:
-                # Extract arguments and function name
                 function_args = json.loads(tool_call.function.arguments)
                 function_name = tool_call.function.name
 
-                # Dynamically call the function using globals()
                 if function_name in globals():
                     try:
-                        # Call the function with the arguments
+                        logging.info(
+                            f"Executing function: {function_name} with arguments: {function_args}"
+                        )
                         result = globals()[function_name](**function_args)
-                        print(f"Executed {function_name} with result: {result}")
-                        # visual_feedback(function_name, result)
+                        logging.info(f"Executed {function_name} with result: {result}")
                     except Exception as e:
-                        print(f"Error executing function {function_name}: {e}")
+                        logging.error(
+                            f"Error executing function {function_name}: {str(e)}",
+                            exc_info=True,
+                        )
+                        return False
                 else:
-                    print(f"Function {function_name} not found in globals.")
-        else:
-            print("No tool calls were made by the model.")
+                    logging.error(f"Function {function_name} not found")
+                    return False
 
-    return True  # Function executed successfully
+        return True
+
+    except Exception as e:
+        logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
+        # Reinitialize the Groq client in case of an error
+        logging.info("Reinitializing Groq client.")
+
+        Groq_client = initialize_groq_client()
+        return False
 
 
 def visual_feedback(function_name, result):
