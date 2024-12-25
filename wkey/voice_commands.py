@@ -849,55 +849,6 @@ def open_vscode():
 
 
 """
-########   #######  ##     ## ######## ######## 
-##     ## ##     ## ##     ##    ##    ##       
-##     ## ##     ## ##     ##    ##    ##       
-########  ##     ## ##     ##    ##    ######   
-##   ##   ##     ## ##     ##    ##    ##       
-##    ##  ##     ## ##     ##    ##    ##       
-##     ##  #######   #######     ##    ######## 
-"""
-
-
-def route_query(query):
-    """Routing logic to let LLM decide if tools are needed"""
-    routing_prompt = f"""
-    Given the following user query, determine if any tools are needed to answer it.
-    If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
-    If no tools are needed, respond with 'NO TOOL'.
-
-    User query: {query}
-
-    Response:
-    """
-    if not Groq_client:
-        Groq_client = initialize_groq_client()
-    else:
-        pass
-
-    response = Groq_client.chat.completions.create(
-        model=ROUTING_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
-            },
-            {"role": "user", "content": routing_prompt},
-        ],
-        max_tokens=20,  # We only need a short response
-    )
-
-    routing_decision = response.choices[0].message.content.strip()
-
-    if "Function" in routing_decision:
-        print("function decided")
-        return "Function"
-    else:
-        print("no function needed")
-        return "NO TOOL"
-
-
-"""
 # Function to run the general model and stream text chunks to TTS immediately
 def run_general(query):
     "Stream response chunks to TTS immediately as they arrive"
@@ -1029,7 +980,7 @@ def process_TTS_queue():
         TTS_queue.task_done()
 
 
-threading.Thread(target=process_TTS_queue, args=(TTS_queue,), daemon=True).start()
+threading.Thread(target=process_TTS_queue, daemon=True).start()
 
 
 # Function to process the queue
@@ -1048,9 +999,9 @@ def process_TTS_Audio_play_queue():
 TTS_Audio_play_queue = queue.Queue()
 TTS_queue = queue.Queue()
 
-# Submit tasks to the executor instead of creating threads directly
-executor.submit(process_TTS_Audio_play_queue)
-executor.submit(process_TTS_queue)
+# Start threads instead of using executor.submit
+threading.Thread(target=process_TTS_Audio_play_queue, daemon=True).start()
+threading.Thread(target=process_TTS_queue, daemon=True).start()
 
 
 # Add cleanup function to be called when shutting down
@@ -1058,9 +1009,6 @@ def cleanup():
     # Signal the worker threads to stop
     TTS_queue.put(None)
     TTS_Audio_play_queue.put(None)
-
-    # Shutdown the executor gracefully
-    executor.shutdown(wait=True)
 
     # Cleanup other resources if needed
     if driver:
@@ -1113,91 +1061,6 @@ def fallback_offline_tts(text, speed=1.2, volume=1):
         print(f"Offline TTS failed: {e}")
 
 
-"""
-########   #######  ##     ## ######## ######## 
-##     ## ##     ## ##     ##    ##    ##       
-##     ## ##     ## ##     ##    ##    ##       
-########  ##     ## ##     ##    ##    ######   
-##   ##   ##     ## ##     ##    ##    ##       
-##    ##  ##     ## ##     ##    ##    ##       
-##     ##  #######   #######     ##    ######## 
-"""
-
-
-def route_query(query):
-    """Routing logic to let LLM decide if tools are needed"""
-    routing_prompt = f"""
-    Given the following user query, determine if any tools are needed to answer it.
-    If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
-    If no tools are needed, respond with 'NO TOOL'.
-
-    User query: {query}
-
-    Response:
-    """
-
-    response = client.chat.completions.create(
-        model=ROUTING_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
-            },
-            {"role": "user", "content": routing_prompt},
-        ],
-        max_tokens=20,  # We only need a short response
-    )
-
-    routing_decision = response.choices[0].message.content.strip()
-
-    if "Function" in routing_decision:
-        print("function decided")
-        return "Function"
-    else:
-        print("no function needed")
-        return "NO TOOL"
-
-
-def run_general(query):
-    """Use the general model to answer the query since no tool is needed"""
-    response = ""
-    try:
-        stream = client.chat.completions.create(
-            model=GENERAL_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": query},
-            ],
-            stream=True,
-        )
-    except Exception as e:
-        if "Groq API limit reached" in str(e):
-            stream = ollama_chat(
-                model=GENERAL_MODEL,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": query},
-                ],
-                stream=True,
-            )
-            response = ollama_chat(
-                user_input, system_message, ollama_model, conversation_history
-            )
-        else:
-            raise e
-
-    for chunk in stream:
-        print(chunk.choices[0].delta.content, end="")
-        chunk_text = chunk.choices[0].delta.content
-        response = f"{response}{chunk_text}"
-
-        #        if any(delimiter in response for delimiter in ".;!?"):
-        if any(delimiter in response for delimiter in ".:!?"):
-            response = response[1:]  # Remove the first character
-            sentence, response = split_sentence(response)
-            TTS_queue.put(sentence)
-
-
 # Define the function to split sentences with the condition
 def split_sentence(response):
     delimiters = r"[.,;!?]"  # Delimiters for splitting
@@ -1243,7 +1106,7 @@ def route_query(query):
     Response:
     """
 
-    response = client.chat.completions.create(
+    response = Groq_client.chat.completions.create(
         model=ROUTING_MODEL,
         messages=[
             {
@@ -1269,7 +1132,7 @@ def run_general(query):
     """Use the general model to answer the query since no tool is needed"""
     response = ""
     try:
-        stream = client.chat.completions.create(
+        stream = Groq_client.chat.completions.create(
             model=GENERAL_MODEL,
             messages=[
                 {"role": "system", "content": "You are a helpful assistant."},
@@ -1838,7 +1701,7 @@ def execute_command_run_with_tool(query):
             },
         ]
         # Step 4: Get the response from the model that handles tool usage
-        response = client.chat.completions.create(
+        response = Groq_client.chat.completions.create(
             model=TOOL_USE_MODEL,
             messages=tools_messages,
             stream=False,
@@ -1875,14 +1738,6 @@ def execute_command_run_with_tool(query):
                     return False
 
         return True
-
-    except Exception as e:
-        logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
-        # Reinitialize the Groq client in case of an error
-        logging.info("Reinitializing Groq client.")
-
-        Groq_client = initialize_groq_client()
-        return False
 
 
 def visual_feedback(function_name, result):

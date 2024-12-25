@@ -39,18 +39,17 @@ from voice_commands import (
     get_volume,
     set_volume,
     driver,
-    initialize_groq_client,
 )  # , driver_pid
 from pause_all import is_sound_playing_windows_processing
 
 
-from vosk import Model, KaldiRecognizer
 import pyaudio
-
 
 from openwakeword.model import Model
 
-import subprocess
+from concurrent.futures import ThreadPoolExecutor
+
+executor = ThreadPoolExecutor(max_workers=6)  # Change max_workers as needed
 
 
 import win32clipboard
@@ -63,12 +62,6 @@ from voice_activity_detection import VoiceDetector
 # Add after imports
 import sys
 import traceback
-
-# Add this import for async HTTP requests
-import aiohttp
-
-# Add this import for running async functions in sync context
-import asyncio
 
 # Set up logging configuration
 logging.basicConfig(
@@ -99,6 +92,7 @@ BRIGHT_BLUE = "\033[94m"
 BRIGHT_MAGENTA = "\033[95m"
 BRIGHT_CYAN = "\033[96m"
 BRIGHT_WHITE = "\033[97m"
+
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -131,7 +125,7 @@ sample_rate = 16000
 
 # Check if CUDA is available
 if torch.cuda.is_available():
-    wsprmodel = WhisperModel("small.en", device="cuda", num_workers=8)
+    model = WhisperModel("small.en", device="cuda", num_workers=8)
     logging.info("Initialized WhisperModel on CUDA")
 else:
     logging.warning(
@@ -366,7 +360,7 @@ def stop_recording(keyword_index):
 
     if keyword_index == 1:
         stop_delay_threshold = (
-            0.5  # Time to wait before stopping after no speech is detected
+            1  # Time to wait before stopping after no speech is detected
         )
     elif keyword_index == 2:
         stop_delay_threshold = (
@@ -586,7 +580,7 @@ MODEL_PATHS = [
 # Load the OpenWakeWord models
 # Load the OpenWakeWord models with VAD threshold
 owwModel = Model(
-    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.2
+    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.3
 )
 
 
@@ -654,24 +648,24 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        """logging.info("\033[92mCustom wake word 'hey_llama' detected!\033[0m")
+                        """logging.info("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
                         start_recording()
                         time.sleep(3)
                         stop_recording(keyword_index)"""
-                    elif keyword_index == 1:  # Custom wake word: "hey_computer10"
+                    elif keyword_index == 1:  # Custom wake word: "hey_computer9"
                         logging.info(
-                            f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer10' detected!{RESET}"
+                            f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
                         )
-                        threading.Thread(target=start_recording).start()
+                        start_recording()
                         # time.sleep(1)
-                        threading.Thread(target=stop_recording, args=(1,)).start()
+                        stop_recording(keyword_index)
                     elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
                         logging.info(
                             f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
                         )
-                        threading.Thread(target=start_recording).start()
+                        start_recording()
                         time.sleep(3)
-                        threading.Thread(target=stop_recording, args=(1,)).start()
+                        stop_recording(keyword_index)
                     else:
                         logging.info("Unknown wake word detected!", keyword_index)
 
@@ -721,20 +715,15 @@ def cleanup():
 """
 
 
-load_dotenv()
-global api_key
 api_key = os.getenv("GROQ_API_KEY")
-global Groq_client
-Groq_client = Groq(api_key=api_key)
+client = Groq(api_key=api_key)
 
 
-async def transcribe_with_groq_async(audio_buffer, keyword_index):
-    Groq_client = Groq(api_key=api_key)
-    """if keyword_index == 1:
+def transcribe_with_groq(audio_buffer, keyword_index):
+    if keyword_index == 1:
         prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
     else:
-        prompt = None"""
-    prompt = ""
+        prompt = None
 
     try:
         # Convert the audio buffer (NumPy array) to a byte stream in WAV format
@@ -743,10 +732,9 @@ async def transcribe_with_groq_async(audio_buffer, keyword_index):
         byte_io.seek(0)  # Rewind to the beginning of the byte stream
 
         # Send the byte stream directly to the Groq API
-        transcription = Groq_client.audio.transcriptions.create(
+        transcription = client.audio.transcriptions.create(
             file=("audio_buffer.wav", byte_io.getvalue()),  # Use in-memory byte stream
             model=groq_model,
-            stream=False,
             prompt=prompt,
             response_format="json",
             language="en",
@@ -755,40 +743,48 @@ async def transcribe_with_groq_async(audio_buffer, keyword_index):
         return transcription.text
     except Exception as e:
         logging.info(f"Groq API error: {e}")  # Log the error
-        initialize_groq_client()  # Reinitialize the Groq client
-        return None  # Return None if transcription fails
+        return transcribe_with_local_model(
+            audio_buffer, keyword_index
+        )  # Call local model after logging
 
 
-async def transcribe_with_local_model_async(audio_buffer, keyword_index):
-    logging.info(
-        f"transcribe_with_local_model_async started for keyword index: {keyword_index}"
-    )
-    prompt = ""
-
-    """if keyword_index == 1:
-        prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
+def transcribe_with_local_model(audio_buffer, keyword_index):
+    # Define prompt based on keyword_index
+    if keyword_index == 1:
+        prompt = Hey_computer_STT_prompt
     else:
-        prompt = None"""
+        prompt = None
 
     try:
-        if wsprmodel:
-            # Initialize Faster Whisper model
-            logging.info("using WhisperModel on CUDA")
+        # Initialize Faster Whisper model
+        #         model_path = "path_to_your_faster_whisper_model"  # Replace with your model path
+        #         model = WhisperModel(device="cuda", compute_type="float16")
+        #         model = WhisperModel("small.en", device="cuda", num_workers=8)
+        logging.info("using WhisperModel on CUDA")
+        # Convert audio buffer (NumPy array) to WAV format in-memory
+        byte_io = io.BytesIO()
+        wav_write(byte_io, sample_rate, audio_buffer)
+        byte_io.seek(0)
 
-            # Directly use the audio buffer (NumPy array) if supported
-            logging.info("using audio buffer directly")
+        # Decode audio
+        segments, _ = model.transcribe(byte_io, language="en")
 
-            # Decode audio
-            segments, _ = wsprmodel.transcribe(audio_buffer, language="en")
-            logging.info("sent for transcription")
-            # Combine transcribed text from all segments
-            transcription = " ".join(segment.text for segment in segments)
-            print(transcription, "received from the wsprmodel")
+        # Combine transcribed text from all segments
+        transcription = " ".join(segment.text for segment in segments)
+        logging.info(transcription)
         return transcription
     except Exception as e:
-        logging.error(f"Faster Whisper error: {e}")
+        logging.info(f"Faster Whisper error: {e}")
         # You can optionally call your fallback transcription function here
-        # return "Transcription failed"
+        return "Transcription failed"
+
+
+"""    segments, info = model.transcribe(
+        audio_buffer, language="en", suppress_blank=True, vad_filter=True
+    )
+    transcript = " ".join([segment["text"] for segment in segments])
+    logging.info(transcript)
+    return transcript"""
 
 
 """TODO :  this code was changed recently, check if it is working fine or not
@@ -806,83 +802,53 @@ def process_audio_async():
 
             transcript = None
             try:
-                logging.info("transcribe_with_groq starting")
-                transcript = asyncio.run(
-                    transcribe_with_local_model_async(
-                        audio_buffer_for_processing, keyword_index
-                    )
+                transcript = transcribe_with_groq(
+                    audio_buffer_for_processing, keyword_index
                 )
-                if transcript is None:
-                    logging.info("transcribe_with_local_model_async starting")
-                    transcript = asyncio.run(
-                        transcribe_with_groq_async(
-                            audio_buffer_for_processing, keyword_index
-                        )
-                    )
-                if transcript is None:
+                if not transcript:
                     logging.error("Empty transcript received")
                     continue
 
-                logging.info(
-                    f"Transcription received in process_audio_async: {transcript}"
-                )  # Debug log
+                logging.info(f"Transcription received: {transcript}")  # Debug log
                 transcript_lower = transcript.lower()
 
                 # Process wake word transcripts
-                if keyword_index is None:
-                    logging.info("pasing f24 transcription")
-                    paste_transcript(transcript)
-                    # save my volcal samples here.
-                    # save_audio
-                    continue
+                if keyword_index is not None:
+                    if "computer" in transcript_lower or "lama" in transcript_lower:
+                        if "computer" in transcript_lower:
+                            keyword_position = transcript_lower.index("computer")
+                            stripped_transcript = transcript_lower[
+                                keyword_position + len("computer") :
+                            ]
 
-                elif keyword_index == 1:
-                    if "computer" in transcript_lower:
-                        keyword_position = transcript_lower.index("computer")
-                        stripped_transcript = transcript_lower[
-                            keyword_position + len("computer") :
-                        ]
-                        logging.info(
-                            f"Processing computer command: {stripped_transcript}"
-                        )
-                        transcript_queue.put(
-                            (stripped_transcript.strip(), keyword_index)
-                        )
+                            logging.info(
+                                f"Processing computer command: {stripped_transcript}"
+                            )
+                            transcript_queue.put(
+                                (stripped_transcript.strip(), keyword_index)
+                            )
+                        elif "lama" in transcript_lower:
+                            keyword_position = transcript_lower.index("lama")
+                            stripped_transcript = transcript_lower[
+                                keyword_position + len("lama") :
+                            ]
 
-                        # we have to save the audio buffer as true positve
-                        # save_audio
-
-                        continue
-                    else:
-                        # we have to save the audio buffer as false positve
-                        pass
-                elif keyword_index == 2:
-                    if "lama" in transcript_lower:
-                        keyword_position = transcript_lower.index("lama")
-                        stripped_transcript = transcript_lower[
-                            keyword_position + len("lama") :
-                        ]
-
-                        logging.info(f"Processing lama command: {stripped_transcript}")
-                        paste_transcript(stripped_transcript)
-
-                        # we have to save the audio buffer as true positve
-                        # save_audio
-                        continue
-                    else:
-                        # we have to save the audio buffer as false positve
-                        pass
+                            logging.info(
+                                f"Processing lama command: {stripped_transcript}"
+                            )
+                            transcript_queue.put(
+                                (stripped_transcript.strip(), keyword_index)
+                            )
                 # Process direct key press transcripts
                 else:
-                    logging.info("unknown keyword index")
+                    logging.info("Processing direct transcription")
+                    transcript_queue.put((transcript, keyword_index))
 
-            except groq.GroqError as e:
+            except groq.Error as e:
                 logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
                 try:
-                    transcript = asyncio.run(
-                        transcribe_with_local_model_async(
-                            audio_buffer_for_processing, keyword_index
-                        )
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
                     )
                     if transcript and transcript != "Transcription failed":
                         transcript_queue.put((transcript, keyword_index))
@@ -902,7 +868,7 @@ def process_audio_async():
             continue  # Keep the thread running even after errors
 
 
-"""TODO :  process_audio_async code was changed recently, check if it is working fine or not
+"""TODO :  this code was changed recently, check if it is working fine or not
 TODO :   the saving functions in process_audio_async have been removed from here for testing of the fatal slinet crashes 
 TODO :  these are in the older version of the code in other branches of the whisper keyboard"""
 
@@ -996,17 +962,6 @@ def send_input(text):
         ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)  # Release key
 
 
-def paste_transcript(transcript):
-    set_clipboard_content(transcript)
-    ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
-    ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
-    ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
-    ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
-    # pyautogui.write(transcript)  # No delay, types out instantly
-    beep(PASTE_BEEP)
-    logging.info("Transcript pasted")
-
-
 """TODO :  this code was changed recently, check if it is working fine or not . There was a not before the  execute command run with tool. So not was removed and the statements were flipped along with return added to both of them."""
 
 
@@ -1014,16 +969,30 @@ def clean_transcript():
     while True:
         try:
             transcript, keyword_index = transcript_queue.get()
-            logging.error(f"Transcript received in clean_transcript: {transcript}")
             if keyword_index == 1:
-                logging.error(
-                    f"Transcript sent for execute_command_run_with_tool: {transcript}"
-                )
                 if not execute_command_run_with_tool(transcript):
                     pass
                     """execute_command_fuzzy(transcript)"""
+            elif keyword_index is None:
+                set_clipboard_content(transcript)
+                ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
+                ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
+                # pyautogui.write(transcript)  # No delay, types out instantly
+                beep(PASTE_BEEP)
+                logging.info("Transcript pasted")
+            elif keyword_index == 2:
+                set_clipboard_content(transcript)
+                ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
+                ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
+                ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
+                # pyautogui.write(transcript)  # No delay, types out instantly
+                beep(PASTE_BEEP)
+                logging.info("Transcript pasted")
             else:
-                logging.info(f"Unknown keyword index{keyword_index}")
+                logging.info("Unknown keyword index")
             logging.info(
                 f"{BRIGHT_GREEN}Say 'Hey computer' or 'rey lama' wake word...{RESET}"
             )
@@ -1062,14 +1031,19 @@ def main():
     sys.excepthook = exception_handler
 
     try:
+        # transcribe_with_local_model(pre_recording_buffer, 1)
         # Start the microphone monitoring thread
-        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+        executor.submit(monitor_microphone_availability)
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
-        threading.Thread(target=clean_transcript, daemon=True).start()
-        threading.Thread(target=process_audio_async, daemon=True).start()
-        threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        threading.Thread(target=start_driver, daemon=True).start()
+        # Use ThreadPoolExecutor for background processes
+
+        executor.submit(clean_transcript)
+        executor.submit(process_audio_async)
+        executor.submit(listen_for_wake_word)
+        executor.submit(start_driver)
+        executor.submit(monitor_state)
+
         with stream:
             start_listener()
     except KeyboardInterrupt:
