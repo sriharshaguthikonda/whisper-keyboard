@@ -962,6 +962,17 @@ def send_input(text):
         ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)  # Release key
 
 
+def paste_transcript(transcript):
+    set_clipboard_content(transcript)
+    ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
+    ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
+    ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
+    ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
+    # pyautogui.write(transcript)  # No delay, types out instantly
+    beep(PASTE_BEEP)
+    logging.info("Transcript pasted")
+
+
 """TODO :  this code was changed recently, check if it is working fine or not . There was a not before the  execute command run with tool. So not was removed and the statements were flipped along with return added to both of them."""
 
 
@@ -969,30 +980,16 @@ def clean_transcript():
     while True:
         try:
             transcript, keyword_index = transcript_queue.get()
+            logging.error(f"Transcript received in clean_transcript: {transcript}")
             if keyword_index == 1:
+                logging.error(
+                    f"Transcript sent for execute_command_run_with_tool: {transcript}"
+                )
                 if not execute_command_run_with_tool(transcript):
                     pass
                     """execute_command_fuzzy(transcript)"""
-            elif keyword_index is None:
-                set_clipboard_content(transcript)
-                ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
-                ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
-                ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
-                ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
-                # pyautogui.write(transcript)  # No delay, types out instantly
-                beep(PASTE_BEEP)
-                logging.info("Transcript pasted")
-            elif keyword_index == 2:
-                set_clipboard_content(transcript)
-                ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
-                ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
-                ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
-                ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
-                # pyautogui.write(transcript)  # No delay, types out instantly
-                beep(PASTE_BEEP)
-                logging.info("Transcript pasted")
             else:
-                logging.info("Unknown keyword index")
+                logging.info(f"Unknown keyword index{keyword_index}")
             logging.info(
                 f"{BRIGHT_GREEN}Say 'Hey computer' or 'rey lama' wake word...{RESET}"
             )
