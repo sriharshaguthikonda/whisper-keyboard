@@ -21,7 +21,7 @@ git branch
 
 
 git add .
-git commit -m "training data saving added"
+git commit -m "this is funcking garbabge"
 
 
 git push

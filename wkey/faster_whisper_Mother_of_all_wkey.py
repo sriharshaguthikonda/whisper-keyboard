@@ -270,179 +270,153 @@ def monitor_sound_processing():
 
 
 def start_recording():
-    global stream
-    global recording
-    global play_pause_pressed
-    global something_is_playing
-
-    logging.info(f"{GREEN}Starting recording...{RESET}")
-    decrease_volume_all()
-
     try:
-        if stream and stream.active:
-            logging.info(f"{YELLOW}Stream is already active.{RESET}")
-        else:
-            try:
-                device_info = sd.default.device
-                logging.info(f"{CYAN}Using device: {device_info}{RESET}")
-                stream = sd.InputStream(
-                    callback=audio_callback,
-                    device=None,
-                    channels=1,
-                    samplerate=sample_rate,
-                    blocksize=int(sample_rate * 0.1),
-                )
-                stream.start()
-            except Exception as e:
-                logging.error(f"{RED}Failed to start stream: {e}{RESET}", exc_info=True)
-                time.sleep(2)
-    except NameError:
-        pass
+        global stream
+        global recording
+        global play_pause_pressed
+        global something_is_playing
 
-    if something_is_playing:
-        logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
+        logging.info(f"{GREEN}Starting recording...{RESET}")
         decrease_volume_all()
-        play_pause_pressed = True
 
-    beep(START_BEEP)
-    with recording_lock:
-        recording = True
-    logging.info(f"{CYAN}Listening...{RESET}")
+        try:
+            if stream and stream.active:
+                logging.info(f"{YELLOW}Stream is already active.{RESET}")
+            else:
+                try:
+                    device_info = sd.default.device
+                    logging.info(f"{CYAN}Using device: {device_info}{RESET}")
+                    stream = sd.InputStream(
+                        callback=audio_callback,
+                        device=None,
+                        channels=1,
+                        samplerate=sample_rate,
+                        blocksize=int(sample_rate * 0.1),
+                    )
+                    stream.start()
+                except Exception as e:
+                    logging.error(
+                        f"{RED}Failed to start stream: {e}{RESET}", exc_info=True
+                    )
+                    time.sleep(2)
+        except NameError:
+            pass
 
+        if something_is_playing:
+            logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
+            decrease_volume_all()
+            play_pause_pressed = True
 
-"""
- ######  ########  #######  ########     ########  ########  ######  
-##    ##    ##    ##     ## ##     ##    ##     ## ##       ##    ## 
-##          ##    ##     ## ##     ##    ##     ## ##       ##       
- ######     ##    ##     ## ########     ########  ######   ##       
-      ##    ##    ##     ## ##           ##   ##   ##       ##       
-##    ##    ##    ##     ## ##           ##    ##  ##       ##    ## 
- ######     ##     #######  ##           ##     ## ########  ######  
-"""
-
-
-global recording_start_time
-
-
-def adjust_vad_threshold():
-    global audio_buffer  # Access the audio buffer to analyze current noise levels
-
-    # Calculate RMS value of the audio buffer to assess noise levels
-    if len(audio_buffer) > 0:
-        rms = np.sqrt(np.mean(audio_buffer**2))  # Calculate RMS
-    else:
-        rms = 0.0  # Default to 0 if no audio
-
-    # Define thresholds based on RMS values
-    if rms < 0.01:  # Low noise level
-        return 0.3  # Lower threshold for higher sensitivity
-    elif rms < 0.05:  # Moderate noise level
-        return 0.5  # Default threshold
-    elif rms < 0.1:  # High noise level
-        return 0.7  # Raise threshold for less sensitivity
-    else:  # Very high noise level
-        return 0.9  # Very high threshold to avoid false positives
+        beep(START_BEEP)
+        with recording_lock:
+            recording = True
+        logging.info(f"{CYAN}Listening...{RESET}")
+    except Exception as e:
+        logging.error(f"Error in start_recording: {e}", exc_info=True)
 
 
 def stop_recording(keyword_index):
-    global \
-        stream, \
-        recording, \
-        play_pause_pressed, \
-        audio_buffer, \
-        sample_rate, \
-        recording_start_time, \
-        vad_detector
+    try:
+        global \
+            stream, \
+            recording, \
+            play_pause_pressed, \
+            audio_buffer, \
+            sample_rate, \
+            recording_start_time, \
+            vad_detector
 
-    logging.info(f"{GREEN}Stopping recording...{RESET}")
-    hard_stop_limit = 5  # Maximum recording time in seconds
-    silent_time = 0
-    recording_start_time = time.time()
+        logging.info(f"{GREEN}Stopping recording...{RESET}")
+        hard_stop_limit = 5  # Maximum recording time in seconds
+        silent_time = 0
+        recording_start_time = time.time()
 
-    pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
-
-    if keyword_index == 1:
-        stop_delay_threshold = (
-            1  # Time to wait before stopping after no speech is detected
-        )
-    elif keyword_index == 2:
-        stop_delay_threshold = (
-            1  # Time to wait before stopping after no speech is detected
-        )
-    elif keyword_index is None:
-        stop_delay_threshold = (
-            0  # Time to wait before stopping after no speech is detected
-        )
         pre_recording_data = np.roll(
-            pre_recording_buffer_f24, -buffer_index, axis=0
+            pre_recording_buffer, -buffer_index, axis=0
         ).flatten()
-    else:
-        stop_delay_threshold = (
-            2  # Time to wait before stopping after no speech is detected
-        )
 
-    while silent_time <= stop_delay_threshold:
-        if stream.active:
-            if isinstance(audio_buffer, list):
-                audio_buffer = np.array(audio_buffer)
+        if keyword_index == 1:
+            stop_delay_threshold = (
+                1  # Time to wait before stopping after no speech is detected
+            )
+        elif keyword_index == 2:
+            stop_delay_threshold = (
+                1  # Time to wait before stopping after no speech is detected
+            )
+        elif keyword_index is None:
+            stop_delay_threshold = (
+                0  # Time to wait before stopping after no speech is detected
+            )
+            pre_recording_data = np.roll(
+                pre_recording_buffer_f24, -buffer_index, axis=0
+            ).flatten()
+        else:
+            stop_delay_threshold = (
+                2  # Time to wait before stopping after no speech is detected
+            )
 
-            # Get the last frames of audio for VAD analysis (30ms frame)
-            frame_duration = 30  # ms
-            frame_size = int(sample_rate * frame_duration / 1000)
-            audio_frame = audio_buffer[-frame_size:]
+        while silent_time <= stop_delay_threshold:
+            if stream.active:
+                if isinstance(audio_buffer, list):
+                    audio_buffer = np.array(audio_buffer)
 
-            # Convert to int16 format required by webrtcvad
-            audio_int16 = (audio_frame * 32767).astype(np.int16)
-            audio_bytes = audio_int16.tobytes()
+                # Get the last frames of audio for VAD analysis (30ms frame)
+                frame_duration = 30  # ms
+                frame_size = int(sample_rate * frame_duration / 1000)
+                audio_frame = audio_buffer[-frame_size:]
 
-            try:
-                # Use the VoiceDetector instance for voice detection
-                is_speech = vad_detector.vad.is_speech(
-                    audio_bytes, vad_detector.sample_rate
-                )
+                # Convert to int16 format required by webrtcvad
+                audio_int16 = (audio_frame * 32767).astype(np.int16)
+                audio_bytes = audio_int16.tobytes()
 
-                if is_speech:
-                    silent_time = 0  # Reset silent time if speech is detected
-                    logging.info(
-                        f"{PINK}Voice detected, continuing recording...{RESET}"
+                try:
+                    # Use the VoiceDetector instance for voice detection
+                    is_speech = vad_detector.vad.is_speech(
+                        audio_bytes, vad_detector.sample_rate
                     )
-                else:
-                    silent_time += 0.1  # Increment silent time if no speech is detected
 
-            except Exception as e:
-                logging.error(f"{RED}VAD error: {e}{RESET}", exc_info=True)
-                silent_time += 0.1  # Increment on error
+                    if is_speech:
+                        silent_time = 0  # Reset silent time if speech is detected
+                        logging.info(
+                            f"{PINK}Voice detected, continuing recording...{RESET}"
+                        )
+                    else:
+                        silent_time += (
+                            0.1  # Increment silent time if no speech is detected
+                        )
 
-            # Check if the hard stop limit is reached
-            if time.time() - recording_start_time > hard_stop_limit:
-                logging.info(
-                    f"{ORANGE}Hard stop limit reached, stopping recording.{RESET}"
-                )
-                break
+                except Exception as e:
+                    logging.error(f"{RED}VAD error: {e}{RESET}", exc_info=True)
+                    silent_time += 0.1  # Increment on error
 
-            time.sleep(0.1)
+                # Check if the hard stop limit is reached
+                if time.time() - recording_start_time > hard_stop_limit:
+                    logging.info(
+                        f"{ORANGE}Hard stop limit reached, stopping recording.{RESET}"
+                    )
+                    break
 
-    # Convert main recording to numpy array
-    audio_buffer = np.concatenate(
-        [pre_recording_data, audio_buffer],
-        axis=0,
-    )
-    audio_buffer_queue.put((audio_buffer, keyword_index))
+                time.sleep(0.1)
 
-    # this thread has to go if play_pause_pressed check is happening below!
-    restore_volume_all()
+        # Convert main recording to numpy array
+        audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+        audio_buffer_queue.put((audio_buffer, keyword_index))
 
-    # clearing the audio buffer - if not it will cause concat transcripts
-    audio_buffer = np.array([], dtype="float32")
-
-    if play_pause_pressed:
         restore_volume_all()
-        play_pause_pressed = False
 
-    beep(STOP_BEEP)
-    with recording_lock:
-        recording = False
-    logging.info(f"{MAGENTA}Transcribing...{RESET}")
+        # clearing the audio buffer - if not it will cause concat transcripts
+        audio_buffer = np.array([], dtype="float32")
+
+        if play_pause_pressed:
+            restore_volume_all()
+            play_pause_pressed = False
+
+        beep(STOP_BEEP)
+        with recording_lock:
+            recording = False
+        logging.info(f"{MAGENTA}Transcribing...{RESET}")
+    except Exception as e:
+        logging.error(f"Error in stop_recording: {e}", exc_info=True)
 
 
 # Define a debounce time (in seconds) to prevent rapid key presses
@@ -486,37 +460,39 @@ def save_audio(
     sample_rate=16000,
     type_of_audio=None,
 ):
-    # Ensure the directory exists
-    if not os.path.exists(directory):
-        logging.info(f"cannot save data to {directory} because it does not exist")
-        """os.makedirs(directory)"""
-        return
+    try:
+        # Ensure the directory exists
+        if not os.path.exists(directory):
+            logging.info(f"cannot save data to {directory} because it does not exist")
+            return
 
-    # Construct the base filename
-    base_filename = os.path.join(
-        directory, f"{type_of_audio}_{keyword_index}_recording.wav"
-    )
-    filename = base_filename
-    counter = 1
-
-    # Increment filename if it already exists
-    while os.path.exists(filename):
-        filename = os.path.join(
-            directory, f"{type_of_audio}_{keyword_index}_recording_{counter}.wav"
+        # Construct the base filename
+        base_filename = os.path.join(
+            directory, f"{type_of_audio}_{keyword_index}_recording.wav"
         )
-        counter += 1
+        filename = base_filename
+        counter = 1
 
-    # Ensure audio data is in the range [-1.0, 1.0]
-    max_val = np.max(np.abs(audio_data))
-    if max_val > 1.0:
-        audio_data = audio_data / max_val  # Normalize the data if necessary
+        # Increment filename if it already exists
+        while os.path.exists(filename):
+            filename = os.path.join(
+                directory, f"{type_of_audio}_{keyword_index}_recording_{counter}.wav"
+            )
+            counter += 1
 
-    # Convert audio data to int16 format (expected by wav_write)
-    audio_data_int16 = np.int16(audio_data * 32767)
+        # Ensure audio data is in the range [-1.0, 1.0]
+        max_val = np.max(np.abs(audio_data))
+        if max_val > 1.0:
+            audio_data = audio_data / max_val  # Normalize the data if necessary
 
-    # Save the audio file using scipy.io.wavfile.write
-    wav_write(filename, sample_rate, audio_data_int16)
-    logging.info(f"{GREEN}Audio saved as {filename}{RESET}")
+        # Convert audio data to int16 format (expected by wav_write)
+        audio_data_int16 = np.int16(audio_data * 32767)
+
+        # Save the audio file using scipy.io.wavfile.write
+        wav_write(filename, sample_rate, audio_data_int16)
+        logging.info(f"{GREEN}Audio saved as {filename}{RESET}")
+    except Exception as e:
+        logging.error(f"Error in save_audio: {e}", exc_info=True)
 
 
 """
@@ -531,50 +507,59 @@ def save_audio(
 
 
 def check_microphone():
-    """Check if a microphone is available."""
-    devices = sd.query_devices()
-    for device in devices:
-        if device["max_input_channels"] > 0:
-            return True
-    return False
+    try:
+        """Check if a microphone is available."""
+        devices = sd.query_devices()
+        for device in devices:
+            if device["max_input_channels"] > 0:
+                return True
+        return False
+    except Exception as e:
+        logging.error(f"Error in check_microphone: {e}", exc_info=True)
 
 
 def reinitialize_pyaudio():
-    global p
-    p.terminate()
-    p = pyaudio.PyAudio()
+    try:
+        global p
+        p.terminate()
+        p = pyaudio.PyAudio()
+    except Exception as e:
+        logging.error(f"Error in reinitialize_pyaudio: {e}", exc_info=True)
 
 
 def monitor_microphone_availability():
-    global wake_stream, p
-    while True:
-        if not check_microphone():
-            logging.info(
-                f"{RED}No microphone detected. Pausing wake word detection...{RESET}"
-            )
-            if wake_stream:
-                try:
-                    wake_stream.stop_stream()
-                    wake_stream.close()
-                except OSError as e:
-                    logging.info(f"Error stopping stream: {e}")
-                finally:
-                    wake_stream = None
-        else:
-            if wake_stream is None:
+    try:
+        global wake_stream, p
+        while True:
+            if not check_microphone():
                 logging.info(
-                    f"{GREEN}Microphone detected. Resuming wake word detection...{RESET}"
+                    f"{RED}No microphone detected. Pausing wake word detection...{RESET}"
                 )
-                try:
-                    wake_stream.start_stream()
-                except OSError as e:
-                    logging.info(f"Failed to restart wake stream: {e}")
-                    reinitialize_pyaudio()  # Reinitialize PyAudio
-                    wake_stream = None
-                except Exception as e:
-                    logging.info(f"Unexpected error: {e}")
+                if wake_stream:
+                    try:
+                        wake_stream.stop_stream()
+                        wake_stream.close()
+                    except OSError as e:
+                        logging.info(f"Error stopping stream: {e}")
+                    finally:
+                        wake_stream = None
+            else:
+                if wake_stream is None:
+                    logging.info(
+                        f"{GREEN}Microphone detected. Resuming wake word detection...{RESET}"
+                    )
+                    try:
+                        wake_stream.start_stream()
+                    except OSError as e:
+                        logging.info(f"Failed to restart wake stream: {e}")
+                        reinitialize_pyaudio()  # Reinitialize PyAudio
+                        wake_stream = None
+                    except Exception as e:
+                        logging.info(f"Unexpected error: {e}")
 
-        time.sleep(10)
+            time.sleep(10)
+    except Exception as e:
+        logging.error(f"Error in monitor_microphone_availability: {e}", exc_info=True)
 
 
 # Hardcoded model paths
@@ -618,107 +603,111 @@ last_detection_time = 0  # Time when the last wake word was detected
 
 
 def listen_for_wake_word():
-    global wake_stream, last_detection_time, recording
-    logging.info(f"{GREEN}Listening for wake words...{RESET}")
+    try:
+        global wake_stream, last_detection_time, recording
+        logging.info(f"{GREEN}Listening for wake words...{RESET}")
 
-    while True:
-        try:
-            if wake_stream:
-                data = wake_stream.read(CHUNK, exception_on_overflow=False)
-                pcm = np.frombuffer(data, dtype=np.int16)
+        while True:
+            try:
+                if wake_stream:
+                    data = wake_stream.read(CHUNK, exception_on_overflow=False)
+                    pcm = np.frombuffer(data, dtype=np.int16)
 
-                # Check for wake word using OpenWakeWord
-                prediction = owwModel.predict(pcm)
-                keyword_index = -1  # Default to no detection
-                max_score = 0.0
+                    # Check for wake word using OpenWakeWord
+                    prediction = owwModel.predict(pcm)
+                    keyword_index = -1  # Default to no detection
+                    max_score = 0.0
 
-                # Limit to only the most recent prediction scores for speed
-                recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
+                    # Limit to only the most recent prediction scores for speed
+                    recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
 
-                # Find the highest score among detected keywords
-                for idx, scores in enumerate(recent_predictions):
-                    if scores[-1] > max_score:  # Check last score for this prediction
-                        max_score = scores[-1]
-                        keyword_index = idx
+                    # Find the highest score among detected keywords
+                    for idx, scores in enumerate(recent_predictions):
+                        if (
+                            scores[-1] > max_score
+                        ):  # Check last score for this prediction
+                            max_score = scores[-1]
+                            keyword_index = idx
 
-                # Use individual threshold for each wake word
-                current_time = time.time()
-                if (
-                    keyword_index >= 0
-                    and max_score
-                    > THRESHOLDS.get(
-                        keyword_index, 0.4
-                    )  # Use threshold specific to keyword_index
-                    and (current_time - last_detection_time) > COOLDOWN_TIME
-                    and not recording
-                ):
-                    last_detection_time = current_time  # Update the last detection time
-
-                    if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        """logging.info(f"{GREEN}Custom wake word 'hey_llama2' detected!{RESET}")
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(
-                            target=stop_recording, args=(keyword_index,)
-                        ).start()"""
-                    elif keyword_index == 1:  # Custom wake word: "hey_computer9"
-                        logging.info(
-                            f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
-                        )
-                        threading.Thread(target=start_recording).start()
-                        # time.sleep(1)
-                        threading.Thread(
-                            target=stop_recording, args=(keyword_index,)
-                        ).start()
-                    elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
-                        logging.info(
-                            f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
-                        )
-                        threading.Thread(target=start_recording).start()
-                        time.sleep(3)
-                        threading.Thread(
-                            target=stop_recording, args=(keyword_index,)
-                        ).start()
-                    else:
-                        logging.info(
-                            f"{RED}Unknown wake word detected!{RESET}", keyword_index
+                    # Use individual threshold for each wake word
+                    current_time = time.time()
+                    if (
+                        keyword_index >= 0
+                        and max_score
+                        > THRESHOLDS.get(
+                            keyword_index, 0.4
+                        )  # Use threshold specific to keyword_index
+                        and (current_time - last_detection_time) > COOLDOWN_TIME
+                        and not recording
+                    ):
+                        last_detection_time = (
+                            current_time  # Update the last detection time
                         )
 
-            else:
-                logging.info(f"{YELLOW}Waiting for microphone...{RESET}")
-                time.sleep(5)
+                        if keyword_index == 0:  # Custom wake word: "hey_llama2 "
+                            pass
+                        elif keyword_index == 1:  # Custom wake word: "hey_computer9"
+                            logging.info(
+                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
+                            )
+                            threading.Thread(target=start_recording).start()
+                            threading.Thread(
+                                target=stop_recording, args=(keyword_index,)
+                            ).start()
+                        elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
+                            logging.info(
+                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
+                            )
+                            threading.Thread(target=start_recording).start()
+                            time.sleep(3)
+                            threading.Thread(
+                                target=stop_recording, args=(keyword_index,)
+                            ).start()
+                        else:
+                            logging.info(
+                                f"{RED}Unknown wake word detected!{RESET}",
+                                keyword_index,
+                            )
 
-        except OSError as e:
-            logging.info(f"{RED}Audio stream error: {e}{RESET}")
-            if wake_stream:
-                try:
-                    if wake_stream.is_active():
-                        wake_stream.stop_stream()
-                    wake_stream.close()
-                except OSError:
-                    logging.info(
-                        f"{RED}Stream already closed or failed to close.{RESET}"
-                    )
+                else:
+                    logging.info(f"{YELLOW}Waiting for microphone...{RESET}")
+                    time.sleep(5)
 
-            wake_stream = None
+            except OSError as e:
+                logging.info(f"{RED}Audio stream error: {e}{RESET}")
+                if wake_stream:
+                    try:
+                        if wake_stream.is_active():
+                            wake_stream.stop_stream()
+                        wake_stream.close()
+                    except OSError:
+                        logging.info(
+                            f"{RED}Stream already closed or failed to close.{RESET}"
+                        )
 
-            # Attempt to reinitialize the wake word detection after an error
-            time.sleep(10)  # Wait before retrying to avoid rapid retry loops
+                wake_stream = None
+
+                # Attempt to reinitialize the wake word detection after an error
+                time.sleep(10)  # Wait before retrying to avoid rapid retry loops
+    except Exception as e:
+        logging.error(f"Error in listen_for_wake_word: {e}", exc_info=True)
 
 
 def cleanup():
-    global wake_stream
-    if wake_stream:
-        try:
-            if wake_stream.is_active():
-                wake_stream.stop_stream()
-            wake_stream.close()
-        except OSError as e:
-            logging.info(f"Error during cleanup: {e}")
-        wake_stream = None
-    # porcupine.delete()
-    p.terminate()
-    logging.info("Cleanup completed.")
+    try:
+        global wake_stream
+        if wake_stream:
+            try:
+                if wake_stream.is_active():
+                    wake_stream.stop_stream()
+                wake_stream.close()
+            except OSError as e:
+                logging.info(f"Error during cleanup: {e}")
+            wake_stream = None
+        p.terminate()
+        logging.info("Cleanup completed.")
+    except Exception as e:
+        logging.error(f"Error in cleanup: {e}", exc_info=True)
 
 
 """
@@ -738,63 +727,67 @@ Groq_client = Groq(api_key=api_key)
 
 
 def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
-    if keyword_index == 1:
-        prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
-    else:
-        prompt = None
-
     try:
-        # Convert the audio buffer (NumPy array) to a byte stream in WAV format
-        byte_io = io.BytesIO()
-        wav_write(byte_io, sample_rate, audio_buffer)
-        byte_io.seek(0)  # Rewind to the beginning of the byte stream
+        if keyword_index == 1:
+            prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
+        else:
+            prompt = None
 
-        # Send the byte stream directly to the Groq API
-        transcription = Groq_client.audio.transcriptions.create(
-            file=("audio_buffer.wav", byte_io.getvalue()),  # Use in-memory byte stream
-            model=groq_model,
-            prompt=prompt,
-            response_format="json",
-            language="en",
-            temperature=0.0,
-        )
-        result_queue.put(transcription.text)
+        try:
+            # Convert the audio buffer (NumPy array) to a byte stream in WAV format
+            byte_io = io.BytesIO()
+            wav_write(byte_io, sample_rate, audio_buffer)
+            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+
+            # Send the byte stream directly to the Groq API
+            transcription = Groq_client.audio.transcriptions.create(
+                file=(
+                    "audio_buffer.wav",
+                    byte_io.getvalue(),
+                ),  # Use in-memory byte stream
+                model=groq_model,
+                prompt=prompt,
+                response_format="json",
+                language="en",
+                temperature=0.0,
+            )
+            result_queue.put(transcription.text)
+        except Exception as e:
+            logging.info(f"Groq API error: {e}")  # Log the error
+            result_queue.put(
+                transcribe_with_local_model(audio_buffer, keyword_index)
+            )  # Call local model after logging
     except Exception as e:
-        logging.info(f"Groq API error: {e}")  # Log the error
-        result_queue.put(
-            transcribe_with_local_model(audio_buffer, keyword_index)
-        )  # Call local model after logging
+        logging.error(f"Error in transcribe_with_groq: {e}", exc_info=True)
 
 
 def transcribe_with_local_model(audio_buffer, keyword_index):
-    # Define prompt based on keyword_index
-    if keyword_index == 1:
-        prompt = Hey_computer_STT_prompt
-    else:
-        prompt = None
-
     try:
-        # Initialize Faster Whisper model
-        #         model_path = "path_to_your_faster_whisper_model"  # Replace with your model path
-        #         model = WhisperModel(device="cuda", compute_type="float16")
-        #         model = WhisperModel("small.en", device="cuda", num_workers=8)
-        logging.info("using WhisperModel on CUDA")
-        # Convert audio buffer (NumPy array) to WAV format in-memory
-        byte_io = io.BytesIO()
-        wav_write(byte_io, sample_rate, audio_buffer)
-        byte_io.seek(0)
+        # Define prompt based on keyword_index
+        if keyword_index == 1:
+            prompt = Hey_computer_STT_prompt
+        else:
+            prompt = None
 
-        # Decode audio
-        segments, _ = model.transcribe(byte_io, language="en")
+        try:
+            logging.info("using WhisperModel on CUDA")
+            # Convert audio buffer (NumPy array) to WAV format in-memory
+            byte_io = io.BytesIO()
+            wav_write(byte_io, sample_rate, audio_buffer)
+            byte_io.seek(0)
 
-        # Combine transcribed text from all segments
-        transcription = " ".join(segment.text for segment in segments)
-        logging.info(transcription)
-        return transcription
+            # Decode audio
+            segments, _ = model.transcribe(byte_io, language="en")
+
+            # Combine transcribed text from all segments
+            transcription = " ".join(segment.text for segment in segments)
+            logging.info(transcription)
+            return transcription
+        except Exception as e:
+            logging.info(f"Faster Whisper error: {e}")
+            return "Transcription failed"
     except Exception as e:
-        logging.info(f"Faster Whisper error: {e}")
-        # You can optionally call your fallback transcription function here
-        return "Transcription failed"
+        logging.error(f"Error in transcribe_with_local_model: {e}", exc_info=True)
 
 
 """    segments, info = model.transcribe(
@@ -814,104 +807,119 @@ result_queue = queue.Queue()
 
 
 def process_audio_async():
-    global result_queue
-    while True:
-        try:
-            audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
-            logging.info(f"Processing audio buffer for keyword index: {keyword_index}")
-            """if audio_buffer_for_processing is None:
-                break"""
-
-            transcript = None
-            retry_count = 0
-            max_retries = 3
-
-            while retry_count < max_retries:
-                try:
-                    logging.info("transcribe_with_groq starting")
-                    result_queue = queue.Queue()
-                    transcript_thread = threading.Thread(
-                        target=transcribe_with_groq,
-                        args=(audio_buffer_for_processing, keyword_index, result_queue),
-                    )
-                    transcript_thread.start()
-                    transcript = result_queue.get()
-
-                    if transcript:
-                        break  # Exit retry loop if transcription is successful
-
-                except groq.GroqError as e:
-                    logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
-                    retry_count += 1
-                    logging.info(f"Retrying... ({retry_count}/{max_retries})")
-                    time.sleep(2)  # Wait before retrying
-
-            if not transcript:
-                logging.info("transcribe_with_local_model_async starting")
-                transcript = transcribe_with_local_model(
-                    audio_buffer_for_processing, keyword_index
+    try:
+        global result_queue
+        while True:
+            try:
+                audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
+                logging.info(
+                    f"Processing audio buffer for keyword index: {keyword_index}"
                 )
-            if not transcript:
-                logging.error("Empty transcript received")
-                continue
+                """if audio_buffer_for_processing is None:
+                    break"""
 
-            logging.info(
-                f"Transcription received in process_audio_async: {transcript}"
-            )  # Debug log
-            transcript_lower = transcript.lower()
+                transcript = None
+                retry_count = 0
+                max_retries = 3
 
-            # Process wake word transcripts
-            if keyword_index is None:
-                logging.info("pasing f24 transcription")
-                paste_transcript(transcript)
-                # save my volcal samples here.
-                # save_audio
-                continue
+                while retry_count < max_retries:
+                    try:
+                        logging.info("transcribe_with_groq starting")
+                        result_queue = queue.Queue()
+                        transcript_thread = threading.Thread(
+                            target=transcribe_with_groq,
+                            args=(
+                                audio_buffer_for_processing,
+                                keyword_index,
+                                result_queue,
+                            ),
+                        )
+                        transcript_thread.start()
+                        transcript = result_queue.get()
 
-            elif keyword_index == 1:
-                if "computer" in transcript_lower:
-                    keyword_position = transcript_lower.index("computer")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("computer") :
-                    ]
-                    logging.info(f"Processing computer command: {stripped_transcript}")
-                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+                        if transcript:
+                            break  # Exit retry loop if transcription is successful
 
-                    # we have to save the audio buffer as true positve
-                    # save_audio
+                    except groq.GroqError as e:
+                        logging.error(
+                            f"Groq API error occurred: {str(e)}", exc_info=True
+                        )
+                        retry_count += 1
+                        logging.info(f"Retrying... ({retry_count}/{max_retries})")
+                        time.sleep(2)  # Wait before retrying
 
+                if not transcript:
+                    logging.info("transcribe_with_local_model_async starting")
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
+                    )
+                if not transcript:
+                    logging.error("Empty transcript received")
                     continue
-                else:
-                    # we have to save the audio buffer as false positve
-                    pass
-            elif keyword_index == 2:
-                if "lama" in transcript_lower:
-                    keyword_position = transcript_lower.index("lama")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("lama") :
-                    ]
 
-                    logging.info(f"Processing lama command: {stripped_transcript}")
-                    paste_transcript(stripped_transcript)
+                logging.info(
+                    f"Transcription received in process_audio_async: {transcript}"
+                )  # Debug log
+                transcript_lower = transcript.lower()
 
-                    # we have to save the audio buffer as true positve
+                # Process wake word transcripts
+                if keyword_index is None:
+                    logging.info("pasing f24 transcription")
+                    paste_transcript(transcript)
+                    # save my volcal samples here.
                     # save_audio
                     continue
-                else:
-                    # we have to save the audio buffer as false positve
-                    pass
-            # Process direct key press transcripts
-            else:
-                logging.info("unknown keyword index")
 
-        except queue.Empty:
-            continue
-        except Exception as e:
-            logging.error(
-                f"Critical error in process_audio_async: {str(e)}", exc_info=True
-            )
-            time.sleep(1)  # Prevent tight error loops
-            continue  # Keep the thread running even after errors
+                elif keyword_index == 1:
+                    if "computer" in transcript_lower:
+                        keyword_position = transcript_lower.index("computer")
+                        stripped_transcript = transcript_lower[
+                            keyword_position + len("computer") :
+                        ]
+                        logging.info(
+                            f"Processing computer command: {stripped_transcript}"
+                        )
+                        transcript_queue.put(
+                            (stripped_transcript.strip(), keyword_index)
+                        )
+
+                        # we have to save the audio buffer as true positve
+                        # save_audio
+
+                        continue
+                    else:
+                        # we have to save the audio buffer as false positve
+                        pass
+                elif keyword_index == 2:
+                    if "lama" in transcript_lower:
+                        keyword_position = transcript_lower.index("lama")
+                        stripped_transcript = transcript_lower[
+                            keyword_position + len("lama") :
+                        ]
+
+                        logging.info(f"Processing lama command: {stripped_transcript}")
+                        paste_transcript(stripped_transcript)
+
+                        # we have to save the audio buffer as true positve
+                        # save_audio
+                        continue
+                    else:
+                        # we have to save the audio buffer as false positve
+                        pass
+                # Process direct key press transcripts
+                else:
+                    logging.info("unknown keyword index")
+
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logging.error(
+                    f"Critical error in process_audio_async: {str(e)}", exc_info=True
+                )
+                time.sleep(1)  # Prevent tight error loops
+                continue  # Keep the thread running even after errors
+    except Exception as e:
+        logging.error(f"Error in process_audio_async: {e}", exc_info=True)
 
 
 """TODO :  this code was changed recently, check if it is working fine or not
@@ -925,16 +933,16 @@ def start_listener():
             listener.join()
     except KeyboardInterrupt:
         logging.info("Ctrl+C pressed. Exiting...")
+    except Exception as e:
+        logging.error(f"Error in start_listener: {e}", exc_info=True)
 
 
 def beep(sound):
-    frequency, duration = sound
-    # Create and start a new thread for playing the sound
-    # thread = threading.Thread(target=lambda: winsound.Beep(frequency, duration))
-    # thread.start()
-    winsound.Beep(frequency, duration)
-    # Optionally join the thread if you want to wait for it to complete
-    # thread.join()
+    try:
+        frequency, duration = sound
+        winsound.Beep(frequency, duration)
+    except Exception as e:
+        logging.error(f"Error in beep: {e}", exc_info=True)
 
 
 """
@@ -950,20 +958,26 @@ def beep(sound):
 
 
 def reset_state():
-    global recording, play_pause_pressed, audio_buffer
-    recording = False
-    play_pause_pressed = False
-    audio_buffer = np.array([], dtype="float32")
-    restore_volume_all()
-    logging.info("State reset completed")
+    try:
+        global recording, play_pause_pressed, audio_buffer
+        recording = False
+        play_pause_pressed = False
+        audio_buffer = np.array([], dtype="float32")
+        restore_volume_all()
+        logging.info("State reset completed")
+    except Exception as e:
+        logging.error(f"Error in reset_state: {e}", exc_info=True)
 
 
 def monitor_state():
-    while True:
-        if recording and time.time() - recording_start_time > 60:
-            logging.error("Recording stuck in active state")
-            reset_state()
-        time.sleep(60)
+    try:
+        while True:
+            if recording and time.time() - recording_start_time > 60:
+                logging.error("Recording stuck in active state")
+                reset_state()
+            time.sleep(60)
+    except Exception as e:
+        logging.error(f"Error in monitor_state: {e}", exc_info=True)
 
 
 """
@@ -978,17 +992,20 @@ def monitor_state():
 
 
 def set_clipboard_content(text):
-    success = False
-    while not success:
-        try:
-            win32clipboard.OpenClipboard(0)
-            win32clipboard.EmptyClipboard()
-            win32clipboard.SetClipboardText(text)
-            win32clipboard.CloseClipboard()
-            success = True
-        except win32clipboard.Error:
-            logging.info("Failed to open the clipboard. Retrying in 1 second...")
-            time.sleep(0.5)
+    try:
+        success = False
+        while not success:
+            try:
+                win32clipboard.OpenClipboard(0)
+                win32clipboard.EmptyClipboard()
+                win32clipboard.SetClipboardText(text)
+                win32clipboard.CloseClipboard()
+                success = True
+            except win32clipboard.Error:
+                logging.info("Failed to open the clipboard. Retrying in 1 second...")
+                time.sleep(0.5)
+    except Exception as e:
+        logging.error(f"Error in set_clipboard_content: {e}", exc_info=True)
 
 
 def get_clipboard_content():
@@ -1000,59 +1017,77 @@ def get_clipboard_content():
     except win32clipboard.Error:
         logging.info("Failed to open the clipboard. Returning an empty string.")
         return ""
+    except Exception as e:
+        logging.error(f"Error in get_clipboard_content: {e}", exc_info=True)
 
 
 def send_input(text):
-    for char in text:
-        ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 0, 0)
-        ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)  # Release key
+    try:
+        for char in text:
+            ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 0, 0)
+            ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)  # Release key
+    except Exception as e:
+        logging.error(f"Error in send_input: {e}", exc_info=True)
 
 
 def paste_transcript(transcript):
-    set_clipboard_content(transcript)
-    ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
-    ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
-    ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
-    ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
-    # pyautogui.write(transcript)  # No delay, types out instantly
-    beep(PASTE_BEEP)
-    logging.info("Transcript pasted")
+    try:
+        set_clipboard_content(transcript)
+        ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)  # Ctrl key down
+        ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)  # V key down
+        ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)  # V key up
+        ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)  # Ctrl key up
+        # pyautogui.write(transcript)  # No delay, types out instantly
+        beep(PASTE_BEEP)
+        logging.info("Transcript pasted")
+    except Exception as e:
+        logging.error(f"Error in paste_transcript: {e}", exc_info=True)
 
 
 """TODO :  this code was changed recently, check if it is working fine or not . There was a not before the  execute command run with tool. So not was removed and the statements were flipped along with return added to both of them."""
 
 
 def run_command_with_retry(transcript):
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            if execute_command_run_with_tool(transcript):
-                return
-        except Exception as e:
-            logging.error(f"Error in execute_command_run_with_tool: {e}", exc_info=True)
-        time.sleep(1)  # Wait before retrying
-    logging.error(f"Failed to execute command after {max_retries} attempts")
+    try:
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                if execute_command_run_with_tool(transcript):
+                    return
+            except Exception as e:
+                logging.error(
+                    f"Error in execute_command_run_with_tool: {e}", exc_info=True
+                )
+            time.sleep(1)  # Wait before retrying
+        logging.error(f"Failed to execute command after {max_retries} attempts")
+    except Exception as e:
+        logging.error(f"Error in run_command_with_retry: {e}", exc_info=True)
 
 
 def clean_transcript():
-    while True:
-        try:
-            transcript, keyword_index = transcript_queue.get()
-            logging.error(f"Transcript received in clean_transcript: {transcript}")
-            if keyword_index == 1:
-                logging.error(
-                    f"Transcript sent for execute_command_run_with_tool: {transcript}"
+    try:
+        while True:
+            try:
+                transcript, keyword_index = transcript_queue.get()
+                logging.error(f"Transcript received in clean_transcript: {transcript}")
+                if keyword_index == 1:
+                    logging.error(
+                        f"Transcript sent for execute_command_run_with_tool: {transcript}"
+                    )
+                    threading.Thread(
+                        target=run_command_with_retry, args=(transcript,)
+                    ).start()
+                else:
+                    logging.info(f"Unknown keyword index {keyword_index}")
+                logging.info(
+                    f"{BRIGHT_GREEN}Say 'Hey computer' or 'rey lama' wake word...{RESET}"
                 )
-                threading.Thread(
-                    target=run_command_with_retry, args=(transcript,)
-                ).start()
-            else:
-                logging.info(f"Unknown keyword index {keyword_index}")
-            logging.info(
-                f"{BRIGHT_GREEN}Say 'Hey computer' or 'rey lama' wake word...{RESET}"
-            )
-        except Exception as e:
-            logging.error(f"An error occurred in clean_transcript: {e}", exc_info=True)
+            except Exception as e:
+                logging.error(
+                    f"An error occurred in clean_transcript: {e}", exc_info=True
+                )
+    except Exception as e:
+        logging.error(f"Error in clean_transcript: {e}", exc_info=True)
 
 
 """
@@ -1067,18 +1102,24 @@ def clean_transcript():
 
 
 def start_thread(target, name):
-    def run_with_restart():
-        while True:
-            try:
-                target()
-            except Exception as e:
-                logging.error(
-                    f"Thread {name} crashed with exception: {e}", exc_info=True
-                )
-                time.sleep(5)  # Wait before restarting the thread
+    try:
 
-    thread = threading.Thread(target=run_with_restart, name=name, daemon=True).start()
-    return thread
+        def run_with_restart():
+            while True:
+                try:
+                    target()
+                except Exception as e:
+                    logging.error(
+                        f"Thread {name} crashed with exception: {e}", exc_info=True
+                    )
+                    time.sleep(5)  # Wait before restarting the thread
+
+        thread = threading.Thread(
+            target=run_with_restart, name=name, daemon=True
+        ).start()
+        return thread
+    except Exception as e:
+        logging.error(f"Error in start_thread: {e}", exc_info=True)
 
 
 def main():
