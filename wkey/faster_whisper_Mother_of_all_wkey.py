@@ -1,3 +1,5 @@
+"""TODO :  the merge was not complete we need to do more testing and do a complete merge of the code with other branches too"""
+
 """
 ##    ##  #######            ##     ## ####  ######
 ###   ## ##     ##           ###   ###  ##  ##    ##
@@ -65,7 +67,7 @@ import traceback
 
 # Set up logging configuration
 logging.basicConfig(
-    level=logging.ERROR,
+    level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler("whisper_keyboard.log"),
@@ -80,19 +82,20 @@ YELLOW = "\033[93m"
 RED = "\033[91m"
 MAGENTA = "\033[95m"
 CYAN = "\033[96m"
-BRIGHT_WHITE = "\033[97m"
 RESET = "\033[0m"
 BOLD = "\033[1m"
 
 # Additional ANSI Color codes
+ORANGE = "\033[38;5;214m"
+PINK = "\033[38;5;198m"
 
+# Additional ANSI Color codes
 BRIGHT_GREEN = "\033[92m"
 BRIGHT_YELLOW = "\033[93m"
 BRIGHT_BLUE = "\033[94m"
 BRIGHT_MAGENTA = "\033[95m"
 BRIGHT_CYAN = "\033[96m"
 BRIGHT_WHITE = "\033[97m"
-
 
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
@@ -272,16 +275,16 @@ def start_recording():
     global play_pause_pressed
     global something_is_playing
 
-    logging.info("Starting recording...")
+    logging.info(f"{GREEN}Starting recording...{RESET}")
     decrease_volume_all()
 
     try:
         if stream and stream.active:
-            logging.info("Stream is already active.")
+            logging.info(f"{YELLOW}Stream is already active.{RESET}")
         else:
             try:
                 device_info = sd.default.device
-                logging.info(f"Using device: {device_info}")
+                logging.info(f"{CYAN}Using device: {device_info}{RESET}")
                 stream = sd.InputStream(
                     callback=audio_callback,
                     device=None,
@@ -291,13 +294,13 @@ def start_recording():
                 )
                 stream.start()
             except Exception as e:
-                logging.error(f"Failed to start stream: {e}", exc_info=True)
+                logging.error(f"{RED}Failed to start stream: {e}{RESET}", exc_info=True)
                 time.sleep(2)
     except NameError:
         pass
 
     if something_is_playing:
-        logging.info("Something is playing, decreasing volume.")
+        logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
         decrease_volume_all()
         play_pause_pressed = True
 
@@ -351,7 +354,7 @@ def stop_recording(keyword_index):
         recording_start_time, \
         vad_detector
 
-    logging.info("Stopping recording...")
+    logging.info(f"{GREEN}Stopping recording...{RESET}")
     hard_stop_limit = 5  # Maximum recording time in seconds
     silent_time = 0
     recording_start_time = time.time()
@@ -400,17 +403,21 @@ def stop_recording(keyword_index):
 
                 if is_speech:
                     silent_time = 0  # Reset silent time if speech is detected
-                    logging.info("Voice detected, continuing recording...")
+                    logging.info(
+                        f"{PINK}Voice detected, continuing recording...{RESET}"
+                    )
                 else:
                     silent_time += 0.1  # Increment silent time if no speech is detected
 
             except Exception as e:
-                logging.error(f"VAD error: {e}", exc_info=True)
+                logging.error(f"{RED}VAD error: {e}{RESET}", exc_info=True)
                 silent_time += 0.1  # Increment on error
 
             # Check if the hard stop limit is reached
             if time.time() - recording_start_time > hard_stop_limit:
-                logging.info("Hard stop limit reached, stopping recording.")
+                logging.info(
+                    f"{ORANGE}Hard stop limit reached, stopping recording.{RESET}"
+                )
                 break
 
             time.sleep(0.1)
@@ -449,7 +456,7 @@ def on_press(key):
     if key == RECORD_KEY and not recording:
         if current_time - last_key_press_time > DEBOUNCE_TIME:
             last_key_press_time = current_time
-            start_recording()
+            threading.Thread(target=start_recording).start()
 
 
 def on_release(key):
@@ -458,7 +465,7 @@ def on_release(key):
     if key == RECORD_KEY and recording:
         if current_time - last_key_press_time > DEBOUNCE_TIME:
             last_key_press_time = current_time
-            stop_recording(None)
+            threading.Thread(target=stop_recording, args=(None,)).start()
 
 
 """
@@ -648,40 +655,50 @@ def listen_for_wake_word():
                     last_detection_time = current_time  # Update the last detection time
 
                     if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                        """logging.info("\033[92mCustom wake word 'hey_llama2' detected!\033[0m")
-                        start_recording()
+                        """logging.info(f"{GREEN}Custom wake word 'hey_llama2' detected!{RESET}")
+                        threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        stop_recording(keyword_index)"""
+                        threading.Thread(
+                            target=stop_recording, args=(keyword_index,)
+                        ).start()"""
                     elif keyword_index == 1:  # Custom wake word: "hey_computer9"
                         logging.info(
                             f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
                         )
-                        start_recording()
+                        threading.Thread(target=start_recording).start()
                         # time.sleep(1)
-                        stop_recording(keyword_index)
+                        threading.Thread(
+                            target=stop_recording, args=(keyword_index,)
+                        ).start()
                     elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
                         logging.info(
                             f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
                         )
-                        start_recording()
+                        threading.Thread(target=start_recording).start()
                         time.sleep(3)
-                        stop_recording(keyword_index)
+                        threading.Thread(
+                            target=stop_recording, args=(keyword_index,)
+                        ).start()
                     else:
-                        logging.info("Unknown wake word detected!", keyword_index)
+                        logging.info(
+                            f"{RED}Unknown wake word detected!{RESET}", keyword_index
+                        )
 
             else:
-                logging.info("Waiting for microphone...")
+                logging.info(f"{YELLOW}Waiting for microphone...{RESET}")
                 time.sleep(5)
 
         except OSError as e:
-            logging.info(f"Audio stream error: {e}")
+            logging.info(f"{RED}Audio stream error: {e}{RESET}")
             if wake_stream:
                 try:
                     if wake_stream.is_active():
                         wake_stream.stop_stream()
                     wake_stream.close()
                 except OSError:
-                    logging.info("Stream already closed or failed to close.")
+                    logging.info(
+                        f"{RED}Stream already closed or failed to close.{RESET}"
+                    )
 
             wake_stream = None
 
@@ -716,10 +733,11 @@ def cleanup():
 
 
 api_key = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=api_key)
+global Groq_client
+Groq_client = Groq(api_key=api_key)
 
 
-def transcribe_with_groq(audio_buffer, keyword_index):
+def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
     if keyword_index == 1:
         prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
     else:
@@ -732,7 +750,7 @@ def transcribe_with_groq(audio_buffer, keyword_index):
         byte_io.seek(0)  # Rewind to the beginning of the byte stream
 
         # Send the byte stream directly to the Groq API
-        transcription = client.audio.transcriptions.create(
+        transcription = Groq_client.audio.transcriptions.create(
             file=("audio_buffer.wav", byte_io.getvalue()),  # Use in-memory byte stream
             model=groq_model,
             prompt=prompt,
@@ -740,11 +758,11 @@ def transcribe_with_groq(audio_buffer, keyword_index):
             language="en",
             temperature=0.0,
         )
-        return transcription.text
+        result_queue.put(transcription.text)
     except Exception as e:
         logging.info(f"Groq API error: {e}")  # Log the error
-        return transcribe_with_local_model(
-            audio_buffer, keyword_index
+        result_queue.put(
+            transcribe_with_local_model(audio_buffer, keyword_index)
         )  # Call local model after logging
 
 
@@ -792,7 +810,11 @@ TODO :   the saving functions in process_audio_async have been removed from here
 TODO :  these are in the older version of the code in other branches of the whisper keyboard"""
 
 
+result_queue = queue.Queue()
+
+
 def process_audio_async():
+    global result_queue
     while True:
         try:
             audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
@@ -801,62 +823,86 @@ def process_audio_async():
                 break"""
 
             transcript = None
-            try:
-                transcript = transcribe_with_groq(
+            retry_count = 0
+            max_retries = 3
+
+            while retry_count < max_retries:
+                try:
+                    logging.info("transcribe_with_groq starting")
+                    result_queue = queue.Queue()
+                    transcript_thread = threading.Thread(
+                        target=transcribe_with_groq,
+                        args=(audio_buffer_for_processing, keyword_index, result_queue),
+                    )
+                    transcript_thread.start()
+                    transcript = result_queue.get()
+
+                    if transcript:
+                        break  # Exit retry loop if transcription is successful
+
+                except groq.GroqError as e:
+                    logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
+                    retry_count += 1
+                    logging.info(f"Retrying... ({retry_count}/{max_retries})")
+                    time.sleep(2)  # Wait before retrying
+
+            if not transcript:
+                logging.info("transcribe_with_local_model_async starting")
+                transcript = transcribe_with_local_model(
                     audio_buffer_for_processing, keyword_index
                 )
-                if not transcript:
-                    logging.error("Empty transcript received")
+            if not transcript:
+                logging.error("Empty transcript received")
+                continue
+
+            logging.info(
+                f"Transcription received in process_audio_async: {transcript}"
+            )  # Debug log
+            transcript_lower = transcript.lower()
+
+            # Process wake word transcripts
+            if keyword_index is None:
+                logging.info("pasing f24 transcription")
+                paste_transcript(transcript)
+                # save my volcal samples here.
+                # save_audio
+                continue
+
+            elif keyword_index == 1:
+                if "computer" in transcript_lower:
+                    keyword_position = transcript_lower.index("computer")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("computer") :
+                    ]
+                    logging.info(f"Processing computer command: {stripped_transcript}")
+                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+
                     continue
-
-                logging.info(f"Transcription received: {transcript}")  # Debug log
-                transcript_lower = transcript.lower()
-
-                # Process wake word transcripts
-                if keyword_index is not None:
-                    if "computer" in transcript_lower or "lama" in transcript_lower:
-                        if "computer" in transcript_lower:
-                            keyword_position = transcript_lower.index("computer")
-                            stripped_transcript = transcript_lower[
-                                keyword_position + len("computer") :
-                            ]
-
-                            logging.info(
-                                f"Processing computer command: {stripped_transcript}"
-                            )
-                            transcript_queue.put(
-                                (stripped_transcript.strip(), keyword_index)
-                            )
-                        elif "lama" in transcript_lower:
-                            keyword_position = transcript_lower.index("lama")
-                            stripped_transcript = transcript_lower[
-                                keyword_position + len("lama") :
-                            ]
-
-                            logging.info(
-                                f"Processing lama command: {stripped_transcript}"
-                            )
-                            transcript_queue.put(
-                                (stripped_transcript.strip(), keyword_index)
-                            )
-                # Process direct key press transcripts
                 else:
-                    logging.info("Processing direct transcription")
-                    transcript_queue.put((transcript, keyword_index))
+                    # we have to save the audio buffer as false positve
+                    pass
+            elif keyword_index == 2:
+                if "lama" in transcript_lower:
+                    keyword_position = transcript_lower.index("lama")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("lama") :
+                    ]
 
-            except groq.Error as e:
-                logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
-                try:
-                    transcript = transcribe_with_local_model(
-                        audio_buffer_for_processing, keyword_index
-                    )
-                    if transcript and transcript != "Transcription failed":
-                        transcript_queue.put((transcript, keyword_index))
-                except Exception as e2:
-                    logging.error(
-                        f"Both transcription methods failed: {str(e2)}", exc_info=True
-                    )
+                    logging.info(f"Processing lama command: {stripped_transcript}")
+                    paste_transcript(stripped_transcript)
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
                     continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            # Process direct key press transcripts
+            else:
+                logging.info("unknown keyword index")
 
         except queue.Empty:
             continue
@@ -976,6 +1022,18 @@ def paste_transcript(transcript):
 """TODO :  this code was changed recently, check if it is working fine or not . There was a not before the  execute command run with tool. So not was removed and the statements were flipped along with return added to both of them."""
 
 
+def run_command_with_retry(transcript):
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if execute_command_run_with_tool(transcript):
+                return
+        except Exception as e:
+            logging.error(f"Error in execute_command_run_with_tool: {e}", exc_info=True)
+        time.sleep(1)  # Wait before retrying
+    logging.error(f"Failed to execute command after {max_retries} attempts")
+
+
 def clean_transcript():
     while True:
         try:
@@ -985,11 +1043,11 @@ def clean_transcript():
                 logging.error(
                     f"Transcript sent for execute_command_run_with_tool: {transcript}"
                 )
-                if not execute_command_run_with_tool(transcript):
-                    pass
-                    """execute_command_fuzzy(transcript)"""
+                threading.Thread(
+                    target=run_command_with_retry, args=(transcript,)
+                ).start()
             else:
-                logging.info(f"Unknown keyword index{keyword_index}")
+                logging.info(f"Unknown keyword index {keyword_index}")
             logging.info(
                 f"{BRIGHT_GREEN}Say 'Hey computer' or 'rey lama' wake word...{RESET}"
             )
@@ -1008,6 +1066,21 @@ def clean_transcript():
 """
 
 
+def start_thread(target, name):
+    def run_with_restart():
+        while True:
+            try:
+                target()
+            except Exception as e:
+                logging.error(
+                    f"Thread {name} crashed with exception: {e}", exc_info=True
+                )
+                time.sleep(5)  # Wait before restarting the thread
+
+    thread = threading.Thread(target=run_with_restart, name=name, daemon=True).start()
+    return thread
+
+
 def main():
     global stream
     global driver
@@ -1021,7 +1094,8 @@ def main():
     def exception_handler(exc_type, exc_value, exc_traceback):
         # Log any unhandled exceptions
         logging.error(
-            "Unhandled exception:", exc_info=(exc_type, exc_value, exc_traceback)
+            f"{RED}Unhandled exception:{RESET}",
+            exc_info=(exc_type, exc_value, exc_traceback),
         )
 
     # Set up global exception handler
@@ -1030,23 +1104,24 @@ def main():
     try:
         # transcribe_with_local_model(pre_recording_buffer, 1)
         # Start the microphone monitoring thread
-        executor.submit(monitor_microphone_availability)
+        start_thread(monitor_microphone_availability, "MicrophoneMonitor")
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         # Use ThreadPoolExecutor for background processes
 
-        executor.submit(clean_transcript)
-        executor.submit(process_audio_async)
-        executor.submit(listen_for_wake_word)
-        executor.submit(start_driver)
-        executor.submit(monitor_state)
+        start_thread(clean_transcript, "CleanTranscript")
+        start_thread(process_audio_async, "ProcessAudio")
+        start_thread(listen_for_wake_word, "WakeWordListener")
+
+        threading.Thread(target=start_driver, daemon=True).start()
+        start_thread(monitor_state, "StateMonitor")
 
         with stream:
             start_listener()
-    except KeyboardInterrupt:
-        logging.info(f"{RED}Ctrl+C pressed. Exiting...{RESET}")
     except Exception as e:
-        logging.error(f"Critical error in main: {str(e)}\n{traceback.format_exc()}")
+        logging.error(
+            f"{RED}Critical error in main: {str(e)}\n{traceback.format_exc()}{RESET}"
+        )
     finally:
         try:
             if stream and stream.active:
@@ -1057,14 +1132,15 @@ def main():
             logging.info(f"{YELLOW}Cleanup completed. Exiting...{RESET}")
             if driver:
                 driver.quit()
-            executor.shutdown(wait=True)
         except Exception as e:
-            logging.error(f"Error during cleanup: {str(e)}\n{traceback.format_exc()}")
+            logging.error(
+                f"{RED}Error during cleanup: {str(e)}\n{traceback.format_exc()}{RESET}"
+            )
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as e:
-        logging.error(f"Fatal error: {str(e)}\n{traceback.format_exc()}")
+        logging.error(f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}")
         sys.exit(1)

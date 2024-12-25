@@ -42,6 +42,26 @@ from pydub.playback import play
 import queue
 import logging
 
+# ANSI Color codes
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+
+# Additional ANSI Color codes
+ORANGE = "\033[38;5;214m"
+PINK = "\033[38;5;198m"
+BRIGHT_GREEN = "\033[92m"
+BRIGHT_YELLOW = "\033[93m"
+BRIGHT_BLUE = "\033[94m"
+BRIGHT_MAGENTA = "\033[95m"
+BRIGHT_CYAN = "\033[96m"
+BRIGHT_WHITE = "\033[97m"
+
 # Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
@@ -60,14 +80,17 @@ Groq_client = Groq(api_key=api_key)
 
 
 def initialize_groq_client():
-    global api_key, Groq_client
-    if api_key is None:
-        load_dotenv()
-        api_key = os.getenv("GROQ_API_KEY")
-    else:
-        pass
-    Groq_client = Groq(api_key=api_key)
-    return Groq_client
+    try:
+        global api_key, Groq_client
+        if api_key is None:
+            load_dotenv()
+            api_key = os.getenv("GROQ_API_KEY")
+        else:
+            pass
+        Groq_client = Groq(api_key=api_key)
+        return Groq_client
+    except Exception as e:
+        logging.error(f"Error initializing Groq client: {e}", exc_info=True)
 
 
 # Define models
@@ -115,7 +138,7 @@ def start_driver():
     global driver, driver_pid, session_id, executor_url
 
     try:
-        logging.info("Starting WebDriver...")
+        logging.info(f"{CYAN}Starting driver...{RESET}")
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
         driver.get("https://open.spotify.com/collection/tracks")
@@ -126,7 +149,7 @@ def start_driver():
         executor_url = driver.command_executor._url
         logging.info("WebDriver started successfully.")
     except Exception as e:
-        logging.error(f"Error starting WebDriver: {e}", exc_info=True)
+        logging.error(f"{RED}Error starting driver: {e}{RESET}", exc_info=True)
 
 
 """
@@ -135,9 +158,9 @@ https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 
 
 def reconnect_driver():
-    global driver, session_id, executor_url, options
-
     try:
+        global driver, session_id, executor_url, options
+
         logging.info("Reconnecting to WebDriver session...")
         if session_id and executor_url:
             driver = webdriver.Remote(command_executor=executor_url, options=options)
@@ -219,106 +242,104 @@ def play_music():
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
-
     except Exception as e:
         error_message = str(e)
-        if "disconnected" in error_message or "NoneType" in error_message:
-            logging.info("Attempting to reconnect due to disconnection...")
+        if "disconnected" in error_message:
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                driver.execute_script(
-                    "document.querySelector('button[aria-label=\"Play\"]').click()"
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
                 )
-                logging.info("Playback started after reconnection.")
-                change_device()
+                play_button.click()
+                print("Playback started after reconnection.")
             except Exception as e:
-                logging.error(
-                    f"Error while trying to play after reconnection: {e}", exc_info=True
+                print(f"Error while trying to play after reconnection: {e}")
+
+        elif "target window already closed" in error_message:
+            driver.quit()
+            start_driver()
+            try:
+                play_button = driver.find_element(
+                    By.XPATH, "//button[@aria-label='Play']"
                 )
+                play_button.click()
+                print("Playback started after reconnection.")
+            except Exception as e:
+                print(f"Error while trying to play after reconnection: {e}")
+
         else:
-            logging.error(f"Error while trying to play: {e}", exc_info=True)
+            print(f"Error while trying to play: {e}")
 
 
 def pause_song():
     try:
-        logging.info("Pausing playback...")
-        driver.execute_script(
-            "document.querySelector('button[aria-label=\"Pause\"]').click()"
-        )
-        logging.info("Playback paused.")
+        pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
+        pause_button.click()
+        print("Playback paused.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                driver.execute_script(
-                    "document.querySelector('button[aria-label=\"Pause\"]').click()"
+                pause_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Pause']"
                 )
-                logging.info("Playback paused after reconnection.")
+                pause_button.click()
+                print("Playback paused after reconnection.")
             except Exception as e:
-                logging.error(
-                    f"Error while trying to pause after reconnection: {e}",
-                    exc_info=True,
-                )
+                print(f"Error while trying to pause after reconnection: {e}")
         else:
-            logging.error(f"Error while trying to pause: {e}", exc_info=True)
+            print(f"Error while trying to pause: {e}")
 
 
 def next_track():
     try:
-        logging.info("Skipping to next track...")
-        driver.execute_script(
-            "document.querySelector('button[aria-label=\"Next\"]').click()"
-        )
-        logging.info("Next track.")
+        next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
+        next_button.click()
+        print("Next track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                driver.execute_script(
-                    "document.querySelector('button[aria-label=\"Next\"]').click()"
+                next_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Next']"
                 )
-                logging.info("Next track after reconnection.")
+                next_button.click()
+                print("Next track after reconnection.")
             except Exception as e:
-                logging.error(
-                    f"Error while trying to skip to next track after reconnection: {e}",
-                    exc_info=True,
+                print(
+                    f"Error while trying to skip to next track after reconnection: {e}"
                 )
         else:
-            logging.error(
-                f"Error while trying to skip to next track: {e}", exc_info=True
-            )
+            print(f"Error while trying to skip to next track: {e}")
 
 
 def previous_track():
     try:
-        logging.info("Skipping to previous track...")
-        driver.execute_script(
-            "document.querySelector('button[aria-label=\"Previous\"]').click()"
-        )
-        logging.info("Previous track.")
+        prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
+        prev_button.click()
+        print("Previous track.")
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
-            logging.info("Attempting to reconnect due to DevTools disconnection...")
+            print("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                driver.execute_script(
-                    "document.querySelector('button[aria-label=\"Previous\"]').click()"
+                prev_button = driver.find_element(
+                    "xpath", "//button[@aria-label='Previous']"
                 )
-                logging.info("Previous track after reconnection.")
+                prev_button.click()
+                print("Previous track after reconnection.")
             except Exception as e:
-                logging.error(
-                    f"Error while trying to go to previous track after reconnection: {e}",
-                    exc_info=True,
+                print(
+                    f"Error while trying to go to previous track after reconnection: {e}"
                 )
         else:
-            logging.error(
-                f"Error while trying to go to previous track: {e}", exc_info=True
-            )
+            print(f"Error while trying to go to previous track: {e}")
 
 
 """
@@ -559,201 +580,300 @@ ACTIONS = {
 
 # Define action functions
 def search_windows():
-    pyautogui.press("win")
+    try:
+        pyautogui.press("win")
+    except Exception as e:
+        logging.error(f"Error executing search_windows: {e}", exc_info=True)
 
 
 def show_desktop():
-    pyautogui.hotkey("win", "d")
+    try:
+        pyautogui.hotkey("win", "d")
+    except Exception as e:
+        logging.error(f"Error executing show_desktop: {e}", exc_info=True)
 
 
 def open_settings():
-    pyautogui.hotkey("win", "i")
+    try:
+        pyautogui.hotkey("win", "i")
+    except Exception as e:
+        logging.error(f"Error executing open_settings: {e}", exc_info=True)
 
 
 def lock_screen():
-    pyautogui.hotkey("win", "l")
+    try:
+        pyautogui.hotkey("win", "l")
+    except Exception as e:
+        logging.error(f"Error executing lock_screen: {e}", exc_info=True)
 
 
 def take_screenshot():
-    pyautogui.hotkey("win", "prtsc")
+    try:
+        pyautogui.hotkey("win", "prtsc")
+    except Exception as e:
+        logging.error(f"Error executing take_screenshot: {e}", exc_info=True)
 
 
 def open_file_explorer():
-    pyautogui.hotkey("win", "e")
+    try:
+        pyautogui.hotkey("win", "e")
+    except Exception as e:
+        logging.error(f"Error executing open_file_explorer: {e}", exc_info=True)
 
 
 def windows_search():
-    pyautogui.hotkey("win", "s")
+    try:
+        pyautogui.hotkey("win", "s")
+    except Exception as e:
+        logging.error(f"Error executing windows_search: {e}", exc_info=True)
 
 
 def open_run_dialog():
-    pyautogui.hotkey("win", "r")
+    try:
+        pyautogui.hotkey("win", "r")
+    except Exception as e:
+        logging.error(f"Error executing open_run_dialog: {e}", exc_info=True)
 
 
 def open_task_manager():
-    pyautogui.hotkey("ctrl", "shift", "esc")
+    try:
+        pyautogui.hotkey("ctrl", "shift", "esc")
+    except Exception as e:
+        logging.error(f"Error executing open_task_manager: {e}", exc_info=True)
 
 
 def minimize_all_windows():
-    pyautogui.hotkey("win", "m")
+    try:
+        pyautogui.hotkey("win", "m")
+    except Exception as e:
+        logging.error(f"Error executing minimize_all_windows: {e}", exc_info=True)
 
 
 def restore_windows():
-    pyautogui.hotkey("win", "shift", "m")
+    try:
+        pyautogui.hotkey("win", "shift", "m")
+    except Exception as e:
+        logging.error(f"Error executing restore_windows: {e}", exc_info=True)
 
 
 # Application commands
 def open_control_panel():
-    os.system("control")
+    try:
+        os.system("control")
+    except Exception as e:
+        logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
 
 
 def open_calculator():
-    os.system("calc")
+    try:
+        os.system("calc")
+    except Exception as e:
+        logging.error(f"Error executing open_calculator: {e}", exc_info=True)
 
 
 def open_notepad():
-    os.system("notepad")
+    try:
+        os.system("notepad")
+    except Exception as e:
+        logging.error(f"Error executing open_notepad: {e}", exc_info=True)
 
 
 def open_word():
-    os.system("start winword")
+    try:
+        os.system("start winword")
+    except Exception as e:
+        logging.error(f"Error executing open_word: {e}", exc_info=True)
 
 
 def open_excel():
-    os.system("start excel")
+    try:
+        os.system("start excel")
+    except Exception as e:
+        logging.error(f"Error executing open_excel: {e}", exc_info=True)
 
 
 def open_powerpoint():
-    os.system("start powerpnt")
+    try:
+        os.system("start powerpnt")
+    except Exception as e:
+        logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
 
 
 def open_outlook():
-    os.system("start outlook")
+    try:
+        os.system("start outlook")
+    except Exception as e:
+        logging.error(f"Error executing open_outlook: {e}", exc_info=True)
 
 
 def open_paint():
-    os.system("start mspaint")
+    try:
+        os.system("start mspaint")
+    except Exception as e:
+        logging.error(f"Error executing open_paint: {e}", exc_info=True)
 
 
 def open_command_prompt():
-    os.system("start cmd")
+    try:
+        os.system("start cmd")
+    except Exception as e:
+        logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
 
 
 def open_powershell():
-    os.system("start powershell")
+    try:
+        os.system("start powershell")
+    except Exception as e:
+        logging.error(f"Error executing open_powershell: {e}", exc_info=True)
 
 
 def open_edge():
-    os.system("start msedge")
+    try:
+        os.system("start msedge")
+    except Exception as e:
+        logging.error(f"Error executing open_edge: {e}", exc_info=True)
 
 
 def open_chrome():
-    os.system("start chrome")
+    try:
+        os.system("start chrome")
+    except Exception as e:
+        logging.error(f"Error executing open_chrome: {e}", exc_info=True)
 
 
 def open_firefox():
-    os.system("start firefox")
+    try:
+        os.system("start firefox")
+    except Exception as e:
+        logging.error(f"Error executing open_firefox: {e}", exc_info=True)
 
 
 # Volume controls
 def open_sound_control_panel():
-    os.system("control mmsys.cpl")
+    try:
+        os.system("control mmsys.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_sound_control_panel: {e}", exc_info=True)
 
 
 def kill_process_by_name(process_name):
-    for proc in psutil.process_iter(["pid", "name"]):
-        if proc.info["name"] == process_name:
-            proc.kill()
-            print(
-                f"Process {process_name} with PID {proc.info['pid']} has been killed."
-            )
-            return
-    print(f"No process named {process_name} found.")
+    try:
+        for proc in psutil.process_iter(["pid", "name"]):
+            if proc.info["name"] == process_name:
+                proc.kill()
+                print(
+                    f"Process {process_name} with PID {proc.info['pid']} has been killed."
+                )
+                return
+        print(f"No process named {process_name} found.")
+    except Exception as e:
+        logging.error(f"Error executing kill_process_by_name: {e}", exc_info=True)
 
 
 def get_volume():
-    volume_interface = get_volume_interface()
-    current_volume = volume_interface.GetMasterVolumeLevelScalar()
-    return round(current_volume, 2)
+    try:
+        volume_interface = get_volume_interface()
+        current_volume = volume_interface.GetMasterVolumeLevelScalar()
+        logging.info(f"{BLUE}Getting volume...{RESET}")
+        return round(current_volume, 2)
+    except Exception as e:
+        logging.error(f"{RED}Error executing get_volume: {e}{RESET}", exc_info=True)
 
 
 def volume_up(steps=1):
-    volume_interface = get_volume_interface()
-    current_volume = volume_interface.GetMasterVolumeLevelScalar()
-    new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
-    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    print(f"Volume increased to {new_volume * 100:.0f}%")
+    try:
+        volume_interface = get_volume_interface()
+        current_volume = volume_interface.GetMasterVolumeLevelScalar()
+        new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
+        volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+        print(f"Volume increased to {new_volume * 100:.0f}%")
+    except Exception as e:
+        logging.error(f"Error executing volume_up: {e}", exc_info=True)
 
 
 def volume_down(steps=1):
-    volume_interface = get_volume_interface()
-    current_volume = volume_interface.GetMasterVolumeLevelScalar()
-    new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
-    volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-    print(f"Volume decreased to {new_volume * 100:.0f}%")
+    try:
+        volume_interface = get_volume_interface()
+        current_volume = volume_interface.GetMasterVolumeLevelScalar()
+        new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
+        volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+        print(f"Volume decreased to {new_volume * 100:.0f}%")
+    except Exception as e:
+        logging.error(f"Error executing volume_down: {e}", exc_info=True)
 
 
 def set_volume(level):
-    if 0.0 <= level <= 1.0:
-        volume_interface = get_volume_interface()
-        volume_interface.SetMasterVolumeLevelScalar(level, None)
-        print(f"Volume set to {level * 100:.0f}%")
-    else:
-        print("Volume level must be between 0.0 and 1.0")
+    try:
+        if 0.0 <= level <= 1.0:
+            volume_interface = get_volume_interface()
+            volume_interface.SetMasterVolumeLevelScalar(level, None)
+            logging.info(f"{BLUE}Setting volume to {level * 100}%{RESET}")
+            print(f"Volume set to {level * 100:.0f}%")
+        else:
+            print("Volume level must be between 0.0 and 1.0")
+    except Exception as e:
+        logging.error(f"{RED}Error setting volume: {e}{RESET}", exc_info=True)
 
 
 def get_volume_interface():
-    devices = AudioUtilities.GetSpeakers()
-    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
-    return volume_interface
+    try:
+        devices = AudioUtilities.GetSpeakers()
+        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
+        return volume_interface
+    except Exception as e:
+        logging.error(f"Error executing get_volume_interface: {e}", exc_info=True)
 
 
 def mute_volume():
-    pyautogui.press("volumemute")
-
-
-# Media controls (assumes these are defined elsewhere)
-def play_media(song=None):
-    # Logic to play song if provided
-    if song:
-        print(f"Playing {song}")
-    else:
-        print("Playing default media")
+    try:
+        pyautogui.press("volumemute")
+    except Exception as e:
+        logging.error(f"Error executing mute_volume: {e}", exc_info=True)
 
 
 def stop_media():
-    pause_song()
-    print("Stopping media")
-
-
-def next_track():
-    print("Next track")
-
-
-def previous_track():
-    print("Previous track")
+    try:
+        pause_song()
+        print("Stopping media")
+    except Exception as e:
+        logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
 # Custom or complex operations
 def open_device_manager():
-    os.system("devmgmt.msc")
+    try:
+        os.system("devmgmt.msc")
+    except Exception as e:
+        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
 
 
 def open_disk_management():
-    os.system("diskmgmt.msc")
+    try:
+        os.system("diskmgmt.msc")
+    except Exception as e:
+        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
 
 
 def open_network_connections():
-    os.system("ncpa.cpl")
+    try:
+        os.system("ncpa.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
 
 
 def open_system_properties():
-    os.system("sysdm.cpl")
+    try:
+        os.system("sysdm.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
 
 
 def open_date_and_time():
-    os.system("timedate.cpl")
+    try:
+        os.system("timedate.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
 
 
 # System commands
@@ -777,40 +897,57 @@ def ping_google():
         else:
             return "Could not determine the average ping."
     except Exception as e:
+        logging.error(f"Error executing ping_google: {e}", exc_info=True)
         return f"Error occurred: {str(e)}"
 
 
 def flush_dns():
-    os.system("ipconfig /flushdns")
+    try:
+        os.system("ipconfig /flushdns")
+    except Exception as e:
+        logging.error(f"Error executing flush_dns: {e}", exc_info=True)
 
 
 # Voicemeeter commands
 def restart_voicemeeter():
-    initial_volume = get_volume()
-    print(initial_volume)
-    subprocess.run(
-        ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
-    )
-    time.sleep(2)
-    set_volume(initial_volume)
+    try:
+        initial_volume = get_volume()
+        print(initial_volume)
+        subprocess.run(
+            ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
+        )
+        time.sleep(2)
+        set_volume(initial_volume)
+    except Exception as e:
+        logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
 
 
 # DisplayFusion commands
 def load_display_fusion_profile(profile_name):
-    subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
-    subprocess.run(
-        [
-            "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
-            "-monitorloadprofile",
-            profile_name,
-        ]
-    )
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
+        subprocess.run(
+            [
+                "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
+                "-monitorloadprofile",
+                profile_name,
+            ]
+        )
+    except Exception as e:
+        logging.error(
+            f"Error executing load_display_fusion_profile: {e}", exc_info=True
+        )
 
 
 def open_negative_screen():
-    subprocess.Popen(
-        ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
-    )
+    try:
+        subprocess.Popen(
+            [
+                "C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"
+            ]
+        )
+    except Exception as e:
+        logging.error(f"Error executing open_negative_screen: {e}", exc_info=True)
 
 
 invert_screen = open_negative_screen
@@ -823,29 +960,38 @@ backup_directory = "J:\\"
 
 
 def last_backup():
-    # List all files in the directory
-    backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
-    if not backup_files:
-        asyncio.run(text_to_speech("No backup files found."))
+    try:
+        # List all files in the directory
+        backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
+        if not backup_files:
+            asyncio.run(text_to_speech("No backup files found."))
 
-    # Get the most recent backup file by modification date
-    latest_backup = max(
-        backup_files, key=lambda f: os.path.getmtime(os.path.join(backup_directory, f))
-    )
-    last_modified_time = os.path.getmtime(os.path.join(backup_directory, latest_backup))
-    last_backup_date = datetime.fromtimestamp(last_modified_time)
+        # Get the most recent backup file by modification date
+        latest_backup = max(
+            backup_files,
+            key=lambda f: os.path.getmtime(os.path.join(backup_directory, f)),
+        )
+        last_modified_time = os.path.getmtime(
+            os.path.join(backup_directory, latest_backup)
+        )
+        last_backup_date = datetime.fromtimestamp(last_modified_time)
 
-    # Calculate days since the last backup
-    days_ago = (datetime.now() - last_backup_date).days
-    asyncio.run(text_to_speech(f"Latest backup was {days_ago} days ago."))
+        # Calculate days since the last backup
+        days_ago = (datetime.now() - last_backup_date).days
+        asyncio.run(text_to_speech(f"Latest backup was {days_ago} days ago."))
+    except Exception as e:
+        logging.error(f"Error executing last_backup: {e}", exc_info=True)
 
 
 def open_vscode():
-    # Path to the Visual Studio Code executable
-    vscode_path = (
-        r"C:\Users\deletable\AppData\Local\Programs\Microsoft VS Code\Code.exe"
-    )
-    subprocess.Popen([vscode_path])
+    try:
+        # Path to the Visual Studio Code executable
+        vscode_path = (
+            r"C:\Users\deletable\AppData\Local\Programs\Microsoft VS Code\Code.exe"
+        )
+        subprocess.Popen([vscode_path])
+    except Exception as e:
+        logging.error(f"Error executing open_vscode: {e}", exc_info=True)
 
 
 """
@@ -910,49 +1056,54 @@ def run_general(query):
 
 # Function to run Ollama's model and stream text chunks to TTS immediately
 def run_ollama(query):
-    """Stream response chunks to TTS immediately as they arrive"""
+    try:
+        """Stream response chunks to TTS immediately as they arrive"""
 
-    # Initialize Ollama client for local server
-    ollama_client = ollama.Client(host="http://localhost:11434")
+        # Initialize Ollama client for local server
+        ollama_client = ollama.Client(host="http://localhost:11434")
 
-    # Start the chat request with streaming enabled
-    stream = ollama_client.chat(
-        model=ollama_model,  # Replace with your preferred model
-        messages=[{"role": "user", "content": query}],
-        stream=True,
-    )
+        # Start the chat request with streaming enabled
+        stream = ollama_client.chat(
+            model=ollama_model,  # Replace with your preferred model
+            messages=[{"role": "user", "content": query}],
+            stream=True,
+        )
 
-    current_sentence = ""
-    word_buffer = ""  # To accumulate small chunks of words
+        current_sentence = ""
+        word_buffer = ""  # To accumulate small chunks of words
 
-    for chunk in stream:
-        # Safeguard for chunk content
-        print(chunk["message"]["content"], end="", flush=True)
-        if not chunk.get("message") or not chunk["message"].get("content"):
-            continue
+        for chunk in stream:
+            # Safeguard for chunk content
+            print(chunk["message"]["content"], end="", flush=True)
+            if not chunk.get("message") or not chunk["message"].get("content"):
+                continue
 
-        chunk_text = chunk["message"]["content"].replace(
-            "\n", " "
-        )  # Remove unintended newlines
+            chunk_text = chunk["message"]["content"].replace(
+                "\n", " "
+            )  # Remove unintended newlines
 
-        # Accumulate the chunk text
-        word_buffer += chunk_text
+            # Accumulate the chunk text
+            word_buffer += chunk_text
 
-        # Process the buffer when it contains a sentence-ending punctuation
-        sentence_endings = ".!? "
-        if word_buffer and any(word_buffer.endswith(end) for end in sentence_endings):
-            current_sentence += word_buffer
-            word_buffer = ""  # Reset buffer after processing
+            # Process the buffer when it contains a sentence-ending punctuation
+            sentence_endings = ".!? "
+            if word_buffer and any(
+                word_buffer.endswith(end) for end in sentence_endings
+            ):
+                current_sentence += word_buffer
+                word_buffer = ""  # Reset buffer after processing
 
-            # If a coherent chunk or sentence is formed, send it to TTS
-            if any(current_sentence.endswith(end) for end in sentence_endings):
-                # Strip markdown-like symbols for TTS
-                stripped_text = re.sub(r"[\*_]", "", current_sentence)
+                # If a coherent chunk or sentence is formed, send it to TTS
+                if any(current_sentence.endswith(end) for end in sentence_endings):
+                    # Strip markdown-like symbols for TTS
+                    stripped_text = re.sub(r"[\*_]", "", current_sentence)
 
-                # Send text to TTS immediately
-                if stripped_text:
-                    TTS_queue.put(stripped_text)  # Send to TTS queue
-                    current_sentence = ""  # Reset after sending to TTS
+                    # Send text to TTS immediately
+                    if stripped_text:
+                        TTS_queue.put(stripped_text)  # Send to TTS queue
+                        current_sentence = ""  # Reset after sending to TTS
+    except Exception as e:
+        logging.error(f"Error executing run_ollama: {e}", exc_info=True)
 
 
 """
@@ -972,12 +1123,15 @@ TTS_queue = queue.Queue()
 
 # Function to process the queue
 def process_TTS_queue():
-    while True:
-        sentence = TTS_queue.get()
-        if sentence is None:  # Sentinel value to stop the worker
-            break
-        asyncio.run(text_to_speech(sentence, speed=1.3))
-        TTS_queue.task_done()
+    try:
+        while True:
+            sentence = TTS_queue.get()
+            if sentence is None:  # Sentinel value to stop the worker
+                break
+            asyncio.run(text_to_speech(sentence, speed=1.3))
+            TTS_queue.task_done()
+    except Exception as e:
+        logging.error(f"Error processing TTS queue: {e}", exc_info=True)
 
 
 threading.Thread(target=process_TTS_queue, daemon=True).start()
@@ -985,14 +1139,17 @@ threading.Thread(target=process_TTS_queue, daemon=True).start()
 
 # Function to process the queue
 def process_TTS_Audio_play_queue():
-    while True:
-        audio_fp = TTS_Audio_play_queue.get()
-        if audio_fp is None:  # Add sentinel check
-            break
-        audio_fp.seek(0)
-        sound = AudioSegment.from_file(audio_fp, format="mp3")
-        play(sound)
-        TTS_Audio_play_queue.task_done()
+    try:
+        while True:
+            audio_fp = TTS_Audio_play_queue.get()
+            if audio_fp is None:  # Add sentinel check
+                break
+            audio_fp.seek(0)
+            sound = AudioSegment.from_file(audio_fp, format="mp3")
+            play(sound)
+            TTS_Audio_play_queue.task_done()
+    except Exception as e:
+        logging.error(f"Error processing TTS audio play queue: {e}", exc_info=True)
 
 
 # Queue for sentences
@@ -1006,13 +1163,16 @@ threading.Thread(target=process_TTS_queue, daemon=True).start()
 
 # Add cleanup function to be called when shutting down
 def cleanup():
-    # Signal the worker threads to stop
-    TTS_queue.put(None)
-    TTS_Audio_play_queue.put(None)
+    try:
+        # Signal the worker threads to stop
+        TTS_queue.put(None)
+        TTS_Audio_play_queue.put(None)
 
-    # Cleanup other resources if needed
-    if driver:
-        driver.quit()
+        # Cleanup other resources if needed
+        if driver:
+            driver.quit()
+    except Exception as e:
+        logging.error(f"Error during cleanup: {e}", exc_info=True)
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
@@ -1037,6 +1197,7 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         TTS_Audio_play_queue.put(audio_fp)
 
     except Exception as e:
+        logging.error(f"Error executing text_to_speech: {e}", exc_info=True)
         print("Falling back to offline TTS...")
         fallback_offline_tts(text, speed, volume)
 
@@ -1058,29 +1219,33 @@ def fallback_offline_tts(text, speed=1.2, volume=1):
         engine.runAndWait()
 
     except Exception as e:
+        logging.error(f"Error executing fallback_offline_tts: {e}", exc_info=True)
         print(f"Offline TTS failed: {e}")
 
 
 # Define the function to split sentences with the condition
 def split_sentence(response):
-    delimiters = r"[.,;!?]"  # Delimiters for splitting
-    # Split the response based on delimiters
-    sentences = re.split(delimiters, response, maxsplit=1)
+    try:
+        delimiters = r"[.,;!?]"  # Delimiters for splitting
+        # Split the response based on delimiters
+        sentences = re.split(delimiters, response, maxsplit=1)
 
-    # If we have more than one part after the split
-    if len(sentences) > 1:
-        sentence, remaining_response = sentences[0], sentences[1]
+        # If we have more than one part after the split
+        if len(sentences) > 1:
+            sentence, remaining_response = sentences[0], sentences[1]
 
-        # Check if the sentence has 10 words or more
-        if len(sentence.split()) < 15:
-            # If the sentence is too short, don't split
-            sentence = sentence + remaining_response
-            remaining_response = ""
-    else:
-        # No split happened, just return the original response
-        sentence, remaining_response = sentences[0], ""
+            # Check if the sentence has 10 words or more
+            if len(sentence.split()) < 15:
+                # If the sentence is too short, don't split
+                sentence = sentence + remaining_response
+                remaining_response = ""
+        else:
+            # No split happened, just return the original response
+            sentence, remaining_response = sentences[0], ""
 
-    return sentence.strip(), remaining_response.strip()
+        return sentence.strip(), remaining_response.strip()
+    except Exception as e:
+        logging.error(f"Error executing split_sentence: {e}", exc_info=True)
 
 
 """
@@ -1095,54 +1260,50 @@ def split_sentence(response):
 
 
 def route_query(query):
-    """Routing logic to let LLM decide if tools are needed"""
-    routing_prompt = f"""
-    Given the following user query, determine if any tools are needed to answer it.
-    If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
-    If no tools are needed, respond with 'NO TOOL'.
+    try:
+        global Groq_client
 
-    User query: {query}
+        """Routing logic to let LLM decide if tools are needed"""
+        routing_prompt = f"""
+        Given the following user query, determine if any tools are needed to answer it.
+        If a a voice command intended to control some aspect of computer comes then, respond with 'Function'.
+        If no tools are needed, respond with 'NO TOOL'.
 
-    Response:
-    """
+        User query: {query}
 
-    response = Groq_client.chat.completions.create(
-        model=ROUTING_MODEL,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
-            },
-            {"role": "user", "content": routing_prompt},
-        ],
-        max_tokens=20,  # We only need a short response
-    )
+        Response:
+        """
 
-    routing_decision = response.choices[0].message.content.strip()
+        response = Groq_client.chat.completions.create(
+            model=ROUTING_MODEL,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a routing assistant. Determine if tools are needed based on the user query.",
+                },
+                {"role": "user", "content": routing_prompt},
+            ],
+            max_tokens=20,  # We only need a short response
+        )
 
-    if "Function" in routing_decision:
-        print("function decided")
-        return "Function"
-    else:
-        print("no function needed")
-        return "NO TOOL"
+        routing_decision = response.choices[0].message.content.strip()
+
+        if "Function" in routing_decision:
+            print("function decided")
+            return "Function"
+        else:
+            print("no function needed")
+            return "NO TOOL"
+    except Exception as e:
+        logging.error(f"Error executing route_query: {e}", exc_info=True)
 
 
 def run_general(query):
-    """Use the general model to answer the query since no tool is needed"""
-    response = ""
     try:
-        stream = Groq_client.chat.completions.create(
-            model=GENERAL_MODEL,
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": query},
-            ],
-            stream=True,
-        )
-    except Exception as e:
-        if "Groq API limit reached" in str(e):
-            stream = ollama_chat(
+        """Use the general model to answer the query since no tool is needed"""
+        response = ""
+        try:
+            stream = Groq_client.chat.completions.create(
                 model=GENERAL_MODEL,
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
@@ -1150,44 +1311,58 @@ def run_general(query):
                 ],
                 stream=True,
             )
-            response = ollama_chat(
-                user_input, system_message, ollama_model, conversation_history
-            )
-        else:
-            raise e
+        except Exception as e:
+            if "Groq API limit reached" in str(e):
+                stream = ollama_chat(
+                    model=GENERAL_MODEL,
+                    messages=[
+                        {"role": "system", "content": "You are a helpful assistant."},
+                        {"role": "user", "content": query},
+                    ],
+                    stream=True,
+                )
+                response = ollama_chat(
+                    user_input, system_message, ollama_model, conversation_history
+                )
+            else:
+                raise e
 
-    for chunk in stream:
-        print(chunk.choices[0].delta.content, end="")
-        chunk_text = chunk.choices[0].delta.content
-        response = f"{response}{chunk_text}"
+        for chunk in stream:
+            print(chunk.choices[0].delta.content, end="")
+            chunk_text = chunk.choices[0].delta.content
+            response = f"{response}{chunk_text}"
 
-        #        if any(delimiter in response for delimiter in ".;!?"):
-        if any(delimiter in response for delimiter in ".:!?"):
-            response = response[1:]  # Remove the first character
-            sentence, response = split_sentence(response)
-            TTS_queue.put(sentence)
+            if any(delimiter in response for delimiter in ".:!?"):
+                response = response[1:]  # Remove the first character
+                sentence, response = split_sentence(response)
+                TTS_queue.put(sentence)
+    except Exception as e:
+        logging.error(f"Error executing run_general: {e}", exc_info=True)
 
 
 # Define the function to split sentences with the condition
 def split_sentence(response):
-    delimiters = r"[.,;!?]"  # Delimiters for splitting
-    # Split the response based on delimiters
-    sentences = re.split(delimiters, response, maxsplit=1)
+    try:
+        delimiters = r"[.,;!?]"  # Delimiters for splitting
+        # Split the response based on delimiters
+        sentences = re.split(delimiters, response, maxsplit=1)
 
-    # If we have more than one part after the split
-    if len(sentences) > 1:
-        sentence, remaining_response = sentences[0], sentences[1]
+        # If we have more than one part after the split
+        if len(sentences) > 1:
+            sentence, remaining_response = sentences[0], sentences[1]
 
-        # Check if the sentence has 10 words or more
-        if len(sentence.split()) < 15:
-            # If the sentence is too short, don't split
-            sentence = sentence + remaining_response
-            remaining_response = ""
-    else:
-        # No split happened, just return the original response
-        sentence, remaining_response = sentences[0], ""
+            # Check if the sentence has 10 words or more
+            if len(sentence.split()) < 15:
+                # If the sentence is too short, don't split
+                sentence = sentence + remaining_response
+                remaining_response = ""
+        else:
+            # No split happened, just return the original response
+            sentence, remaining_response = sentences[0], ""
 
-    return sentence.strip(), remaining_response.strip()
+        return sentence.strip(), remaining_response.strip()
+    except Exception as e:
+        logging.error(f"Error executing split_sentence: {e}", exc_info=True)
 
 
 """
@@ -1679,83 +1854,116 @@ tools = [
 
 
 def execute_command_run_with_tool(query):
-    route = route_query(query)  # Step 1: Determine if a tool is needed
+    try:
+        global Groq_client
+        """
+        route = route_query(query)  # Step 1: Determine if a tool is needed
+        """
 
-    # Step 2: Handle the result of routing
-    if route == "NO TOOL":
-        # Use the general model if no tools are needed
-        response = run_general(query)
-        asyncio.run(
-            text_to_speech(text=response)
-        )  # Asynchronously call text-to-speech with the response
-    else:
-        # Step 3: Handle tool usage
-        tools_messages = [
-            {
-                "role": "system",
-                "content": "you are a tool selection assistant. pick the best possible tool among tools for the given query",
-            },
-            {
-                "role": "user",
-                "content": query,
-            },
-        ]
-        # Step 4: Get the response from the model that handles tool usage
-        response = Groq_client.chat.completions.create(
-            model=TOOL_USE_MODEL,
-            messages=tools_messages,
-            stream=False,
-            tools=tools,
-            tool_choice="auto",
-            max_tokens=4096,
-        )
+        route = "FUNCTION"  # Step 1: Determine if a tool is needed
 
-        response_message = response.choices[0].message
-        logging.info(f"Received response from Groq client: {response_message}")
-        tool_calls = response_message.tool_calls
+        # Step 2: Handle the result of routing
+        if route == "NO TOOL":
+            # Use the general model if no tools are needed
+            response = run_general(query)
+            asyncio.run(
+                text_to_speech(text=response)
+            )  # Asynchronously call text-to-speech with the response
+        elif route == "FUNCTION":
+            logging.info(f"{GREEN}Executing command with tool: {query}{RESET}")
 
-        # Step 3: Execute tool calls
-        if tool_calls:
-            for tool_call in tool_calls:
-                function_args = json.loads(tool_call.function.arguments)
-                function_name = tool_call.function.name
+            # Step 1: Handle tool usage
+            tools_messages = [
+                {
+                    "role": "system",
+                    "content": """You are a specialized assistant for controlling computer functions. Your role is to:
+        1. Carefully analyze user queries to determine the most appropriate tool/function
+        2. Select the SINGLE most relevant tool from the available options
+        3. Only use tools that exactly match the user's intent
+        4. For system controls (volume, media, windows), be very precise in tool selection
+        5. If no exact tool matches the query, do not force a tool selection
 
-                if function_name in globals():
-                    try:
-                        logging.info(
-                            f"Executing function: {function_name} with arguments: {function_args}"
-                        )
-                        result = globals()[function_name](**function_args)
-                        logging.info(f"Executed {function_name} with result: {result}")
-                    except Exception as e:
-                        logging.error(
-                            f"Error executing function {function_name}: {str(e)}",
-                            exc_info=True,
-                        )
+        Examples:
+        - "play music" → use play_song()
+        - "volume up" → use volume_up()
+        - "skip" → use next_track()
+        - "minimize everything" → use minimize_all_windows()
+        - "check internet speed" → ping_google()
+
+        Only respond with tool calls, no conversational responses.""",
+                },
+                {
+                    "role": "user",
+                    "content": query,
+                },
+            ]
+            # Step 4: Get the response from the model that handles tool usage
+            response = Groq_client.chat.completions.create(
+                model=TOOL_USE_MODEL,
+                messages=tools_messages,
+                stream=False,
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=4096,
+            )
+
+            response_message = response.choices[0].message
+            logging.info(f"Received response from Groq client: {response_message}")
+            tool_calls = response_message.tool_calls
+
+            # Step 3: Execute tool calls
+            if tool_calls:
+                for tool_call in tool_calls:
+                    function_args = json.loads(tool_call.function.arguments)
+                    function_name = tool_call.function.name
+
+                    if function_name in globals():
+                        try:
+                            logging.info(
+                                f"Executing function: {function_name} with arguments: {function_args}"
+                            )
+                            result = globals()[function_name](**function_args)
+                            logging.info(
+                                f"Executed {function_name} with result: {result}"
+                            )
+                        except Exception as e:
+                            logging.error(
+                                f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                exc_info=True,
+                            )
+                            return False
+                    else:
+                        logging.error(f"Function {function_name} not found")
                         return False
-                else:
-                    logging.error(f"Function {function_name} not found")
-                    return False
 
-        return True
+            return True
+        else:
+            logging.error("Invalid routing decision")
+
+    except Exception as e:
+        logging.error(f"{RED}Error executing command: {str(e)}{RESET}")
+        return False
 
 
 def visual_feedback(function_name, result):
-    # Visual feedback
-    root = tk.Tk()
-    root.title("Function Execution Result")
+    try:
+        # Visual feedback
+        root = tk.Tk()
+        root.title("Function Execution Result")
 
-    # Set window size
-    root.geometry("800x600")
+        # Set window size
+        root.geometry("800x600")
 
-    label = tk.Label(
-        root,
-        text=f"Executed {function_name} with result: {result}",
-        font=("Helvetica", 24),
-    )
-    label.pack(pady=200)
+        label = tk.Label(
+            root,
+            text=f"Executed {function_name} with result: {result}",
+            font=("Helvetica", 24),
+        )
+        label.pack(pady=200)
 
-    root.mainloop()
+        root.mainloop()
+    except Exception as e:
+        logging.error(f"Error executing visual_feedback: {e}", exc_info=True)
 
 
 """
@@ -1775,45 +1983,56 @@ for action_key, phrases in COMMAND_MAPPINGS.items():
 
 
 def normalize_transcript(transcript):
-    # Convert to lowercase
-    transcript = transcript.lower()
+    try:
+        # Convert to lowercase
+        transcript = transcript.lower()
 
-    # Remove punctuation
-    transcript = transcript.translate(str.maketrans("", "", string.punctuation))
+        # Remove punctuation
+        transcript = transcript.translate(str.maketrans("", "", string.punctuation))
 
-    # Normalize whitespace (remove extra spaces)
-    transcript = re.sub(r"\s+", " ", transcript).strip()
+        # Normalize whitespace (remove extra spaces)
+        transcript = re.sub(r"\s+", " ", transcript).strip()
 
-    return transcript
+        return transcript
+    except Exception as e:
+        logging.error(f"Error executing normalize_transcript: {e}", exc_info=True)
 
 
 def execute_command_fuzzy(transcript):
-    # Normalize the transcript
-    command = normalize_transcript(transcript)
+    try:
+        # Normalize the transcript
+        command = normalize_transcript(transcript)
 
-    # Split the command at "and" and iterate through each part
-    commands = command.split(" and ")
+        # Split the command at "and" and iterate through each part
+        commands = command.split(" and ")
 
-    for cmd in commands:
-        # Strip any leading/trailing whitespace from each command
-        cmd = cmd.strip()
+        for cmd in commands:
+            # Strip any leading/trailing whitespace from each command
+            cmd = cmd.strip()
 
-        # Attempt to find a direct match
-        action = PHRASE_TO_ACTION.get(cmd)
+            # Attempt to find a direct match
+            action = PHRASE_TO_ACTION.get(cmd)
 
-        # If no direct match is found, use fuzzy matching
-        if not action:
-            # Find the best fuzzy match (with a threshold of 80 for confidence)
-            best_match, match_score = process.extractOne(cmd, PHRASE_TO_ACTION.keys())
-            if (
-                match_score >= 60 and "computer" in transcript
-            ):  # Adjust the threshold as needed
-                action = PHRASE_TO_ACTION.get(best_match)
+            # If no direct match is found, use fuzzy matching
+            if not action:
+                # Find the best fuzzy match (with a threshold of 80 for confidence)
+                best_match, match_score = process.extractOne(
+                    cmd, PHRASE_TO_ACTION.keys()
+                )
+                if (
+                    match_score >= 60 and "computer" in transcript
+                ):  # Adjust the threshold as needed
+                    action = PHRASE_TO_ACTION.get(best_match)
 
-        if action:
-            action()  # Execute the corresponding action
-            print(f"Executing command: {cmd}")
-        else:
-            print(f"No matching command found for: {cmd}")
+            if action:
+                action()  # Execute the corresponding action
+                logging.info(f"{GREEN}Executing fuzzy command: {cmd}{RESET}")
+                print(f"Executing command: {cmd}")
+            else:
+                print(f"No matching command found for: {cmd}")
+
+        return True
+    except Exception as e:
+        logging.error(f"{RED}Error executing fuzzy command: {e}{RESET}", exc_info=True)
 
     return True
