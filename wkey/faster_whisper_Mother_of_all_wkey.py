@@ -402,13 +402,13 @@ def stop_recording(keyword_index):
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer, keyword_index))
 
-        restore_volume_all()
+        threading.Thread(target=restore_volume_all()).start()
 
         # clearing the audio buffer - if not it will cause concat transcripts
         audio_buffer = np.array([], dtype="float32")
 
         if play_pause_pressed:
-            restore_volume_all()
+            threading.Thread(target=restore_volume_all()).start()
             play_pause_pressed = False
 
         beep(STOP_BEEP)
@@ -963,7 +963,7 @@ def reset_state():
         recording = False
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
-        restore_volume_all()
+        threading.Thread(target=restore_volume_all()).start()
         logging.info("State reset completed")
     except Exception as e:
         logging.error(f"Error in reset_state: {e}", exc_info=True)
@@ -1169,7 +1169,7 @@ def main():
                 stream.stop()
                 stream.close()
             cleanup()
-            restore_volume_all()
+            threading.Thread(target=restore_volume_all()).start()
             logging.info(f"{YELLOW}Cleanup completed. Exiting...{RESET}")
             if driver:
                 driver.quit()
@@ -1184,4 +1184,3 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         logging.error(f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}")
-        sys.exit(1)
