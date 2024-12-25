@@ -74,7 +74,9 @@ def initialize_groq_client():
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
 # TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
-TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
+# TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
+TOOL_USE_MODEL = "llama-3.1-8b-instant"
+
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
