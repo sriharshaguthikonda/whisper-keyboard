@@ -747,6 +747,7 @@ async def transcribe_with_groq_async(audio_buffer, keyword_index):
         transcription = Groq_client.audio.transcriptions.create(
             file=("audio_buffer.wav", byte_io.getvalue()),  # Use in-memory byte stream
             model=groq_model,
+            stream=False,
             prompt=prompt,
             response_format="json",
             language="en",

@@ -1652,6 +1652,7 @@ Only respond with tool calls, no conversational responses.""",
         response = Groq_client.chat.completions.create(
             model=TOOL_USE_MODEL,
             messages=tools_messages,
+            stream=False,
             tools=tools,
             tool_choice="auto",
             max_tokens=4096,
@@ -1692,12 +1693,6 @@ Only respond with tool calls, no conversational responses.""",
         logging.info("Reinitializing Groq client.")
 
         Groq_client = initialize_groq_client()
-        return False
-
-    except Exception as e:
-        logging.error(
-            f"Error in execute_command_run_with_tool: {str(e)}", exc_info=True
-        )
         return False
 
 
