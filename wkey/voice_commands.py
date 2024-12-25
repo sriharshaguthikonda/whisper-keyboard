@@ -53,8 +53,22 @@ logging.basicConfig(
 )
 
 load_dotenv()
+global api_key
 api_key = os.getenv("GROQ_API_KEY")
-client = Groq(api_key=api_key)
+global Groq_client
+Groq_client = Groq(api_key=api_key)
+
+
+def initialize_groq_client():
+    global api_key, Groq_client
+    if api_key is None:
+        load_dotenv()
+        api_key = os.getenv("GROQ_API_KEY")
+    else:
+        pass
+    Groq_client = Groq(api_key=api_key)
+    return Groq_client
+
 
 # Define models
 ROUTING_MODEL = "llama3-70b-8192"
@@ -214,8 +228,9 @@ def play_song():
             logging.info("WebDriver not responsive, reconnecting...")
             reconnect_driver()
 
-        play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
-        play_button.click()
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Play\"]').click()"
+        )
         change_device()
 
     except Exception as e:
@@ -224,10 +239,9 @@ def play_song():
             logging.info("Attempting to reconnect due to disconnection...")
             reconnect_driver()
             try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Play\"]').click()"
                 )
-                play_button.click()
                 logging.info("Playback started after reconnection.")
                 change_device()
             except Exception as e:
@@ -241,8 +255,9 @@ def play_song():
 def pause_song():
     try:
         logging.info("Pausing playback...")
-        pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
-        pause_button.click()
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Pause\"]').click()"
+        )
         logging.info("Playback paused.")
     except Exception as e:
         error_message = str(e)
@@ -250,10 +265,9 @@ def pause_song():
             logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                pause_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Pause']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Pause\"]').click()"
                 )
-                pause_button.click()
                 logging.info("Playback paused after reconnection.")
             except Exception as e:
                 logging.error(
@@ -267,8 +281,9 @@ def pause_song():
 def next_track():
     try:
         logging.info("Skipping to next track...")
-        next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
-        next_button.click()
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Next\"]').click()"
+        )
         logging.info("Next track.")
     except Exception as e:
         error_message = str(e)
@@ -276,10 +291,9 @@ def next_track():
             logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                next_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Next']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Next\"]').click()"
                 )
-                next_button.click()
                 logging.info("Next track after reconnection.")
             except Exception as e:
                 logging.error(
@@ -295,8 +309,9 @@ def next_track():
 def previous_track():
     try:
         logging.info("Skipping to previous track...")
-        prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
-        prev_button.click()
+        driver.execute_script(
+            "document.querySelector('button[aria-label=\"Previous\"]').click()"
+        )
         logging.info("Previous track.")
     except Exception as e:
         error_message = str(e)
@@ -304,10 +319,9 @@ def previous_track():
             logging.info("Attempting to reconnect due to DevTools disconnection...")
             reconnect_driver()
             try:
-                prev_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Previous']"
+                driver.execute_script(
+                    "document.querySelector('button[aria-label=\"Previous\"]').click()"
                 )
-                prev_button.click()
                 logging.info("Previous track after reconnection.")
             except Exception as e:
                 logging.error(
@@ -671,10 +685,8 @@ def kill_process_by_name(process_name):
 
 
 def get_volume():
-    devices = AudioUtilities.GetSpeakers()
-    interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-    volume = cast(interface, POINTER(IAudioEndpointVolume))
-    current_volume = volume.GetMasterVolumeLevelScalar()
+    volume_interface = get_volume_interface()
+    current_volume = volume_interface.GetMasterVolumeLevelScalar()
     return round(current_volume, 2)
 
 
@@ -871,8 +883,12 @@ def route_query(query):
 
     Response:
     """
+    if not Groq_client:
+        Groq_client = initialize_groq_client()
+    else:
+        pass
 
-    response = client.chat.completions.create(
+    response = Groq_client.chat.completions.create(
         model=ROUTING_MODEL,
         messages=[
             {
@@ -959,10 +975,10 @@ def run_ollama(query):
     """Stream response chunks to TTS immediately as they arrive"""
 
     # Initialize Ollama client for local server
-    client = ollama.Client(host="http://localhost:11434")
+    ollama_client = ollama.Client(host="http://localhost:11434")
 
     # Start the chat request with streaming enabled
-    stream = client.chat(
+    stream = ollama_client.chat(
         model=ollama_model,  # Replace with your preferred model
         messages=[{"role": "user", "content": query}],
         stream=True,
@@ -1599,6 +1615,12 @@ tools = [
 
 
 def execute_command_run_with_tool(query):
+    global Groq_client
+
+    Groq_client = Groq(api_key=api_key)
+
+    logging.info(f"Received query: {query}")
+
     # Step 1: Handle tool usage
     tools_messages = [
         {
@@ -1613,7 +1635,7 @@ def execute_command_run_with_tool(query):
 Examples:
 - "play music" → use play_song()
 - "volume up" → use volume_up()
-- "open chrome" → use open_chrome()
+- "skip" → use next_track()
 - "minimize everything" → use minimize_all_windows()
 - "check internet speed" → ping_google()
 
@@ -1624,10 +1646,10 @@ Only respond with tool calls, no conversational responses.""",
             "content": query,
         },
     ]
-
     try:
         # Step 2: Get the response from the model
-        response = client.chat.completions.create(
+        logging.info("Sending request to Groq client for tool usage.")
+        response = Groq_client.chat.completions.create(
             model=TOOL_USE_MODEL,
             messages=tools_messages,
             tools=tools,
@@ -1636,7 +1658,7 @@ Only respond with tool calls, no conversational responses.""",
         )
 
         response_message = response.choices[0].message
-        print(response_message)
+        logging.info(f"Received response from Groq client: {response_message}")
         tool_calls = response_message.tool_calls
 
         # Step 3: Execute tool calls
@@ -1647,21 +1669,35 @@ Only respond with tool calls, no conversational responses.""",
 
                 if function_name in globals():
                     try:
-                        result = globals()[function_name](**function_args)
-                        print(
-                            f"\033[35mExecuted {function_name} with result: {result}\033[0m"
+                        logging.info(
+                            f"Executing function: {function_name} with arguments: {function_args}"
                         )
+                        result = globals()[function_name](**function_args)
+                        logging.info(f"Executed {function_name} with result: {result}")
                     except Exception as e:
-                        print(f"Error executing function {function_name}: {str(e)}")
+                        logging.error(
+                            f"Error executing function {function_name}: {str(e)}",
+                            exc_info=True,
+                        )
                         return False
                 else:
-                    print(f"Function {function_name} not found")
+                    logging.error(f"Function {function_name} not found")
                     return False
 
         return True
 
     except Exception as e:
-        print(f"Error in execute_command_run_with_tool: {str(e)}")
+        logging.error(f"Groq API error occurred: {str(e)}", exc_info=True)
+        # Reinitialize the Groq client in case of an error
+        logging.info("Reinitializing Groq client.")
+
+        Groq_client = initialize_groq_client()
+        return False
+
+    except Exception as e:
+        logging.error(
+            f"Error in execute_command_run_with_tool: {str(e)}", exc_info=True
+        )
         return False
 
 
