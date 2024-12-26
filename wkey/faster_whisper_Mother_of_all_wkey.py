@@ -151,6 +151,12 @@ Hey_computer_STT_prompt = "
 "  # Optional
 """
 
+
+api_key = os.getenv("GROQ_API_KEY")
+global Groq_client
+Groq_client = Groq(api_key=api_key)
+
+
 p = pyaudio.PyAudio()
 wake_stream = p.open(
     format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=16000
@@ -193,23 +199,26 @@ audio_buffer = []
 
 
 def audio_callback(indata, frames, time, status):
-    """Callback function for audio recording."""
-    global buffer_index
-    global audio_buffer
+    try:
+        """Callback function for audio recording."""
+        global buffer_index
+        global audio_buffer
 
-    if status:
-        logging.warning(f"Audio callback status: {status}")
-    with recording_lock:
-        if recording:
-            audio_buffer = np.append(audio_buffer, indata.flatten())
-        else:
-            end_index = buffer_index + frames
-            if end_index > BUFFER_SIZE:
-                end_index = BUFFER_SIZE
-            pre_recording_buffer[buffer_index:end_index] = indata[
-                : end_index - buffer_index
-            ]
-            buffer_index = (buffer_index + frames) % BUFFER_SIZE
+        if status:
+            logging.warning(f"{YELLOW}Audio callback status: {status}{RESET}")
+        with recording_lock:
+            if recording:
+                audio_buffer = np.append(audio_buffer, indata.flatten())
+            else:
+                end_index = buffer_index + frames
+                if end_index > BUFFER_SIZE:
+                    end_index = BUFFER_SIZE
+                pre_recording_buffer[buffer_index:end_index] = indata[
+                    : end_index - buffer_index
+                ]
+                buffer_index = (buffer_index + frames) % BUFFER_SIZE
+    except Exception as e:
+        logging.error(f"{RED}Error in audio_callback: {e}{RESET}", exc_info=True)
 
 
 stream = sd.InputStream(
@@ -234,18 +243,24 @@ stream = sd.InputStream(
 
 def decrease_volume_all():
     global initial_volume
-    current_volume = get_volume()
-    if initial_volume is None or current_volume != initial_volume:
-        initial_volume = current_volume
-    print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-    set_volume(0.1)  # Set volume to 10%
+    try:
+        current_volume = get_volume()
+        if initial_volume is None or current_volume != initial_volume:
+            initial_volume = current_volume
+        print(f"Decreasing volume from {initial_volume * 100}% to 10%")
+        set_volume(0.1)  # Set volume to 10%
+    except Exception as e:
+        logging.error(f"Error in decrease_volume_all: {e}", exc_info=True)
 
 
 def restore_volume_all():
     global initial_volume
-    if initial_volume is not None:
-        set_volume(initial_volume)  # Restore to initial volume
-        initial_volume = None  # Reset initial volume after restoring
+    try:
+        if initial_volume is not None:
+            set_volume(initial_volume)  # Restore to initial volume
+            initial_volume = None  # Reset initial volume after restoring
+    except Exception as e:
+        logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
 
 
 def monitor_sound_processing():
@@ -270,6 +285,31 @@ def monitor_sound_processing():
 
 global True_positve_audio
 True_positve_audio = True
+
+
+def check_keywords_in_transcription(pre_recording_data, keyword_index):
+    global True_positve_audio, recording
+    try:
+        pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
+
+        if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
+            True_positve_audio = False
+            logging.info(
+                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
+            )
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+        elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
+            True_positve_audio = False
+            logging.info(
+                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
+            )
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+    except Exception as e:
+        logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
 
 
 def start_recording(keyword_index=None):
@@ -326,29 +366,29 @@ def start_recording(keyword_index=None):
         pre_recording_data = np.roll(
             pre_recording_buffer, -buffer_index, axis=0
         ).flatten()
-        pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
 
-        if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
-            True_positve_audio = False
-            logging.info(
-                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
-            )
-            beep(STOP_BEEP)
-            with recording_lock:
-                recording = False
-        elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
-            True_positve_audio = False
-            logging.info(
-                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
-            )
-            beep(STOP_BEEP)
-            with recording_lock:
-                recording = False
+        if keyword_index is None:
+            # Run the transcription and keyword checking in a separate thread
+            threading.Thread(
+                target=check_keywords_in_transcription,
+                args=(pre_recording_data, keyword_index),
+            ).start()
 
     except Exception as e:
-        logging.error(f"Error in start_recording: {e}", exc_info=True)
+        logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
         with recording_lock:
             recording = False
+
+
+"""
+ ######  ########  #######  ########     ########  ########  ######  
+##    ##    ##    ##     ## ##     ##    ##     ## ##       ##    ## 
+##          ##    ##     ## ##     ##    ##     ## ##       ##       
+ ######     ##    ##     ## ########     ########  ######   ##       
+      ##    ##    ##     ## ##           ##   ##   ##       ##       
+##    ##    ##    ##     ## ##           ##    ##  ##       ##    ## 
+ ######     ##     #######  ##           ##     ## ########  ######  
+"""
 
 
 def stop_recording(keyword_index):
@@ -371,7 +411,11 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
-            logging.info(f"{MAGENTA}Transcribing...{RESET}")
+            logging.info(
+                f"{MAGENTA}True_positve_audio...is {True_positve_audio}{RESET}"
+            )
+            True_positve_audio = True
+
             return
 
         logging.info(f"{GREEN}Stopping recording...{RESET}")
@@ -379,9 +423,12 @@ def stop_recording(keyword_index):
         silent_time = 0
         recording_start_time = time.time()
 
+        """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
         pre_recording_data = np.roll(
-            pre_recording_buffer, -buffer_index, axis=0
-        ).flatten()
+                    pre_recording_buffer, -buffer_index, axis=0
+                ).flatten()
+                
+        """
 
         if keyword_index == 1:
             stop_delay_threshold = (
@@ -395,9 +442,13 @@ def stop_recording(keyword_index):
             stop_delay_threshold = (
                 0  # Time to wait before stopping after no speech is detected
             )
-            pre_recording_data = np.roll(
-                pre_recording_buffer_f24, -buffer_index, axis=0
-            ).flatten()
+            """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
+        pre_recording_data = np.roll(
+                    pre_recording_buffer_f24, -buffer_index, axis=0
+                ).flatten()
+                
+        """
+
         else:
             stop_delay_threshold = (
                 2  # Time to wait before stopping after no speech is detected
@@ -445,9 +496,12 @@ def stop_recording(keyword_index):
                     break
 
                 time.sleep(0.1)
-
-        # Convert main recording to numpy array
+        """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+                
+        """
+        # Convert main recording to numpy array
+        # audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer, keyword_index))
 
         threading.Thread(target=restore_volume_all).start()
@@ -464,7 +518,7 @@ def stop_recording(keyword_index):
             recording = False
         logging.info(f"{MAGENTA}Transcribing...{RESET}")
     except Exception as e:
-        logging.error(f"Error in stop_recording: {e}", exc_info=True)
+        logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
         with recording_lock:
             recording = False
 
@@ -476,24 +530,30 @@ recording_thread = None  # Track the recording thread
 
 
 def on_press(key):
-    global last_key_press_time, recording_thread, recording
-    current_time = time.time()
-    if key == RECORD_KEY and not recording:
-        if current_time - last_key_press_time > DEBOUNCE_TIME:
-            last_key_press_time = current_time
-            if recording is False:
-                logging.info(f"Key pressed: {key}")
-                threading.Thread(target=start_recording, args=(None,)).start()
+    try:
+        global last_key_press_time, recording_thread, recording
+        current_time = time.time()
+        if key == RECORD_KEY and not recording:
+            if current_time - last_key_press_time > DEBOUNCE_TIME:
+                last_key_press_time = current_time
+                if recording is False:
+                    logging.info(f"Key pressed: {key}")
+                    threading.Thread(target=start_recording, args=(None,)).start()
+    except Exception as e:
+        logging.error(f"Error in on_press: {e}", exc_info=True)
 
 
 def on_release(key):
-    global last_key_press_time, recording_thread, recording
-    current_time = time.time()
-    if key == RECORD_KEY and recording:
-        if current_time - last_key_press_time > DEBOUNCE_TIME:
-            last_key_press_time = current_time
-            logging.info(f"Key released: {key}")
-            threading.Thread(target=stop_recording, args=(None,)).start()
+    try:
+        global last_key_press_time, recording_thread, recording
+        current_time = time.time()
+        if key == RECORD_KEY and recording:
+            if current_time - last_key_press_time > DEBOUNCE_TIME:
+                last_key_press_time = current_time
+                logging.info(f"Key released: {key}")
+                threading.Thread(target=stop_recording, args=(None,)).start()
+    except Exception as e:
+        logging.error(f"Error in on_release: {e}", exc_info=True)
 
 
 """
@@ -788,26 +848,44 @@ def cleanup():
 """
 
 
-api_key = os.getenv("GROQ_API_KEY")
-global Groq_client
-Groq_client = Groq(api_key=api_key)
-
-
-def transcribe_pre_recording_buffer(pre_recording_data):
+def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_delay=2):
+    transcribe_pre_recording_buffer_prompt = "you are downstream to how word detection algorithm. check if you are able to detect the wake word 'computer'' or 'lama' in the audio"
     try:
         byte_io = io.BytesIO()
         wav_write(byte_io, sample_rate, pre_recording_data)
         byte_io.seek(0)
-        transcription = Groq_client.audio.transcriptions.create(
-            file=("pre_recording.wav", byte_io.getvalue()),
-            model=groq_model,
-            response_format="json",
-            language="en",
-            temperature=0.0,
-        )
-        return transcription.text.lower()
+
+        for attempt in range(max_retries):
+            try:
+                transcription = Groq_client.audio.transcriptions.create(
+                    file=("pre_recording.wav", byte_io.getvalue()),
+                    model=groq_model,
+                    response_format="json",
+                    prompt=transcribe_pre_recording_buffer_prompt,
+                    language="en",
+                    temperature=0.0,
+                )
+                return transcription.text.lower()
+            except Exception as e:
+                logging.error(
+                    f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}",
+                    exc_info=True,
+                )
+                if attempt < max_retries - 1:
+                    logging.info(
+                        f"{YELLOW}Retrying... ({attempt + 1}/{max_retries}){RESET}"
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    logging.error(
+                        f"{RED}Failed to transcribe after {max_retries} attempts{RESET}"
+                    )
+                    return ""
+
     except Exception as e:
-        logging.error(f"Error in transcribe_pre_recording_buffer: {e}", exc_info=True)
+        logging.error(
+            f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}", exc_info=True
+        )
         return ""
 
 
@@ -845,20 +923,27 @@ def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
                 if True_positve_audio:
                     result_queue.put(transcription.text)
                 else:
+                    True_positve_audio = True
                     pass
             except Exception as e:
-                logging.info(f"Groq API error: {e}")  # Log the error
+                logging.info(f"{RED}Groq API error: {e}{RESET}")  # Log the error
 
                 if True_positve_audio:
                     result_queue.put(
                         transcribe_with_local_model(audio_buffer, keyword_index)
                     )  # Call local model after logging
                 else:
+                    True_positve_audio = True
+                    logging.info(f"{YELLOW}False positive{RESET}")
                     pass
-            else:
-                pass
+        else:
+            True_positve_audio = True
+            logging.info(
+                f"{YELLOW}False positive audio buffer, not transcribing{RESET}"
+            )
+            pass
     except Exception as e:
-        logging.error(f"Error in transcribe_with_groq: {e}", exc_info=True)
+        logging.error(f"{RED}Error in transcribe_with_groq: {e}{RESET}", exc_info=True)
 
 
 def transcribe_with_local_model(audio_buffer, keyword_index):
@@ -924,7 +1009,7 @@ def process_audio_async():
 
                 while retry_count < max_retries:
                     try:
-                        logging.info("transcribe_with_groq starting")
+                        logging.info(f"{CYAN}transcribe_with_groq starting{RESET}")
                         result_queue = queue.Queue()
                         transcript_thread = threading.Thread(
                             target=transcribe_with_groq,
@@ -942,10 +1027,13 @@ def process_audio_async():
 
                     except groq.GroqError as e:
                         logging.error(
-                            f"Groq API error occurred: {str(e)}", exc_info=True
+                            f"{RED}Groq API error occurred: {str(e)}{RESET}",
+                            exc_info=True,
                         )
                         retry_count += 1
-                        logging.info(f"Retrying... ({retry_count}/{max_retries})")
+                        logging.info(
+                            f"{YELLOW}Retrying... ({retry_count}/{max_retries}){RESET}"
+                        )
                         time.sleep(2)  # Wait before retrying
 
                 if not transcript:
@@ -1258,7 +1346,7 @@ def main():
         threading.Thread(target=clean_transcript, daemon=True).start()
         threading.Thread(target=process_audio_async, daemon=True).start()
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        # threading.Thread(target=start_driver, daemon=True).start()
+        threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
 

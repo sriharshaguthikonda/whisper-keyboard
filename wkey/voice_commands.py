@@ -97,9 +97,10 @@ def initialize_groq_client():
         else:
             pass
         Groq_client = Groq(api_key=api_key)
+        logging.info(f"{GREEN}Groq client initialized successfully.{RESET}")
         return Groq_client
     except Exception as e:
-        logging.error(f"Error initializing Groq client: {e}", exc_info=True)
+        logging.error(f"{RED}Error initializing Groq client: {e}{RESET}", exc_info=True)
 
 
 # Define models
@@ -144,9 +145,9 @@ executor_url = None
 
 
 def start_driver():
-    global driver, driver_pid, session_id, executor_url
-
     try:
+        global driver, driver_pid, session_id, executor_url
+
         logging.info(f"{CYAN}Starting driver...{RESET}")
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
@@ -156,7 +157,7 @@ def start_driver():
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
         executor_url = driver.command_executor._url
-        logging.info("WebDriver started successfully.")
+        logging.info(f"{GREEN}WebDriver started successfully.{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error starting driver: {e}{RESET}", exc_info=True)
 
@@ -170,17 +171,19 @@ def reconnect_driver():
     try:
         global driver, session_id, executor_url, options
 
-        logging.info("Reconnecting to WebDriver session...")
+        logging.info(f"{CYAN}Reconnecting to WebDriver session...{RESET}")
         if session_id and executor_url:
             driver = webdriver.Remote(command_executor=executor_url, options=options)
             driver.session_id = session_id
-            logging.info("Reconnected to the existing session.")
+            logging.info(f"{GREEN}Reconnected to the existing session.{RESET}")
     except (SessionNotCreatedException, WebDriverException) as e:
-        logging.error(f"Failed to reconnect to the session: {str(e)}", exc_info=True)
+        logging.error(
+            f"{RED}Failed to reconnect to the session: {str(e)}{RESET}", exc_info=True
+        )
 
         # Attempt to start a new session
         try:
-            logging.info("Attempting to start a new WebDriver session...")
+            logging.info(f"{CYAN}Attempting to start a new WebDriver session...{RESET}")
             # options = webdriver.EdgeOptions()
             # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
 
@@ -191,10 +194,11 @@ def reconnect_driver():
             time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
-            logging.info("Started a new session.")
+            logging.info(f"{GREEN}Started a new session.{RESET}")
         except Exception as new_session_error:
             logging.error(
-                f"Failed to start a new session: {new_session_error}", exc_info=True
+                f"{RED}Failed to start a new session: {new_session_error}{RESET}",
+                exc_info=True,
             )
 
 
@@ -1152,20 +1156,8 @@ def split_sentence(response):
 def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
     try:
         global Groq_client
-        """
-        route = route_query(query)  # Step 1: Determine if a tool is needed
+        logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
-        # Step 2: Handle the result of routing
-        if route == "NO TOOL":
-            # Use the general model if no tools are needed
-            response = run_general(query)
-            asyncio.run(
-                text_to_speech(text=response)
-            )  # Asynchronously call text-to-speech with the response
-        elif route == "FUNCTION":
-            logging.info(f"{GREEN}Executing command with tool: {query}{RESET}")
-        """
-        # Step 1: Handle tool usage
         tools_messages = [
             {
                 "role": "system",
@@ -1193,7 +1185,7 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
 
         for attempt in range(max_retries):
             try:
-                # Step 4: Get the response from the model that handles tool usage
+                logging.info(f"{YELLOW}Attempt {attempt + 1} of {max_retries}{RESET}")
                 response = Groq_client.chat.completions.create(
                     model=TOOL_USE_MODEL,
                     messages=tools_messages,
@@ -1204,10 +1196,11 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 )
 
                 response_message = response.choices[0].message
-                logging.info(f"Received response from Groq client: {response_message}")
+                logging.info(
+                    f"{CYAN}Received response from Groq client: {response_message}{RESET}"
+                )
                 tool_calls = response_message.tool_calls
 
-                # Step 3: Execute tool calls
                 if tool_calls:
                     for tool_call in tool_calls:
                         function_args = json.loads(tool_call.function.arguments)
@@ -1216,11 +1209,11 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                         if function_name in globals():
                             try:
                                 logging.info(
-                                    f"Executing function: {function_name} with arguments: {function_args}"
+                                    f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                                 )
                                 result = globals()[function_name](**function_args)
                                 logging.info(
-                                    f"Executed {function_name} with result: {result}"
+                                    f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                                 )
                                 return True
                             except Exception as e:
@@ -1230,24 +1223,33 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                 )
                                 raise e
                         else:
-                            logging.error(f"Function {function_name} not found")
+                            logging.error(
+                                f"{RED}Function {function_name} not found{RESET}"
+                            )
                             return False
 
                 return True
 
             except Exception as e:
-                logging.error(f"{RED}Error executing command: {str(e)}{RESET}")
+                logging.error(
+                    f"{RED}Error executing command: {str(e)}{RESET}", exc_info=True
+                )
                 if attempt < max_retries - 1:
-                    logging.info(f"Retrying... ({attempt + 1}/{max_retries})")
+                    logging.info(
+                        f"{YELLOW}Retrying... ({attempt + 1}/{max_retries}){RESET}"
+                    )
                     time.sleep(retry_delay)
                 else:
                     logging.error(
-                        f"Failed to execute command after {max_retries} attempts"
+                        f"{RED}Failed to execute command after {max_retries} attempts{RESET}"
                     )
                     return False
 
     except Exception as e:
-        logging.error(f"{RED}Error in execute_command_run_with_tool: {str(e)}{RESET}")
+        logging.error(
+            f"{RED}Error in execute_command_run_with_tool: {str(e)}{RESET}",
+            exc_info=True,
+        )
         return False
 
 
