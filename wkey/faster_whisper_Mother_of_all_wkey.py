@@ -268,13 +268,26 @@ def monitor_sound_processing():
  ######     ##    ##     ## ##     ##    ##       ##     ## ########  ######   
 """
 
+global True_positve_audio
+True_positve_audio = True
 
-def start_recording():
+
+def start_recording(keyword_index=None):
     try:
-        global stream
-        global recording
-        global play_pause_pressed
-        global something_is_playing
+        global \
+            stream, \
+            recording, \
+            play_pause_pressed, \
+            something_is_playing, \
+            True_positve_audio
+
+        with recording_lock:
+            if recording:
+                logging.info(f"{YELLOW}Recording is already in progress.{RESET}")
+                return
+
+            True_positve_audio = True
+            recording = True
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
         decrease_volume_all()
@@ -308,11 +321,34 @@ def start_recording():
             play_pause_pressed = True
 
         beep(START_BEEP)
-        with recording_lock:
-            recording = True
         logging.info(f"{CYAN}Listening...{RESET}")
+
+        pre_recording_data = np.roll(
+            pre_recording_buffer, -buffer_index, axis=0
+        ).flatten()
+        pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
+
+        if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
+            True_positve_audio = False
+            logging.info(
+                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
+            )
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+        elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
+            True_positve_audio = False
+            logging.info(
+                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
+            )
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+
     except Exception as e:
         logging.error(f"Error in start_recording: {e}", exc_info=True)
+        with recording_lock:
+            recording = False
 
 
 def stop_recording(keyword_index):
@@ -324,7 +360,19 @@ def stop_recording(keyword_index):
             audio_buffer, \
             sample_rate, \
             recording_start_time, \
+            True_positve_audio, \
             vad_detector
+
+        if not True_positve_audio:
+            if play_pause_pressed:
+                threading.Thread(target=restore_volume_all).start()
+                play_pause_pressed = False
+
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+            logging.info(f"{MAGENTA}Transcribing...{RESET}")
+            return
 
         logging.info(f"{GREEN}Stopping recording...{RESET}")
         hard_stop_limit = 5  # Maximum recording time in seconds
@@ -402,13 +450,13 @@ def stop_recording(keyword_index):
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer, keyword_index))
 
-        threading.Thread(target=restore_volume_all()).start()
+        threading.Thread(target=restore_volume_all).start()
 
         # clearing the audio buffer - if not it will cause concat transcripts
         audio_buffer = np.array([], dtype="float32")
 
         if play_pause_pressed:
-            threading.Thread(target=restore_volume_all()).start()
+            threading.Thread(target=restore_volume_all).start()
             play_pause_pressed = False
 
         beep(STOP_BEEP)
@@ -417,28 +465,34 @@ def stop_recording(keyword_index):
         logging.info(f"{MAGENTA}Transcribing...{RESET}")
     except Exception as e:
         logging.error(f"Error in stop_recording: {e}", exc_info=True)
+        with recording_lock:
+            recording = False
 
 
 # Define a debounce time (in seconds) to prevent rapid key presses
 DEBOUNCE_TIME = 0.5  # Adjust this value as needed
 last_key_press_time = 0
+recording_thread = None  # Track the recording thread
 
 
 def on_press(key):
-    global last_key_press_time
+    global last_key_press_time, recording_thread, recording
     current_time = time.time()
     if key == RECORD_KEY and not recording:
         if current_time - last_key_press_time > DEBOUNCE_TIME:
             last_key_press_time = current_time
-            threading.Thread(target=start_recording).start()
+            if recording is False:
+                logging.info(f"Key pressed: {key}")
+                threading.Thread(target=start_recording, args=(None,)).start()
 
 
 def on_release(key):
-    global last_key_press_time
+    global last_key_press_time, recording_thread, recording
     current_time = time.time()
     if key == RECORD_KEY and recording:
         if current_time - last_key_press_time > DEBOUNCE_TIME:
             last_key_press_time = current_time
+            logging.info(f"Key released: {key}")
             threading.Thread(target=stop_recording, args=(None,)).start()
 
 
@@ -544,11 +598,18 @@ def monitor_microphone_availability():
                     finally:
                         wake_stream = None
             else:
-                if wake_stream is None:
+                if (wake_stream is None) or (not wake_stream.is_active()):
                     logging.info(
                         f"{GREEN}Microphone detected. Resuming wake word detection...{RESET}"
                     )
                     try:
+                        wake_stream = p.open(
+                            format=pyaudio.paInt16,
+                            channels=1,
+                            rate=16000,
+                            input=True,
+                            frames_per_buffer=16000,
+                        )
                         wake_stream.start_stream()
                     except OSError as e:
                         logging.info(f"Failed to restart wake stream: {e}")
@@ -650,7 +711,10 @@ def listen_for_wake_word():
                             logging.info(
                                 f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
                             )
-                            threading.Thread(target=start_recording).start()
+                            if recording is False:
+                                threading.Thread(
+                                    target=start_recording, args=(keyword_index,)
+                                ).start()
                             threading.Thread(
                                 target=stop_recording, args=(keyword_index,)
                             ).start()
@@ -658,7 +722,10 @@ def listen_for_wake_word():
                             logging.info(
                                 f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
                             )
-                            threading.Thread(target=start_recording).start()
+                            if recording is False:
+                                threading.Thread(
+                                    target=start_recording, args=(keyword_index,)
+                                ).start()
                             time.sleep(3)
                             threading.Thread(
                                 target=stop_recording, args=(keyword_index,)
@@ -726,37 +793,70 @@ global Groq_client
 Groq_client = Groq(api_key=api_key)
 
 
+def transcribe_pre_recording_buffer(pre_recording_data):
+    try:
+        byte_io = io.BytesIO()
+        wav_write(byte_io, sample_rate, pre_recording_data)
+        byte_io.seek(0)
+        transcription = Groq_client.audio.transcriptions.create(
+            file=("pre_recording.wav", byte_io.getvalue()),
+            model=groq_model,
+            response_format="json",
+            language="en",
+            temperature=0.0,
+        )
+        return transcription.text.lower()
+    except Exception as e:
+        logging.error(f"Error in transcribe_pre_recording_buffer: {e}", exc_info=True)
+        return ""
+
+
 def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
     try:
-        if keyword_index == 1:
-            prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
-        else:
-            prompt = None
+        global True_positve_audio
 
-        try:
-            # Convert the audio buffer (NumPy array) to a byte stream in WAV format
-            byte_io = io.BytesIO()
-            wav_write(byte_io, sample_rate, audio_buffer)
-            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+        if True_positve_audio:
+            """
+            if keyword_index == 1:
+                prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
+            else:
+                prompt = None
+            """
+            prompt = ""
 
-            # Send the byte stream directly to the Groq API
-            transcription = Groq_client.audio.transcriptions.create(
-                file=(
-                    "audio_buffer.wav",
-                    byte_io.getvalue(),
-                ),  # Use in-memory byte stream
-                model=groq_model,
-                prompt=prompt,
-                response_format="json",
-                language="en",
-                temperature=0.0,
-            )
-            result_queue.put(transcription.text)
-        except Exception as e:
-            logging.info(f"Groq API error: {e}")  # Log the error
-            result_queue.put(
-                transcribe_with_local_model(audio_buffer, keyword_index)
-            )  # Call local model after logging
+            try:
+                # Convert the audio buffer (NumPy array) to a byte stream in WAV format
+                byte_io = io.BytesIO()
+                wav_write(byte_io, sample_rate, audio_buffer)
+                byte_io.seek(0)  # Rewind to the beginning of the byte stream
+
+                # Send the byte stream directly to the Groq API
+                transcription = Groq_client.audio.transcriptions.create(
+                    file=(
+                        "audio_buffer.wav",
+                        byte_io.getvalue(),
+                    ),  # Use in-memory byte stream
+                    model=groq_model,
+                    prompt=prompt,
+                    response_format="json",
+                    language="en",
+                    temperature=0.0,
+                )
+                if True_positve_audio:
+                    result_queue.put(transcription.text)
+                else:
+                    pass
+            except Exception as e:
+                logging.info(f"Groq API error: {e}")  # Log the error
+
+                if True_positve_audio:
+                    result_queue.put(
+                        transcribe_with_local_model(audio_buffer, keyword_index)
+                    )  # Call local model after logging
+                else:
+                    pass
+            else:
+                pass
     except Exception as e:
         logging.error(f"Error in transcribe_with_groq: {e}", exc_info=True)
 
@@ -946,7 +1046,7 @@ def beep(sound):
 
 
 """
-########  ########  ######  ######## ######## 
+########  ########  ######  ######## ######## ##    ## 
 ##     ## ##       ##    ## ##          ##    
 ##     ## ##       ##       ##          ##    
 ########  ######    ######  ######      ##    
@@ -1058,7 +1158,7 @@ def run_command_with_retry(transcript):
                 logging.error(
                     f"Error in execute_command_run_with_tool: {e}", exc_info=True
                 )
-            time.sleep(1)  # Wait before retrying
+            time.sleep(2)  # Wait before retrying
         logging.error(f"Failed to execute command after {max_retries} attempts")
     except Exception as e:
         logging.error(f"Error in run_command_with_retry: {e}", exc_info=True)
@@ -1100,6 +1200,7 @@ def clean_transcript():
 ##     ## ##     ## #### ##    ## 
 """
 
+"""
 
 def start_thread(target, name):
     try:
@@ -1122,11 +1223,14 @@ def start_thread(target, name):
         logging.error(f"Error in start_thread: {e}", exc_info=True)
 
 
+"""
+
+
 def main():
     global stream
     global driver
     global driver_pid
-    global vad_detector  # Add this line
+    #    global vad_detector  # Add this line
 
     logging.info(
         f"{CYAN}wkey is active. Hold down {BOLD}{RECORD_KEY}{RESET}{CYAN} to start dictating.{RESET}"
@@ -1145,17 +1249,18 @@ def main():
     try:
         # transcribe_with_local_model(pre_recording_buffer, 1)
         # Start the microphone monitoring thread
-        start_thread(monitor_microphone_availability, "MicrophoneMonitor")
+        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         # Use ThreadPoolExecutor for background processes
 
-        start_thread(clean_transcript, "CleanTranscript")
-        start_thread(process_audio_async, "ProcessAudio")
-        start_thread(listen_for_wake_word, "WakeWordListener")
+        # threading.Thread(target=monitor_sound_processing, daemon=True).start()
+        threading.Thread(target=clean_transcript, daemon=True).start()
+        threading.Thread(target=process_audio_async, daemon=True).start()
+        threading.Thread(target=listen_for_wake_word, daemon=True).start()
+        # threading.Thread(target=start_driver, daemon=True).start()
 
-        threading.Thread(target=start_driver, daemon=True).start()
-        start_thread(monitor_state, "StateMonitor")
+        #        start_thread(monitor_state, "StateMonitor")
 
         with stream:
             start_listener()

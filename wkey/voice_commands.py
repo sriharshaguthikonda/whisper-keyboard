@@ -1149,14 +1149,11 @@ def split_sentence(response):
         logging.error(f"Error executing split_sentence: {e}", exc_info=True)
 
 
-def execute_command_run_with_tool(query):
+def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
     try:
         global Groq_client
         """
         route = route_query(query)  # Step 1: Determine if a tool is needed
-        """
-
-        route = "FUNCTION"  # Step 1: Determine if a tool is needed
 
         # Step 2: Handle the result of routing
         if route == "NO TOOL":
@@ -1167,77 +1164,90 @@ def execute_command_run_with_tool(query):
             )  # Asynchronously call text-to-speech with the response
         elif route == "FUNCTION":
             logging.info(f"{GREEN}Executing command with tool: {query}{RESET}")
+        """
+        # Step 1: Handle tool usage
+        tools_messages = [
+            {
+                "role": "system",
+                "content": """You are a specialized assistant for controlling computer functions. Your role is to:
+                1. Carefully analyze user queries to determine the most appropriate tool/function
+                2. Select the SINGLE most relevant tool from the available options
+                3. Only use tools that exactly match the user's intent
+                4. For system controls (volume, media, windows), be very precise in tool selection
+                5. If no exact tool matches the query, do not force a tool selection
 
-            # Step 1: Handle tool usage
-            tools_messages = [
-                {
-                    "role": "system",
-                    "content": """You are a specialized assistant for controlling computer functions. Your role is to:
-        1. Carefully analyze user queries to determine the most appropriate tool/function
-        2. Select the SINGLE most relevant tool from the available options
-        3. Only use tools that exactly match the user's intent
-        4. For system controls (volume, media, windows), be very precise in tool selection
-        5. If no exact tool matches the query, do not force a tool selection
+                Examples:
+                - "play music" → use play_song()
+                - "volume up" → use volume_up()
+                - "skip" → use next_track()
+                - "minimize everything" → use minimize_all_windows()
+                - "check internet speed" → ping_google()
 
-        Examples:
-        - "play music" → use play_song()
-        - "volume up" → use volume_up()
-        - "skip" → use next_track()
-        - "minimize everything" → use minimize_all_windows()
-        - "check internet speed" → ping_google()
+                Only respond with tool calls, no conversational responses.""",
+            },
+            {
+                "role": "user",
+                "content": query,
+            },
+        ]
 
-        Only respond with tool calls, no conversational responses.""",
-                },
-                {
-                    "role": "user",
-                    "content": query,
-                },
-            ]
-            # Step 4: Get the response from the model that handles tool usage
-            response = Groq_client.chat.completions.create(
-                model=TOOL_USE_MODEL,
-                messages=tools_messages,
-                stream=False,
-                tools=tools,
-                tool_choice="auto",
-                max_tokens=4096,
-            )
+        for attempt in range(max_retries):
+            try:
+                # Step 4: Get the response from the model that handles tool usage
+                response = Groq_client.chat.completions.create(
+                    model=TOOL_USE_MODEL,
+                    messages=tools_messages,
+                    stream=False,
+                    tools=tools,
+                    tool_choice="auto",
+                    max_tokens=4096,
+                )
 
-            response_message = response.choices[0].message
-            logging.info(f"Received response from Groq client: {response_message}")
-            tool_calls = response_message.tool_calls
+                response_message = response.choices[0].message
+                logging.info(f"Received response from Groq client: {response_message}")
+                tool_calls = response_message.tool_calls
 
-            # Step 3: Execute tool calls
-            if tool_calls:
-                for tool_call in tool_calls:
-                    function_args = json.loads(tool_call.function.arguments)
-                    function_name = tool_call.function.name
+                # Step 3: Execute tool calls
+                if tool_calls:
+                    for tool_call in tool_calls:
+                        function_args = json.loads(tool_call.function.arguments)
+                        function_name = tool_call.function.name
 
-                    if function_name in globals():
-                        try:
-                            logging.info(
-                                f"Executing function: {function_name} with arguments: {function_args}"
-                            )
-                            result = globals()[function_name](**function_args)
-                            logging.info(
-                                f"Executed {function_name} with result: {result}"
-                            )
-                        except Exception as e:
-                            logging.error(
-                                f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
-                                exc_info=True,
-                            )
+                        if function_name in globals():
+                            try:
+                                logging.info(
+                                    f"Executing function: {function_name} with arguments: {function_args}"
+                                )
+                                result = globals()[function_name](**function_args)
+                                logging.info(
+                                    f"Executed {function_name} with result: {result}"
+                                )
+                                return True
+                            except Exception as e:
+                                logging.error(
+                                    f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                    exc_info=True,
+                                )
+                                raise e
+                        else:
+                            logging.error(f"Function {function_name} not found")
                             return False
-                    else:
-                        logging.error(f"Function {function_name} not found")
-                        return False
 
-            return True
-        else:
-            logging.error("Invalid routing decision")
+                return True
+
+            except Exception as e:
+                logging.error(f"{RED}Error executing command: {str(e)}{RESET}")
+                if attempt < max_retries - 1:
+                    logging.info(f"Retrying... ({attempt + 1}/{max_retries})")
+                    time.sleep(retry_delay)
+                else:
+                    logging.error(
+                        f"Failed to execute command after {max_retries} attempts"
+                    )
+                    return False
 
     except Exception as e:
-        logging.error(f"{RED}Error executing command: {str(e)}{RESET}")
+        logging.error(f"{RED}Error in execute_command_run_with_tool: {str(e)}{RESET}")
         return False
 
 
