@@ -129,10 +129,10 @@ sample_rate = 16000
 # Check if CUDA is available
 if torch.cuda.is_available():
     model = WhisperModel("small.en", device="cuda", num_workers=8)
-    logging.info("Initialized WhisperModel on CUDA")
+    logging.info(f"{GREEN}Initialized WhisperModel on CUDA{RESET}")
 else:
     logging.warning(
-        "CUDA device not available. Please ensure your system supports CUDA."
+        f"{YELLOW}CUDA device not available. Please ensure your system supports CUDA.{RESET}"
     )
 
 # groq_model = "distil-whisper-large-v3-en"
@@ -376,8 +376,6 @@ def start_recording(keyword_index=None):
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
-        with recording_lock:
-            recording = False
 
 
 """
@@ -423,12 +421,9 @@ def stop_recording(keyword_index):
         silent_time = 0
         recording_start_time = time.time()
 
-        """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
         pre_recording_data = np.roll(
-                    pre_recording_buffer, -buffer_index, axis=0
-                ).flatten()
-                
-        """
+            pre_recording_buffer, -buffer_index, axis=0
+        ).flatten()
 
         if keyword_index == 1:
             stop_delay_threshold = (
@@ -442,13 +437,9 @@ def stop_recording(keyword_index):
             stop_delay_threshold = (
                 0  # Time to wait before stopping after no speech is detected
             )
-            """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
-        pre_recording_data = np.roll(
-                    pre_recording_buffer_f24, -buffer_index, axis=0
-                ).flatten()
-                
-        """
-
+            pre_recording_data = np.roll(
+                pre_recording_buffer_f24, -buffer_index, axis=0
+            ).flatten()
         else:
             stop_delay_threshold = (
                 2  # Time to wait before stopping after no speech is detected
@@ -496,12 +487,8 @@ def stop_recording(keyword_index):
                     break
 
                 time.sleep(0.1)
-        """TODO :  this code was changed recently, we are not going to use pre_recording_data in the future, so we need to remove it from the code  so saving the audio to false positive and true positive has to done carefully after reviewing the code
-        audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
-                
-        """
         # Convert main recording to numpy array
-        # audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+        audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer, keyword_index))
 
         threading.Thread(target=restore_volume_all).start()
@@ -519,8 +506,6 @@ def stop_recording(keyword_index):
         logging.info(f"{MAGENTA}Transcribing...{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
-        with recording_lock:
-            recording = False
 
 
 # Define a debounce time (in seconds) to prevent rapid key presses
@@ -849,7 +834,7 @@ def cleanup():
 
 
 def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_delay=2):
-    transcribe_pre_recording_buffer_prompt = "you are downstream to how word detection algorithm. check if you are able to detect the wake word 'computer'' or 'lama' in the audio"
+    transcribe_pre_recording_buffer_prompt = "you are downstream to hotword detection algorithm. check if you are able to detect the wake word 'computer' or 'lama' in the audio"
     try:
         byte_io = io.BytesIO()
         wav_write(byte_io, sample_rate, pre_recording_data)
@@ -919,6 +904,7 @@ def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
                     response_format="json",
                     language="en",
                     temperature=0.0,
+                    timeout=10,
                 )
                 if True_positve_audio:
                     result_queue.put(transcription.text)
@@ -1032,7 +1018,7 @@ def process_audio_async():
                         )
                         retry_count += 1
                         logging.info(
-                            f"{YELLOW}Retrying... ({retry_count}/{max_retries}){RESET}"
+                            f"{YELLOW}Retrying... ({retry_count + 1}/{max_retries}){RESET}"
                         )
                         time.sleep(2)  # Wait before retrying
 
@@ -1102,7 +1088,8 @@ def process_audio_async():
                 continue
             except Exception as e:
                 logging.error(
-                    f"Critical error in process_audio_async: {str(e)}", exc_info=True
+                    f"Critical error in process_audio_async: {str(e)}{RESET}",
+                    exc_info=True,
                 )
                 time.sleep(1)  # Prevent tight error loops
                 continue  # Keep the thread running even after errors
@@ -1373,7 +1360,10 @@ def main():
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        logging.error(f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}")
+    while True:
+        try:
+            main()
+        except Exception as e:
+            logging.error(
+                f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}"
+            )ime.sleep(5)  # Optional: wait for a few seconds before restarting

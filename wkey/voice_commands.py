@@ -108,8 +108,8 @@ ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
 # TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
 # TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
-TOOL_USE_MODEL = "llama-3.1-8b-instant"
-
+# TOOL_USE_MODEL = "llama-3.1-8b-instant"
+TOOL_USE_MODEL = "llama-3.3-70b-versatile"
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
@@ -609,6 +609,10 @@ def get_volume_interface():
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
         volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
         return volume_interface
+    except ValueError as e:
+        logging.error(
+            f"{RED}ValueError in get_volume_interface: {e}{RESET}", exc_info=True
+        )
     except Exception as e:
         logging.error(f"Error executing get_volume_interface: {e}", exc_info=True)
 
@@ -1193,6 +1197,7 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                     tools=tools,
                     tool_choice="auto",
                     max_tokens=4096,
+                    timeout=10,  # Set a timeout of 30 seconds
                 )
 
                 response_message = response.choices[0].message
@@ -1227,6 +1232,8 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                 f"{RED}Function {function_name} not found{RESET}"
                             )
                             return False
+                else:
+                    logging.error(f"{RED}No tool calls found in the response{RESET}")
 
                 return True
 
