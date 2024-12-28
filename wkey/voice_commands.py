@@ -751,12 +751,13 @@ from datetime import datetime
 backup_directory = "J:\\"
 
 
-def last_backup():
+async def last_backup():
     try:
         # List all files in the directory
         backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
         if not backup_files:
-            asyncio.run(text_to_speech("No backup files found."))
+            await text_to_speech("No backup files found.")
+            return
 
         # Get the most recent backup file by modification date
         latest_backup = max(
@@ -770,7 +771,7 @@ def last_backup():
 
         # Calculate days since the last backup
         days_ago = (datetime.now() - last_backup_date).days
-        asyncio.run(text_to_speech(f"Latest backup was {days_ago} days ago."))
+        await text_to_speech(f"Latest backup was {days_ago} days ago.")
     except Exception as e:
         logging.error(f"Error executing last_backup: {e}", exc_info=True)
 
@@ -852,6 +853,7 @@ def run_ollama(query):
         """Stream response chunks to TTS immediately as they arrive"""
 
         # Initialize Ollama client for local server
+
         ollama_client = ollama.Client(host="http://localhost:11434")
 
         # Start the chat request with streaming enabled
@@ -1157,7 +1159,11 @@ def split_sentence(response):
         logging.error(f"Error executing split_sentence: {e}", exc_info=True)
 
 
-def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+import aiohttp
+import asyncio
+
+
+async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
     try:
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
@@ -1187,36 +1193,56 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
             },
         ]
 
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+
         for attempt in range(max_retries):
             try:
                 logging.info(f"{YELLOW}Attempt {attempt + 1} of {max_retries}{RESET}")
-                response = Groq_client.chat.completions.create(
-                    model=TOOL_USE_MODEL,
-                    messages=tools_messages,
-                    stream=False,
-                    tools=tools,
-                    tool_choice="auto",
-                    max_tokens=4096,
-                    timeout=10,  # Set a timeout of 30 seconds
-                )
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        url,
+                        json={
+                            "model": TOOL_USE_MODEL,
+                            "messages": tools_messages,
+                            "stream": False,
+                            "tools": tools,
+                            "tool_choice": "auto",
+                            "max_tokens": 4096,
+                        },
+                        headers=headers,
+                    ) as response:
+                        if response.status == 404:
+                            logging.error(
+                                f"Groq API endpoint not found: {response.url}"
+                            )
+                            raise aiohttp.ClientResponseError(
+                                response.request_info,
+                                response.history,
+                                status=response.status,
+                                message=response.reason,
+                                headers=response.headers,
+                            )
+                        response.raise_for_status()
+                        response_data = await response.json()
 
-                response_message = response.choices[0].message
+                response_message = response_data["choices"][0]["message"]
                 logging.info(
                     f"{CYAN}Received response from Groq client: {response_message}{RESET}"
                 )
-                tool_calls = response_message.tool_calls
+                tool_calls = response_message["tool_calls"]
 
                 if tool_calls:
                     for tool_call in tool_calls:
-                        function_args = json.loads(tool_call.function.arguments)
-                        function_name = tool_call.function.name
+                        function_args = json.loads(tool_call["function"]["arguments"])
+                        function_name = tool_call["function"]["name"]
 
                         if function_name in globals():
                             try:
                                 logging.info(
                                     f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                                 )
-                                result = globals()[function_name](**function_args)
+                                result = await globals()[function_name](**function_args)
                                 logging.info(
                                     f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                                 )
@@ -1245,7 +1271,7 @@ def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                     logging.info(
                         f"{YELLOW}Retrying... ({attempt + 1}/{max_retries}){RESET}"
                     )
-                    time.sleep(retry_delay)
+                    await asyncio.sleep(retry_delay)
                 else:
                     logging.error(
                         f"{RED}Failed to execute command after {max_retries} attempts{RESET}"

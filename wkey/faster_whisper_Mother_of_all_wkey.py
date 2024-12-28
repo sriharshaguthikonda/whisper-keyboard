@@ -30,7 +30,7 @@ import torch
 import queue
 import logging
 
-from pynput.keyboard import Controller as KeyboardController, Key, Listener
+from pynput.keyboard import Controller as KeyboardController, Key, Listener, KeyCode
 from dotenv import load_dotenv
 
 from faster_whisper import WhisperModel
@@ -524,14 +524,18 @@ DEBOUNCE_TIME = 0.5  # Adjust this value as needed
 last_key_press_time = 0
 recording_thread = None  # Track the recording thread
 
+# Variable to track if the key is currently pressed
+key_pressed = False
+
 
 def on_press(key):
     try:
-        global last_key_press_time, recording_thread, recording
+        global last_key_press_time, recording_thread, recording, key_pressed
         current_time = time.time()
         if key == RECORD_KEY and not recording:
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
+                key_pressed = True
                 if recording is False:
                     logging.info(f"Key pressed: {key}")
                     threading.Thread(target=start_recording, args=(None,)).start()
@@ -541,15 +545,29 @@ def on_press(key):
 
 def on_release(key):
     try:
-        global last_key_press_time, recording_thread, recording
+        global last_key_press_time, recording_thread, recording, key_pressed
         current_time = time.time()
-        if key == RECORD_KEY and recording:
-            if current_time - last_key_press_time > DEBOUNCE_TIME:
-                last_key_press_time = current_time
-                logging.info(f"Key released: {key}")
-                threading.Thread(target=stop_recording, args=(None,)).start()
+        if key == RECORD_KEY:
+            key_pressed = False
+            if recording:
+                if current_time - last_key_press_time > DEBOUNCE_TIME:
+                    last_key_press_time = current_time
+                    logging.info(f"Key released: {key}")
+                    threading.Thread(target=stop_recording, args=(None,)).start()
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
+
+
+def monitor_key_state():
+    try:
+        global key_pressed, recording
+        while True:
+            if recording and not key_pressed:
+                logging.info("Key released during recording, stopping recording.")
+                threading.Thread(target=stop_recording, args=(None,)).start()
+            time.sleep(0.1)  # Check the key state every 100ms
+    except Exception as e:
+        logging.error(f"Error in monitor_key_state: {e}", exc_info=True)
 
 
 """
@@ -1305,7 +1323,7 @@ def run_command_with_retry(transcript):
         logging.error(f"Error in run_command_with_retry: {e}", exc_info=True)
 
 
-def clean_transcript():
+async def clean_transcript():
     try:
         while True:
             try:
@@ -1315,9 +1333,7 @@ def clean_transcript():
                     logging.error(
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
-                    threading.Thread(
-                        target=run_command_with_retry, args=(transcript,)
-                    ).start()
+                    await execute_command_run_with_tool(transcript)
                 else:
                     logging.info(f"Unknown keyword index {keyword_index}")
                 logging.info(
@@ -1396,7 +1412,13 @@ def main():
         # Use ThreadPoolExecutor for background processes
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
-        threading.Thread(target=clean_transcript, daemon=True).start()
+        loop2 = asyncio.new_event_loop()
+        threading.Thread(
+            target=run_asyncio_in_thread,
+            args=(loop2, clean_transcript()),
+            daemon=True,
+        ).start()
+        # threading.Thread(target=clean_transcript, daemon=True).start()
         # threading.Thread(target=process_audio_async, daemon=True).start()
 
         # Start the async process_audio_async function in a new thread
@@ -1408,6 +1430,7 @@ def main():
         ).start()
 
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
+        threading.Thread(target=monitor_key_state, daemon=True).start()
         # threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
