@@ -434,12 +434,23 @@ def stop_recording(keyword_index):
                 1  # Time to wait before stopping after no speech is detected
             )
         elif keyword_index is None:
-            stop_delay_threshold = (
-                0  # Time to wait before stopping after no speech is detected
-            )
-            pre_recording_data = np.roll(
-                pre_recording_buffer_f24, -buffer_index, axis=0
-            ).flatten()
+            # stop_delay_threshold = (0  # Time to wait before stopping after no speech is detected )
+            # pre_recording_data = np.roll(pre_recording_buffer_f24, -buffer_index, axis=0).flatten()
+            audio_buffer_queue.put((audio_buffer, keyword_index))
+
+            threading.Thread(target=restore_volume_all).start()
+
+            # clearing the audio buffer - if not it will cause concat transcripts
+            audio_buffer = np.array([], dtype="float32")
+
+            if play_pause_pressed:
+                threading.Thread(target=restore_volume_all).start()
+                play_pause_pressed = False
+
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+            return
         else:
             stop_delay_threshold = (
                 2  # Time to wait before stopping after no speech is detected
@@ -874,62 +885,66 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
         return ""
 
 
-def transcribe_with_groq(audio_buffer, keyword_index, result_queue):
-    try:
-        global True_positve_audio
+import aiohttp
+import asyncio
 
-        if True_positve_audio:
-            """
-            if keyword_index == 1:
-                prompt = Hey_computer_STT_prompt  # Define your prompt as necessary
-            else:
-                prompt = None
-            """
-            prompt = ""
 
-            try:
-                # Convert the audio buffer (NumPy array) to a byte stream in WAV format
-                byte_io = io.BytesIO()
-                wav_write(byte_io, sample_rate, audio_buffer)
-                byte_io.seek(0)  # Rewind to the beginning of the byte stream
+async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
+    url = "https://api.groq.com/openai/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    data = {
+        "model": groq_model,
+        "response_format": "json",
+        "prompt": "",
+        "language": "en",
+        "temperature": 0.0,
+    }
 
-                # Send the byte stream directly to the Groq API
-                transcription = Groq_client.audio.transcriptions.create(
-                    file=(
-                        "audio_buffer.wav",
-                        byte_io.getvalue(),
-                    ),  # Use in-memory byte stream
-                    model=groq_model,
-                    prompt=prompt,
-                    response_format="json",
-                    language="en",
-                    temperature=0.0,
-                    timeout=10,
+    for attempt in range(max_retries):
+        try:
+            async with aiohttp.ClientSession() as session:
+                form_data = aiohttp.FormData()
+                form_data.add_field(
+                    "file",
+                    byte_io.getvalue(),
+                    filename="pre_recording.wav",
+                    content_type="audio/wav",
                 )
-                if True_positve_audio:
-                    result_queue.put(transcription.text)
-                else:
-                    True_positve_audio = True
-                    pass
-            except Exception as e:
-                logging.info(f"{RED}Groq API error: {e}{RESET}")  # Log the error
+                form_data.add_field("model", groq_model)
+                form_data.add_field("response_format", "json")
+                form_data.add_field("prompt", "")
+                form_data.add_field("language", "en")
+                form_data.add_field("temperature", "0.0")
 
-                if True_positve_audio:
-                    result_queue.put(
-                        transcribe_with_local_model(audio_buffer, keyword_index)
-                    )  # Call local model after logging
-                else:
-                    True_positve_audio = True
-                    logging.info(f"{YELLOW}False positive{RESET}")
-                    pass
-        else:
-            True_positve_audio = True
-            logging.info(
-                f"{YELLOW}False positive audio buffer, not transcribing{RESET}"
+                async with session.post(
+                    url, data=form_data, headers=headers
+                ) as response:
+                    if response.status == 404:
+                        logging.error(f"Groq API endpoint not found: {response.url}")
+                        raise aiohttp.ClientResponseError(
+                            response.request_info,
+                            response.history,
+                            status=response.status,
+                            message=response.reason,
+                            headers=response.headers,
+                        )
+                    response.raise_for_status()
+                    transcription = await response.json()
+                    return transcription["text"].lower()
+        except aiohttp.ClientResponseError as e:
+            logging.error(
+                f"Groq API client error: {e.status}, message='{e.message}', url='{e.request_info.url}'",
+                exc_info=True,
             )
-            pass
-    except Exception as e:
-        logging.error(f"{RED}Error in transcribe_with_groq: {e}{RESET}", exc_info=True)
+            if e.status == 404:
+                raise
+        except Exception as e:
+            logging.error(
+                f"Unexpected error in transcribe_with_groq_async: {e}", exc_info=True
+            )
+        await asyncio.sleep(2)  # Wait before retrying
+    logging.error(f"Failed to transcribe after {max_retries} attempts")
+    return None
 
 
 def transcribe_with_local_model(audio_buffer, keyword_index):
@@ -976,7 +991,7 @@ TODO :  these are in the older version of the code in other branches of the whis
 
 result_queue = queue.Queue()
 
-
+"""
 def process_audio_async():
     try:
         global result_queue
@@ -986,8 +1001,8 @@ def process_audio_async():
                 logging.info(
                     f"Processing audio buffer for keyword index: {keyword_index}"
                 )
-                """if audio_buffer_for_processing is None:
-                    break"""
+                "if audio_buffer_for_processing is None:
+                    break"
 
                 transcript = None
                 retry_count = 0
@@ -996,18 +1011,12 @@ def process_audio_async():
                 while retry_count < max_retries:
                     try:
                         logging.info(f"{CYAN}transcribe_with_groq starting{RESET}")
-                        result_queue = queue.Queue()
-                        transcript_thread = threading.Thread(
-                            target=transcribe_with_groq,
-                            args=(
-                                audio_buffer_for_processing,
-                                keyword_index,
-                                result_queue,
-                            ),
+                        transcript = transcribe_with_groq(
+                            audio_buffer_for_processing, keyword_index
                         )
-                        transcript_thread.start()
-                        transcript = result_queue.get()
-
+                        logging.info(
+                            f"{BRIGHT_GREEN}transcribe_with_groq finished{RESET}"
+                        )
                         if transcript:
                             break  # Exit retry loop if transcription is successful
 
@@ -1095,6 +1104,63 @@ def process_audio_async():
                 continue  # Keep the thread running even after errors
     except Exception as e:
         logging.error(f"Error in process_audio_async: {e}", exc_info=True)
+"""
+
+
+def run_asyncio_in_thread(loop, coro):
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(coro)
+
+
+async def process_audio_async():
+    while True:
+        try:
+            audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
+            if audio_buffer_for_processing is None:
+                logging.error("Received None for audio_buffer_for_processing")
+                continue
+
+            byte_io = io.BytesIO()
+            wav_write(byte_io, sample_rate, audio_buffer_for_processing)
+            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+
+            try:
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript is None:
+                    logging.error("Transcription returned None")
+                    continue
+            except groq.RateLimitError:
+                logging.error(
+                    "Groq API rate limit reached, switching to local transcription."
+                )
+                transcript = transcribe_with_local_model(audio_buffer_for_processing)
+
+            transcript_lower = transcript.lower()
+            if (
+                "computer" in transcript_lower or "lama" in transcript_lower
+            ) and keyword_index is not None:
+                # Find the index of the keyword
+                if "computer" in transcript_lower:
+                    keyword_position = transcript_lower.index("computer")
+                else:
+                    keyword_position = transcript_lower.index("lama")
+
+                # Strip the part of the transcript before the keyword
+                stripped_transcript = transcript[keyword_position:]
+
+                # Put the stripped transcript on the queue
+                transcript_queue.put((stripped_transcript, keyword_index))
+
+            elif keyword_index is None:
+                paste_transcript(transcript)
+            else:
+                logging.info("No relevant keyword found in the transcription")
+
+            logging.info(f"Transcription: {transcript}")
+        except queue.Empty:
+            continue
+        except Exception as e:
+            logging.error(f"An error occurred during transcription: {e}", exc_info=True)
 
 
 """TODO :  this code was changed recently, check if it is working fine or not
@@ -1331,14 +1397,25 @@ def main():
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         threading.Thread(target=clean_transcript, daemon=True).start()
-        threading.Thread(target=process_audio_async, daemon=True).start()
+        # threading.Thread(target=process_audio_async, daemon=True).start()
+
+        # Start the async process_audio_async function in a new thread
+        loop = asyncio.new_event_loop()
+        threading.Thread(
+            target=run_asyncio_in_thread,
+            args=(loop, process_audio_async()),
+            daemon=True,
+        ).start()
+
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        threading.Thread(target=start_driver, daemon=True).start()
+        # threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
 
         with stream:
+            # Start the async process_audio_async function
             start_listener()
+
     except Exception as e:
         logging.error(
             f"{RED}Critical error in main: {str(e)}\n{traceback.format_exc()}{RESET}"
@@ -1366,4 +1443,5 @@ if __name__ == "__main__":
         except Exception as e:
             logging.error(
                 f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}"
-            )ime.sleep(5)  # Optional: wait for a few seconds before restarting
+            )
+            time.sleep(5)  # Optional: wait for a few seconds before restarting
