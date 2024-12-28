@@ -30,7 +30,7 @@ import torch
 import queue
 import logging
 
-from pynput.keyboard import Controller as KeyboardController, Key, Listener, KeyCode
+from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 
 from faster_whisper import WhisperModel
@@ -524,18 +524,14 @@ DEBOUNCE_TIME = 0.5  # Adjust this value as needed
 last_key_press_time = 0
 recording_thread = None  # Track the recording thread
 
-# Variable to track if the key is currently pressed
-key_pressed = False
-
 
 def on_press(key):
     try:
-        global last_key_press_time, recording_thread, recording, key_pressed
+        global last_key_press_time, recording_thread, recording
         current_time = time.time()
         if key == RECORD_KEY and not recording:
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
-                key_pressed = True
                 if recording is False:
                     logging.info(f"Key pressed: {key}")
                     threading.Thread(target=start_recording, args=(None,)).start()
@@ -545,29 +541,15 @@ def on_press(key):
 
 def on_release(key):
     try:
-        global last_key_press_time, recording_thread, recording, key_pressed
+        global last_key_press_time, recording_thread, recording
         current_time = time.time()
-        if key == RECORD_KEY:
-            key_pressed = False
-            if recording:
-                if current_time - last_key_press_time > DEBOUNCE_TIME:
-                    last_key_press_time = current_time
-                    logging.info(f"Key released: {key}")
-                    threading.Thread(target=stop_recording, args=(None,)).start()
+        if key == RECORD_KEY and recording:
+            if current_time - last_key_press_time > DEBOUNCE_TIME:
+                last_key_press_time = current_time
+                logging.info(f"Key released: {key}")
+                threading.Thread(target=stop_recording, args=(None,)).start()
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
-
-
-def monitor_key_state():
-    try:
-        global key_pressed, recording
-        while True:
-            if recording and not key_pressed:
-                logging.info("Key released during recording, stopping recording.")
-                threading.Thread(target=stop_recording, args=(None,)).start()
-            time.sleep(0.1)  # Check the key state every 100ms
-    except Exception as e:
-        logging.error(f"Error in monitor_key_state: {e}", exc_info=True)
 
 
 """
@@ -1430,7 +1412,6 @@ def main():
         ).start()
 
         threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        threading.Thread(target=monitor_key_state, daemon=True).start()
         # threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
