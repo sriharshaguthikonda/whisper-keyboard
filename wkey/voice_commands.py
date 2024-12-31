@@ -1242,7 +1242,11 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                 logging.info(
                                     f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                                 )
-                                result = await globals()[function_name](**function_args)
+                                func = globals()[function_name]
+                                if asyncio.iscoroutinefunction(func):
+                                    result = await func(**function_args)
+                                else:
+                                    result = func(**function_args)
                                 logging.info(
                                     f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                                 )

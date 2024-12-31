@@ -42,6 +42,9 @@ from voice_commands import (
     set_volume,
     driver,
 )  # , driver_pid
+
+
+from google_assistant import google_assistant
 from pause_all import is_sound_playing_windows_processing
 
 
@@ -258,6 +261,7 @@ def restore_volume_all():
     try:
         if initial_volume is not None:
             set_volume(initial_volume)  # Restore to initial volume
+            time.sleep(0.5)  # Wait for volume to restore
             initial_volume = None  # Reset initial volume after restoring
     except Exception as e:
         logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
@@ -450,6 +454,7 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+            logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
             return
         else:
             stop_delay_threshold = (
@@ -514,7 +519,7 @@ def stop_recording(keyword_index):
         beep(STOP_BEEP)
         with recording_lock:
             recording = False
-        logging.info(f"{MAGENTA}Transcribing...{RESET}")
+        logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
 
@@ -683,7 +688,7 @@ def monitor_microphone_availability():
 MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\rey_lama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\rey_lama.onnx",  #    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",  # New model path
 ]
 
 # Load the OpenWakeWord models
@@ -699,9 +704,9 @@ CHUNK = 5120  # Optimal chunk size for OpenWakeWord
 
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
-    0: 0.1,  # Threshold for "hey_lama"
+    0: 0.1,  # Threshold for "hey_llama"
     1: 0.1,  # Threshold for "hey_computer10"
-    2: 0.1,
+    2: 0.1,  # Threshold for "rey_lama"    3: 0.4,  # Threshold for "hey_google" (new model)
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -774,7 +779,7 @@ def listen_for_wake_word():
                             threading.Thread(
                                 target=stop_recording, args=(keyword_index,)
                             ).start()
-                        elif keyword_index == 2:  # Custom wake word: "hey_llama2 "
+                        elif keyword_index == 2:  # Custom wake word: "rey_lama"
                             logging.info(
                                 f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
                             )
@@ -786,6 +791,21 @@ def listen_for_wake_word():
                             threading.Thread(
                                 target=stop_recording, args=(keyword_index,)
                             ).start()
+                        elif keyword_index == 3:  # Custom wake word: "hey_google"
+                            logging.info(
+                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_google' detected!{RESET}"
+                            )
+                            """if recording is False:
+                                threading.Thread(
+                                    target=start_recording, args=(keyword_index,)
+                                ).start()"""
+                            threading.Thread(decrease_volume_all).start()
+                            time.sleep(3)
+                            """threading.Thread(
+                                target=stop_recording, args=(keyword_index,)
+                            ).start()"""
+                            threading.Thread(restore_volume_all).start()
+                            """TODO: add the code to start the google assistant"""
                         else:
                             logging.info(
                                 f"{RED}Unknown wake word detected!{RESET}",
@@ -1316,6 +1336,9 @@ async def clean_transcript():
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
                     await execute_command_run_with_tool(transcript)
+                elif keyword_index == 3:
+                    logging.error(f"google assistant command: {transcript}")
+                    await google_assistant(transcript)
                 else:
                     logging.info(f"Unknown keyword index {keyword_index}")
                 logging.info(
@@ -1339,7 +1362,6 @@ async def clean_transcript():
 ##     ## ##     ## #### ##    ## 
 """
 
-"""
 
 def start_thread(target, name):
     try:
@@ -1354,15 +1376,11 @@ def start_thread(target, name):
                     )
                     time.sleep(5)  # Wait before restarting the thread
 
-        thread = threading.Thread(
-            target=run_with_restart, name=name, daemon=True
-        ).start()
+        thread = threading.Thread(target=run_with_restart, name=name, daemon=True)
+        thread.start()
         return thread
     except Exception as e:
         logging.error(f"Error in start_thread: {e}", exc_info=True)
-
-
-"""
 
 
 def main():
@@ -1388,37 +1406,38 @@ def main():
     try:
         # transcribe_with_local_model(pre_recording_buffer, 1)
         # Start the microphone monitoring thread
-        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+        start_thread(monitor_microphone_availability, "MicrophoneMonitor")
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         # Use ThreadPoolExecutor for background processes
 
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
         loop2 = asyncio.new_event_loop()
-        threading.Thread(
-            target=run_asyncio_in_thread,
-            args=(loop2, clean_transcript()),
-            daemon=True,
-        ).start()
+        start_thread(
+            lambda: run_asyncio_in_thread(loop2, clean_transcript()), "CleanTranscript"
+        )
+
         # threading.Thread(target=clean_transcript, daemon=True).start()
         # threading.Thread(target=process_audio_async, daemon=True).start()
 
         # Start the async process_audio_async function in a new thread
         loop = asyncio.new_event_loop()
-        threading.Thread(
-            target=run_asyncio_in_thread,
-            args=(loop, process_audio_async()),
-            daemon=True,
-        ).start()
+        start_thread(
+            lambda: run_asyncio_in_thread(loop, process_audio_async()), "ProcessAudio"
+        )
 
-        threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        # threading.Thread(target=start_driver, daemon=True).start()
+        start_thread(listen_for_wake_word, "WakeWordListener")
+        threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
 
         with stream:
             # Start the async process_audio_async function
             start_listener()
+
+        # Keep the script running and monitor threads
+        while True:
+            time.sleep(1)
 
     except Exception as e:
         logging.error(
