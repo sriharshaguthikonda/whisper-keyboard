@@ -44,7 +44,9 @@ from voice_commands import (
 )  # , driver_pid
 
 
-from google_assistant import google_assistant
+from google_assistant import (
+    google_assistant,
+)
 from pause_all import is_sound_playing_windows_processing
 
 
