@@ -536,6 +536,16 @@ def open_firefox():
         logging.error(f"Error executing open_firefox: {e}", exc_info=True)
 
 
+def open_task_scheduler():
+    try:
+        os.system("taskschd.msc")
+        logging.info(f"{GREEN}Opening Task Scheduler...{RESET}")
+    except Exception as e:
+        logging.error(
+            f"{RED}Error executing open_task_scheduler: {e}{RESET}", exc_info=True
+        )
+
+
 # Volume controls
 def open_sound_control_panel():
     try:
@@ -668,6 +678,30 @@ def open_date_and_time():
         logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
 
 
+def open_startup_folder():
+    try:
+        # Open the current user's startup folder
+        startup_path = os.path.join(
+            os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup"
+        )
+        os.startfile(startup_path)
+        logging.info(f"{GREEN}Opening startup folder at: {startup_path}{RESET}")
+    except Exception as e:
+        logging.error(
+            f"{RED}Error executing open_startup_folder: {e}{RESET}", exc_info=True
+        )
+
+
+def manage_services():
+    try:
+        os.system("services.msc")
+        logging.info(f"{GREEN}Opening Windows Services...{RESET}")
+    except Exception as e:
+        logging.error(
+            f"{RED}Error executing manage_services: {e}{RESET}", exc_info=True
+        )
+
+
 # System commands
 def ping_google():
     try:
@@ -785,6 +819,25 @@ def open_vscode():
         subprocess.Popen([vscode_path])
     except Exception as e:
         logging.error(f"Error executing open_vscode: {e}", exc_info=True)
+
+
+def start_whisper():
+    try:
+        batch_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper_keyboard.bat"
+        # Use runas to run as administrator
+        subprocess.run(["runas", "/user:Administrator", f'cmd /c "{batch_path}"'])
+        logging.info(f"{GREEN}Starting Whisper with administrator privileges...{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Error executing start_whisper: {e}{RESET}", exc_info=True)
+
+
+def start_grok():
+    try:
+        shortcut_path = r"C:\Users\deletable\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\groq_Ollama_RAG_Chat.bat - Shortcut.lnk"
+        os.startfile(shortcut_path)
+        logging.info(f"{GREEN}Starting Grok...{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Error executing start_grok: {e}{RESET}", exc_info=True)
 
 
 """

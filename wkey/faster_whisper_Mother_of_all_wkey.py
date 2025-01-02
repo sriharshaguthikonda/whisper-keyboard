@@ -314,6 +314,15 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+        elif keyword_index == 3 and "jarvis" not in pre_recording_transcript.lower():
+            True_positve_audio = False
+            logging.info(
+                f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
+            )
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+
     except Exception as e:
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
 
@@ -369,12 +378,14 @@ def start_recording(keyword_index=None):
         beep(START_BEEP)
         logging.info(f"{CYAN}Listening...{RESET}")
 
-        pre_recording_data = np.roll(
-            pre_recording_buffer, -buffer_index, axis=0
-        ).flatten()
-
         if keyword_index is None:
             # Run the transcription and keyword checking in a separate thread
+            pass
+        else:
+            pre_recording_data = np.roll(
+                pre_recording_buffer, -buffer_index, axis=0
+            ).flatten()
+
             threading.Thread(
                 target=check_keywords_in_transcription,
                 args=(pre_recording_data, keyword_index),
@@ -436,6 +447,10 @@ def stop_recording(keyword_index):
                 1  # Time to wait before stopping after no speech is detected
             )
         elif keyword_index == 2:
+            stop_delay_threshold = (
+                1  # Time to wait before stopping after no speech is detected
+            )
+        elif keyword_index == 3:
             stop_delay_threshold = (
                 1  # Time to wait before stopping after no speech is detected
             )
@@ -688,9 +703,11 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_llama2.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\rey_lama.onnx",  #    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",  # New model path
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
+    # r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
+    # r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",  # New model path
 ]
 
 # Load the OpenWakeWord models
@@ -706,9 +723,9 @@ CHUNK = 5120  # Optimal chunk size for OpenWakeWord
 
 # Define individual thresholds for each wake word model
 THRESHOLDS = {
-    0: 0.1,  # Threshold for "hey_llama"
+    0: 0.9,  # Threshold for "hey_jarvis"
     1: 0.1,  # Threshold for "hey_computer10"
-    2: 0.1,  # Threshold for "rey_lama"    3: 0.4,  # Threshold for "hey_google" (new model)
+    2: 0.1,  # Threshold for "rey_lama"     3: 0.1,  # Threshold for "hey_google"
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -764,16 +781,17 @@ def listen_for_wake_word():
                         and (current_time - last_detection_time) > COOLDOWN_TIME
                         and not recording
                     ):
+                        logging.info(
+                            f"{PINK}{BOLD}Custom wake word 'keyword_index'{keyword_index} detected!{RESET}"
+                        )
                         last_detection_time = (
                             current_time  # Update the last detection time
                         )
 
                         if keyword_index == 0:  # Custom wake word: "hey_llama2 "
                             pass
-                        elif keyword_index == 1:  # Custom wake word: "hey_computer9"
-                            logging.info(
-                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_computer9' detected!{RESET}"
-                            )
+                        elif keyword_index == 1:
+                            # Custom wake word: "hey_computer9"
                             if recording is False:
                                 threading.Thread(
                                     target=start_recording, args=(keyword_index,)
@@ -789,7 +807,6 @@ def listen_for_wake_word():
                                 threading.Thread(
                                     target=start_recording, args=(keyword_index,)
                                 ).start()
-                            time.sleep(3)
                             threading.Thread(
                                 target=stop_recording, args=(keyword_index,)
                             ).start()
@@ -864,41 +881,31 @@ def cleanup():
 ##    ##  ##    ##  ##     ## ##    ##  
  ######   ##     ##  #######   ##### ## 
 """
+transcribe_pre_recording_buffer_prompt = "you are downstream to hotword detection algorithm. check if you are able to detect the wake word 'computer' or 'lama' in the audio"
 
 
 def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_delay=2):
-    transcribe_pre_recording_buffer_prompt = "you are downstream to hotword detection algorithm. check if you are able to detect the wake word 'computer' or 'lama' in the audio"
     try:
         byte_io = io.BytesIO()
         wav_write(byte_io, sample_rate, pre_recording_data)
         byte_io.seek(0)
 
-        for attempt in range(max_retries):
-            try:
-                transcription = Groq_client.audio.transcriptions.create(
-                    file=("pre_recording.wav", byte_io.getvalue()),
-                    model=groq_model,
-                    response_format="json",
-                    prompt=transcribe_pre_recording_buffer_prompt,
-                    language="en",
-                    temperature=0.0,
-                )
-                return transcription.text.lower()
-            except Exception as e:
-                logging.error(
-                    f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}",
-                    exc_info=True,
-                )
-                if attempt < max_retries - 1:
-                    logging.info(
-                        f"{YELLOW}Retrying... ({attempt + 1}/{max_retries}){RESET}"
-                    )
-                    time.sleep(retry_delay)
-                else:
-                    logging.error(
-                        f"{RED}Failed to transcribe after {max_retries} attempts{RESET}"
-                    )
-                    return ""
+        try:
+            transcription = Groq_client.audio.transcriptions.create(
+                file=("pre_recording.wav", byte_io.getvalue()),
+                model=groq_model,
+                response_format="json",
+                prompt=transcribe_pre_recording_buffer_prompt,
+                language="en",
+                temperature=0.0,
+            )
+            return transcription.text.lower()
+        except Exception as e:
+            logging.error(
+                f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}",
+                exc_info=True,
+            )
+            return ""
 
     except Exception as e:
         logging.error(
@@ -1158,25 +1165,65 @@ async def process_audio_async():
                 transcript = transcribe_with_local_model(audio_buffer_for_processing)
 
             transcript_lower = transcript.lower()
-            if (
-                "computer" in transcript_lower or "lama" in transcript_lower
-            ) and keyword_index is not None:
-                # Find the index of the keyword
+
+            # Process wake word transcripts
+            if keyword_index is None:
+                logging.info("pasing f24 transcription")
+                paste_transcript(transcript)
+                # save my volcal samples here.
+                # save_audio
+                continue
+
+            elif keyword_index == 1:
                 if "computer" in transcript_lower:
                     keyword_position = transcript_lower.index("computer")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("computer") :
+                    ]
+                    logging.info(f"Processing computer command: {stripped_transcript}")
+                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+
+                    continue
                 else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            elif keyword_index == 2:
+                if "lama" in transcript_lower:
                     keyword_position = transcript_lower.index("lama")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("lama") :
+                    ]
 
-                # Strip the part of the transcript before the keyword
-                stripped_transcript = transcript[keyword_position:]
+                    logging.info(f"Processing lama command: {stripped_transcript}")
+                    paste_transcript(stripped_transcript)
 
-                # Put the stripped transcript on the queue
-                transcript_queue.put((stripped_transcript, keyword_index))
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+                    continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            elif keyword_index == 3:
+                if "lama" in transcript_lower:
+                    keyword_position = transcript_lower.index("google")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("google") :
+                    ]
 
-            elif keyword_index is None:
-                paste_transcript(transcript)
+                    logging.info(f"Processing google command: {stripped_transcript}")
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+                    continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            # Process direct key press transcripts
             else:
-                logging.info("No relevant keyword found in the transcription")
+                logging.info("unknown keyword index")
 
             logging.info(f"Transcription: {transcript}")
         except queue.Empty:
@@ -1338,6 +1385,9 @@ async def clean_transcript():
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
                     await execute_command_run_with_tool(transcript)
+                elif keyword_index == 2:
+                    pass
+                    """ we have done everything above in process_audio async function"""
                 elif keyword_index == 3:
                     logging.error(f"google assistant command: {transcript}")
                     await google_assistant(transcript)
@@ -1407,6 +1457,7 @@ def main():
 
     try:
         # transcribe_with_local_model(pre_recording_buffer, 1)
+        start_thread(listen_for_wake_word, "WakeWordListener")
         # Start the microphone monitoring thread
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")
 
@@ -1428,7 +1479,6 @@ def main():
             lambda: run_asyncio_in_thread(loop, process_audio_async()), "ProcessAudio"
         )
 
-        start_thread(listen_for_wake_word, "WakeWordListener")
         threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")

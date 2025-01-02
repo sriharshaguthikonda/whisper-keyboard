@@ -140,6 +140,25 @@ def previous_track():
             print(f"Error while trying to go to previous track: {e}")
 
 
+def start_whisper():
+    try:
+        batch_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper_keyboard.bat"
+        # Use runas to run as administrator
+        subprocess.run(["runas", "/user:Administrator", f'cmd /c "{batch_path}"'])
+        logging.info(f"{GREEN}Starting Whisper with administrator privileges...{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Error executing start_whisper: {e}{RESET}", exc_info=True)
+
+
+def start_grok():
+    try:
+        shortcut_path = r"C:\Users\deletable\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\groq_Ollama_RAG_Chat.bat - Shortcut.lnk"
+        os.startfile(shortcut_path)
+        logging.info(f"{GREEN}Starting Grok...{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Error executing start_grok: {e}{RESET}", exc_info=True)
+
+
 """
  ######   #######  ##     ## ##     ##    ###    ##    ## ########  
 ##    ## ##     ## ###   ### ###   ###   ## ##   ###   ## ##     ## 
@@ -283,6 +302,37 @@ COMMAND_MAPPINGS = {
         "open negative screen",
         "invert screen",
     ],
+    "open_task_scheduler": [
+        "open task scheduler",
+        "show task scheduler",
+        "launch task scheduler",
+        "start task scheduler",
+    ],
+    "open_startup_folder": [
+        "open startup folder",
+        "show startup folder",
+        "open startup directory",
+        "show startup programs",
+    ],
+    "manage_services": [
+        "manage services",
+        "open services",
+        "show services",
+        "windows services",
+        "service manager",
+    ],
+    "start_whisper": [
+        "start whisper",
+        "launch whisper",
+        "run whisper",
+        "open whisper keyboard",
+    ],
+    "start_grok": [
+        "start grok",
+        "open grok",
+        "launch grok",
+        "run grok",
+    ],
 }
 
 
@@ -362,6 +412,11 @@ ACTIONS = {
     "open negative screen": lambda: subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     ),
+    "open_task_scheduler": lambda: os.system("taskschd.msc"),
+    "open_startup_folder": lambda: os.system("shell:startup"),
+    "manage_services": lambda: os.system("services.msc"),
+    "start_whisper": start_whisper,
+    "start_grok": start_grok,
 }
 
 
@@ -847,6 +902,46 @@ tools = [
         "function": {
             "name": "open_vscode",
             "description": "Open Visual Studio Code on the user's machine.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_task_scheduler",
+            "description": "Opens Windows Task Scheduler",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_startup_folder",
+            "description": "Opens Windows startup folder where programs that run at startup are stored",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_services",
+            "description": "Opens Windows Services manager to view and control system services",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_whisper",
+            "description": "Starts Whisper keyboard application with administrator privileges",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_grok",
+            "description": "Starts Grok application by opening the specified shortcut",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
