@@ -298,6 +298,10 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
     try:
         pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
 
+        logging.error(
+            f"pre_recording_transcript: {pre_recording_transcript} keyword_index: {keyword_index}"
+        )
+
         if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
@@ -306,6 +310,8 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+            """TODO:stop_recording(keyword_index) was added here and this is the only change in this function"""
+            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
@@ -314,6 +320,9 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+            """TODO:stop_recording(keyword_index) was added here and this is the only change in this function"""
+            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+
         elif keyword_index == 3 and "jarvis" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
@@ -322,6 +331,8 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+            """TODO:stop_recording(keyword_index) was added here and this is the only change in this function"""
+            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
 
     except Exception as e:
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
@@ -382,14 +393,15 @@ def start_recording(keyword_index=None):
             # Run the transcription and keyword checking in a separate thread
             pass
         else:
-            pre_recording_data = np.roll(
-                pre_recording_buffer, -buffer_index, axis=0
-            ).flatten()
+            if pre_recording_buffer is not None and pre_recording_buffer.size > 0:
+                pre_recording_data = np.roll(
+                    pre_recording_buffer, -buffer_index, axis=0
+                ).flatten()
 
-            threading.Thread(
-                target=check_keywords_in_transcription,
-                args=(pre_recording_data, keyword_index),
-            ).start()
+                threading.Thread(
+                    target=check_keywords_in_transcription,
+                    args=(pre_recording_data, keyword_index),
+                ).start()
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
@@ -417,6 +429,25 @@ def stop_recording(keyword_index):
             recording_start_time, \
             True_positve_audio, \
             vad_detector
+
+        """TODO: following code was addeed below 
+        if not recording:
+            if play_pause_pressed:
+                threading.Thread(target=restore_volume_all).start()
+                play_pause_pressed = False
+
+            beep(STOP_BEEP)
+            return 
+            
+            was added here and this is the only change in this function"""
+
+        if not recording:
+            if play_pause_pressed:
+                threading.Thread(target=restore_volume_all).start()
+                play_pause_pressed = False
+
+            beep(STOP_BEEP)
+            return
 
         if not True_positve_audio:
             if play_pause_pressed:
