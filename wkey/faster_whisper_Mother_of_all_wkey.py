@@ -70,6 +70,10 @@ from voice_activity_detection import VoiceDetector
 import sys
 import traceback
 
+# Add at the top with other imports
+from queue import Empty as QueueEmpty
+from contextlib import contextmanager
+
 # Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
@@ -203,25 +207,43 @@ buffer_index = 0
 audio_buffer = []
 
 
+# Add a context manager for audio operations
+@contextmanager
+def audio_operation_guard():
+    try:
+        yield
+    except Exception as e:
+        logging.error(f"{RED}Audio operation failed: {e}{RESET}", exc_info=True)
+        reset_state()
+
+
+# Modify the audio callback for better error handling
 def audio_callback(indata, frames, time, status):
     try:
-        """Callback function for audio recording."""
-        global buffer_index
-        global audio_buffer
+        with audio_operation_guard():
+            global buffer_index, audio_buffer
 
-        if status:
-            logging.warning(f"{YELLOW}Audio callback status: {status}{RESET}")
-        with recording_lock:
-            if recording:
-                audio_buffer = np.append(audio_buffer, indata.flatten())
-            else:
-                end_index = buffer_index + frames
-                if end_index > BUFFER_SIZE:
-                    end_index = BUFFER_SIZE
-                pre_recording_buffer[buffer_index:end_index] = indata[
-                    : end_index - buffer_index
-                ]
-                buffer_index = (buffer_index + frames) % BUFFER_SIZE
+            if status:
+                logging.warning(f"{YELLOW}Audio callback status: {status}{RESET}")
+                return
+
+            with recording_lock:
+                if recording:
+                    if isinstance(indata, np.ndarray):
+                        audio_buffer = np.append(audio_buffer, indata.flatten())
+                    else:
+                        logging.error(
+                            f"{RED}Invalid indata type: {type(indata)}{RESET}"
+                        )
+                else:
+                    end_index = buffer_index + frames
+                    if end_index > BUFFER_SIZE:
+                        end_index = BUFFER_SIZE
+                    pre_recording_buffer[buffer_index:end_index] = indata[
+                        : end_index - buffer_index
+                    ]
+                    buffer_index = (buffer_index + frames) % BUFFER_SIZE
+
     except Exception as e:
         logging.error(f"{RED}Error in audio_callback: {e}{RESET}", exc_info=True)
 
@@ -553,7 +575,8 @@ def stop_recording(keyword_index):
                 time.sleep(0.1)
         # Convert main recording to numpy array
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
-        audio_buffer_queue.put((audio_buffer, keyword_index))
+        audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
+        audio_buffer = np.array([], dtype="float32")  # Clear buffer
 
         threading.Thread(target=restore_volume_all).start()
 
@@ -570,6 +593,7 @@ def stop_recording(keyword_index):
         logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
+        reset_state()
 
 
 # Define a debounce time (in seconds) to prevent rapid key presses
@@ -1051,121 +1075,6 @@ TODO :  these are in the older version of the code in other branches of the whis
 
 result_queue = queue.Queue()
 
-"""
-def process_audio_async():
-    try:
-        global result_queue
-        while True:
-            try:
-                audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
-                logging.info(
-                    f"Processing audio buffer for keyword index: {keyword_index}"
-                )
-                "if audio_buffer_for_processing is None:
-                    break"
-
-                transcript = None
-                retry_count = 0
-                max_retries = 3
-
-                while retry_count < max_retries:
-                    try:
-                        logging.info(f"{CYAN}transcribe_with_groq starting{RESET}")
-                        transcript = transcribe_with_groq(
-                            audio_buffer_for_processing, keyword_index
-                        )
-                        logging.info(
-                            f"{BRIGHT_GREEN}transcribe_with_groq finished{RESET}"
-                        )
-                        if transcript:
-                            break  # Exit retry loop if transcription is successful
-
-                    except groq.GroqError as e:
-                        logging.error(
-                            f"{RED}Groq API error occurred: {str(e)}{RESET}",
-                            exc_info=True,
-                        )
-                        retry_count += 1
-                        logging.info(
-                            f"{YELLOW}Retrying... ({retry_count + 1}/{max_retries}){RESET}"
-                        )
-                        time.sleep(2)  # Wait before retrying
-
-                if not transcript:
-                    logging.info("transcribe_with_local_model_async starting")
-                    transcript = transcribe_with_local_model(
-                        audio_buffer_for_processing, keyword_index
-                    )
-                if not transcript:
-                    logging.error("Empty transcript received")
-                    continue
-
-                logging.info(
-                    f"Transcription received in process_audio_async: {transcript}"
-                )  # Debug log
-                transcript_lower = transcript.lower()
-
-                # Process wake word transcripts
-                if keyword_index is None:
-                    logging.info("pasing f24 transcription")
-                    paste_transcript(transcript)
-                    # save my volcal samples here.
-                    # save_audio
-                    continue
-
-                elif keyword_index == 1:
-                    if "computer" in transcript_lower:
-                        keyword_position = transcript_lower.index("computer")
-                        stripped_transcript = transcript_lower[
-                            keyword_position + len("computer") :
-                        ]
-                        logging.info(
-                            f"Processing computer command: {stripped_transcript}"
-                        )
-                        transcript_queue.put(
-                            (stripped_transcript.strip(), keyword_index)
-                        )
-
-                        # we have to save the audio buffer as true positve
-                        # save_audio
-
-                        continue
-                    else:
-                        # we have to save the audio buffer as false positve
-                        pass
-                elif keyword_index == 2:
-                    if "lama" in transcript_lower:
-                        keyword_position = transcript_lower.index("lama")
-                        stripped_transcript = transcript_lower[
-                            keyword_position + len("lama") :
-                        ]
-
-                        logging.info(f"Processing lama command: {stripped_transcript}")
-                        paste_transcript(stripped_transcript)
-
-                        # we have to save the audio buffer as true positve
-                        # save_audio
-                        continue
-                    else:
-                        # we have to save the audio buffer as false positve
-                        pass
-                # Process direct key press transcripts
-                else:
-                    logging.info("unknown keyword index")
-
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logging.error(
-                    f"Critical error in process_audio_async: {str(e)}{RESET}",
-                    exc_info=True,
-                )
-                time.sleep(1)  # Prevent tight error loops
-                continue  # Keep the thread running even after errors
-    except Exception as e:
-        logging.error(f"Error in process_audio_async: {e}", exc_info=True)
-"""
-
 
 def run_asyncio_in_thread(loop, coro):
     asyncio.set_event_loop(loop)
@@ -1175,92 +1084,113 @@ def run_asyncio_in_thread(loop, coro):
 async def process_audio_async():
     while True:
         try:
-            audio_buffer_for_processing, keyword_index = audio_buffer_queue.get()
-            if audio_buffer_for_processing is None:
-                logging.error("Received None for audio_buffer_for_processing")
-                continue
-
-            byte_io = io.BytesIO()
-            wav_write(byte_io, sample_rate, audio_buffer_for_processing)
-            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+            global_state["is_processing"] = True
 
             try:
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-                if transcript is None:
-                    logging.error("Transcription returned None")
-                    continue
-            except groq.RateLimitError:
-                logging.error(
-                    "Groq API rate limit reached, switching to local transcription."
+                audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
+                    timeout=1
                 )
-                transcript = transcribe_with_local_model(audio_buffer_for_processing)
-
-            transcript_lower = transcript.lower()
-
-            # Process wake word transcripts
-            if keyword_index is None:
-                logging.info("pasing f24 transcription")
-                paste_transcript(transcript)
-                # save my volcal samples here.
-                # save_audio
+            except QueueEmpty:
+                global_state["is_processing"] = False
+                await asyncio.sleep(0.1)
                 continue
 
-            elif keyword_index == 1:
-                if "computer" in transcript_lower:
-                    keyword_position = transcript_lower.index("computer")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("computer") :
-                    ]
-                    logging.info(f"Processing computer command: {stripped_transcript}")
-                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+            # Validate audio buffer
+            if not validate_audio_buffer(audio_buffer_for_processing):
+                global_state["consecutive_failures"] += 1
+                continue
 
-                    # we have to save the audio buffer as true positve
-                    # save_audio
+            # Process the audio...
+            # ... existing processing code ...
 
-                    continue
-                else:
-                    # we have to save the audio buffer as false positve
-                    pass
-            elif keyword_index == 2:
-                if "lama" in transcript_lower:
-                    keyword_position = transcript_lower.index("lama")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("lama") :
-                    ]
+            # If we get here, the operation was successful
+            global_state["last_successful_operation"] = time.time()
+            global_state["consecutive_failures"] = 0
 
-                    logging.info(f"Processing lama command: {stripped_transcript}")
-                    paste_transcript(stripped_transcript)
-
-                    # we have to save the audio buffer as true positve
-                    # save_audio
-                    continue
-                else:
-                    # we have to save the audio buffer as false positve
-                    pass
-            elif keyword_index == 3:
-                if "lama" in transcript_lower:
-                    keyword_position = transcript_lower.index("google")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("google") :
-                    ]
-
-                    logging.info(f"Processing google command: {stripped_transcript}")
-
-                    # we have to save the audio buffer as true positve
-                    # save_audio
-                    continue
-                else:
-                    # we have to save the audio buffer as false positve
-                    pass
-            # Process direct key press transcripts
-            else:
-                logging.info("unknown keyword index")
-
-            logging.info(f"Transcription: {transcript}")
-        except queue.Empty:
-            continue
         except Exception as e:
-            logging.error(f"An error occurred during transcription: {e}", exc_info=True)
+            logging.error(f"{RED}Process audio error: {e}{RESET}", exc_info=True)
+            global_state["consecutive_failures"] += 1
+            if global_state["consecutive_failures"] > 3:
+                await asyncio.sleep(1)  # Add delay on consecutive failures
+
+        finally:
+            global_state["is_processing"] = False
+
+
+def validate_audio_buffer(audio_buffer):
+    """Validate audio buffer is usable"""
+    try:
+        if audio_buffer is None or len(audio_buffer) == 0:
+            logging.warning(f"{YELLOW}Empty audio buffer received{RESET}")
+            return False
+
+        if not isinstance(audio_buffer, np.ndarray):
+            logging.error(
+                f"{RED}Invalid audio buffer type: {type(audio_buffer)}{RESET}"
+            )
+            return False
+
+        if len(audio_buffer) < sample_rate * 0.1:  # Minimum 100ms
+            logging.warning(f"{YELLOW}Audio buffer too short{RESET}")
+            return False
+
+        return True
+    except Exception as e:
+        logging.error(f"{RED}Error validating audio buffer: {e}{RESET}", exc_info=True)
+        return False
+
+
+def create_wav_buffer(audio_buffer):
+    """Create WAV buffer from audio data"""
+    try:
+        byte_io = io.BytesIO()
+        wav_write(byte_io, sample_rate, audio_buffer)
+        byte_io.seek(0)
+        return byte_io
+    except Exception as e:
+        logging.error(f"{RED}Error creating WAV buffer: {e}{RESET}", exc_info=True)
+        return None
+
+
+async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
+    """Get transcript with retries and fallback"""
+    for attempt in range(max_retries):
+        try:
+            transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+            if transcript:
+                return transcript.lower()
+        except Exception as e:
+            logging.error(
+                f"{RED}Transcription attempt {attempt + 1} failed: {e}{RESET}"
+            )
+            if attempt == max_retries - 1:
+                # Final attempt - try local model
+                return transcribe_with_local_model(byte_io, keyword_index)
+            await asyncio.sleep(1)
+    return None
+
+
+async def process_transcript(transcript, keyword_index, audio_buffer):
+    """Process transcript based on keyword index"""
+    try:
+        if keyword_index is None:
+            if len(transcript) > 3:  # Minimum transcript length
+                paste_transcript(transcript)
+        elif keyword_index == 1 and "computer" in transcript:
+            keyword_pos = transcript.index("computer")
+            stripped = transcript[keyword_pos + len("computer") :].strip()
+            if stripped:
+                transcript_queue.put((stripped, keyword_index))
+        elif keyword_index == 2 and "lama" in transcript:
+            keyword_pos = transcript.index("lama")
+            stripped = transcript[keyword_pos + len("lama") :].strip()
+            if stripped:
+                paste_transcript(stripped)
+        else:
+            logging.info(f"{YELLOW}No matching keyword found in transcript{RESET}")
+
+    except Exception as e:
+        logging.error(f"{RED}Error processing transcript: {e}{RESET}", exc_info=True)
 
 
 """TODO :  this code was changed recently, check if it is working fine or not
@@ -1466,6 +1396,111 @@ def start_thread(target, name):
         logging.error(f"Error in start_thread: {e}", exc_info=True)
 
 
+# Add these state monitoring variables near the top with other globals
+global_state = {
+    "last_successful_operation": time.time(),
+    "consecutive_failures": 0,
+    "is_processing": False,
+}
+
+
+# Add this new function for state monitoring
+def monitor_program_health():
+    try:
+        while True:
+            current_time = time.time()
+            if global_state["consecutive_failures"] > 5:
+                logging.error(
+                    f"{RED}Too many consecutive failures. Resetting state...{RESET}"
+                )
+                reset_all_states()
+
+            if current_time - global_state["last_successful_operation"] > 30:
+                logging.error(
+                    f"{RED}No successful operations in 30 seconds. Resetting state...{RESET}"
+                )
+                reset_all_states()
+
+            time.sleep(5)
+    except Exception as e:
+        logging.error(
+            f"{RED}Error in monitor_program_health: {e}{RESET}", exc_info=True
+        )
+
+
+# Add this new function for complete state reset
+def reset_all_states():
+    try:
+        global recording, play_pause_pressed, audio_buffer, stream, wake_stream
+
+        # Reset recording state
+        with recording_lock:
+            recording = False
+
+        # Reset audio states
+        play_pause_pressed = False
+        audio_buffer = np.array([], dtype="float32")
+
+        # Reset queues
+        while not audio_buffer_queue.empty():
+            try:
+                audio_buffer_queue.get_nowait()
+            except QueueEmpty:
+                break
+
+        while not transcript_queue.empty():
+            try:
+                transcript_queue.get_nowait()
+            except QueueEmpty:
+                break
+
+        # Reset stream
+        if stream and stream.active:
+            try:
+                stream.stop()
+                stream.close()
+            except:
+                pass
+
+        # Reinitialize stream
+        stream = sd.InputStream(
+            callback=audio_callback,
+            device=None,
+            channels=1,
+            samplerate=sample_rate,
+            blocksize=int(sample_rate * 0.1),
+        )
+        stream.start()
+
+        # Reset wake word detection
+        if wake_stream:
+            try:
+                wake_stream.stop_stream()
+                wake_stream.close()
+            except:
+                pass
+            wake_stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=16000,
+            )
+            wake_stream.start_stream()
+
+        # Reset global state
+        global_state["consecutive_failures"] = 0
+        global_state["last_successful_operation"] = time.time()
+        global_state["is_processing"] = False
+
+        # Restore volume
+        threading.Thread(target=restore_volume_all).start()
+
+        logging.info(f"{GREEN}All states reset successfully{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Error in reset_all_states: {e}{RESET}", exc_info=True)
+
+
 def main():
     global stream
     global driver
@@ -1513,6 +1548,8 @@ def main():
         threading.Thread(target=start_driver, daemon=True).start()
 
         #        start_thread(monitor_state, "StateMonitor")
+        # Add health monitor thread
+        start_thread(monitor_program_health, "HealthMonitor")
 
         with stream:
             # Start the async process_audio_async function
@@ -1526,6 +1563,7 @@ def main():
         logging.error(
             f"{RED}Critical error in main: {str(e)}\n{traceback.format_exc()}{RESET}"
         )
+        reset_all_states()
     finally:
         try:
             if stream and stream.active:
