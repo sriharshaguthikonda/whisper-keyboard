@@ -1081,6 +1081,18 @@ def run_asyncio_in_thread(loop, coro):
     loop.run_until_complete(coro)
 
 
+# Add this helper function for audio processing
+def handle_transcription_error(e, attempt, max_retries):
+    """Handle transcription errors with proper backoff"""
+    logging.error(
+        f"{RED}Transcription error (attempt {attempt+1}/{max_retries}): {e}{RESET}"
+    )
+    if attempt < max_retries - 1:
+        delay = min(2**attempt, 8)  # Exponential backoff
+        return True, delay
+    return False, 0
+
+
 async def process_audio_async():
     while True:
         try:
@@ -1095,26 +1107,67 @@ async def process_audio_async():
                 await asyncio.sleep(0.1)
                 continue
 
-            # Validate audio buffer
             if not validate_audio_buffer(audio_buffer_for_processing):
                 global_state["consecutive_failures"] += 1
                 continue
 
-            # Process the audio...
-            # ... existing processing code ...
+            # Create WAV buffer
+            byte_io = create_wav_buffer(audio_buffer_for_processing)
+            if byte_io is None:
+                continue
 
-            # If we get here, the operation was successful
-            global_state["last_successful_operation"] = time.time()
-            global_state["consecutive_failures"] = 0
+            # Try Groq transcription with retries
+            transcript = None
+            for attempt in range(3):
+                try:
+                    transcript = await transcribe_with_groq_async(
+                        byte_io, keyword_index
+                    )
+                    if transcript:
+                        break
+                    retry, delay = handle_transcription_error(None, attempt, 3)
+                    if retry:
+                        await asyncio.sleep(delay)
+                    continue
+                except groq.RateLimitError:
+                    logging.warning(
+                        f"{YELLOW}Groq API rate limit reached, trying local model...{RESET}"
+                    )
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
+                    )
+                    break
+                except Exception as e:
+                    retry, delay = handle_transcription_error(e, attempt, 3)
+                    if retry:
+                        await asyncio.sleep(delay)
+                    continue
+
+            if not transcript:
+                global_state["consecutive_failures"] += 1
+                continue
+
+            # Process transcript based on keyword_index
+            try:
+                await process_transcript(
+                    transcript.lower(), keyword_index, audio_buffer_for_processing
+                )
+                global_state["last_successful_operation"] = time.time()
+                global_state["consecutive_failures"] = 0
+            except Exception as e:
+                logging.error(f"{RED}Error processing transcript: {e}{RESET}")
+                global_state["consecutive_failures"] += 1
 
         except Exception as e:
-            logging.error(f"{RED}Process audio error: {e}{RESET}", exc_info=True)
+            logging.error(
+                f"{RED}Critical error in process_audio_async: {e}{RESET}", exc_info=True
+            )
             global_state["consecutive_failures"] += 1
             if global_state["consecutive_failures"] > 3:
-                await asyncio.sleep(1)  # Add delay on consecutive failures
-
+                await asyncio.sleep(1)
         finally:
             global_state["is_processing"] = False
+            byte_io = None  # Ensure resources are freed
 
 
 def validate_audio_buffer(audio_buffer):
