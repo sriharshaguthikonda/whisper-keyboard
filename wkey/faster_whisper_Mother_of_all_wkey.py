@@ -1,5 +1,8 @@
 """TODO :  the merge was not complete we need to do more testing and do a complete merge of the code with other branches too"""
 
+"""TODO :   haven't tested this faster whisper merging all good ones into improve functions troubleshooting branch"""
+"""TODO :   haven't tested this faster whisper merging all good ones into improve functions troubleshooting branch"""
+"""TODO :   haven't tested this faster whisper merging all good ones into improve functions troubleshooting branch"""
 """
 ##    ##  #######            ##     ## ####  ######
 ###   ## ##     ##           ###   ###  ##  ##    ##
