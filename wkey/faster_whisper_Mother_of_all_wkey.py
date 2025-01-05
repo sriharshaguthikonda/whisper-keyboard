@@ -1101,7 +1101,81 @@ async def process_audio_async():
                 continue
 
             # Process the audio...
-            # ... existing processing code ...
+            byte_io = io.BytesIO()
+            wav_write(byte_io, sample_rate, audio_buffer_for_processing)
+            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+
+            try:
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript is None:
+                    logging.error("Transcription returned None")
+                    continue
+            except groq.RateLimitError:
+                logging.error(
+                    "Groq API rate limit reached, switching to local transcription."
+                )
+                transcript = transcribe_with_local_model(audio_buffer_for_processing)
+
+            transcript_lower = transcript.lower()
+
+            # Process wake word transcripts
+            if keyword_index is None:
+                logging.info("pasing f24 transcription")
+                paste_transcript(transcript)
+                # save my volcal samples here.
+                # save_audio
+                continue
+
+            elif keyword_index == 1:
+                if "computer" in transcript_lower:
+                    keyword_position = transcript_lower.index("computer")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("computer") :
+                    ]
+                    logging.info(f"Processing computer command: {stripped_transcript}")
+                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+
+                    continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            elif keyword_index == 2:
+                if "lama" in transcript_lower:
+                    keyword_position = transcript_lower.index("lama")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("lama") :
+                    ]
+
+                    logging.info(f"Processing lama command: {stripped_transcript}")
+                    paste_transcript(stripped_transcript)
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+                    continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            elif keyword_index == 3:
+                if "lama" in transcript_lower:
+                    keyword_position = transcript_lower.index("google")
+                    stripped_transcript = transcript_lower[
+                        keyword_position + len("google") :
+                    ]
+
+                    logging.info(f"Processing google command: {stripped_transcript}")
+
+                    # we have to save the audio buffer as true positve
+                    # save_audio
+                    continue
+                else:
+                    # we have to save the audio buffer as false positve
+                    pass
+            # Process direct key press transcripts
+            else:
+                logging.info("unknown keyword index")
 
             # If we get here, the operation was successful
             global_state["last_successful_operation"] = time.time()
