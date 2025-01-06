@@ -7,6 +7,7 @@ from fuzzywuzzy import process
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
 from selenium.webdriver.edge.options import Options
+import logging
 
 # from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import WebDriverException, SessionNotCreatedException
@@ -32,6 +33,14 @@ import queue
 import tkinter as tk
 
 
+from commands_and_tools import (
+    COMMAND_MAPPINGS,
+    ACTIONS,
+    tools,
+    extra_tools,
+)
+
+
 load_dotenv()
 api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=api_key)
@@ -41,6 +50,29 @@ ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
 TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
 GENERAL_MODEL = "llama3-70b-8192"
+
+
+# ANSI Color codes
+BLUE = "\033[94m"
+GREEN = "\033[92m"
+YELLOW = "\033[93m"
+RED = "\033[91m"
+MAGENTA = "\033[95m"
+CYAN = "\033[96m"
+RESET = "\033[0m"
+BOLD = "\033[1m"
+
+# Additional ANSI Color codes
+ORANGE = "\033[38;5;214m"
+PINK = "\033[38;5;198m"
+
+# Additional ANSI Color codes
+BRIGHT_GREEN = "\033[92m"
+BRIGHT_YELLOW = "\033[93m"
+BRIGHT_BLUE = "\033[94m"
+BRIGHT_MAGENTA = "\033[95m"
+BRIGHT_CYAN = "\033[96m"
+BRIGHT_WHITE = "\033[97m"
 
 
 # Path to your Edge WebDriver
@@ -69,21 +101,38 @@ driver_pid = None
 session_id = None
 executor_url = None
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        # logging.FileHandler("voice_commands_errors.log"),  # Also log to file
+    ],
+)
+
 
 def start_driver():
     global driver, driver_pid, session_id, executor_url
 
+    logging.debug("Initializing web driver")
     try:
         driver = webdriver.Edge(service=service, options=options)
         time.sleep(6)
+        logging.debug("Loading Spotify web player")
         driver.get("https://open.spotify.com/collection/tracks")
-        # driver.execute_script("window.focus();")
-        time.sleep(5)  # Wait for the page to load
+        time.sleep(5)
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
         executor_url = driver.command_executor._url
+        logging.debug(f"Driver initialized with PID: {driver_pid}")
+        logging.info(
+            f"{BRIGHT_GREEN}Spotify web player initialized successfully{RESET}"
+        )
     except Exception as e:
-        print(f"Error terminating WebDriver process: {e}")
+        logging.error(f"Failed to initialize web driver: {str(e)}", exc_info=True)
+        logging.info(f"{RED}Error initializing web driver: {e}{RESET}")
 
 
 """
@@ -100,6 +149,7 @@ def reconnect_driver():
             driver.session_id = session_id
             print("Reconnected to the existing session.")
     except (SessionNotCreatedException, WebDriverException) as e:
+        logging.error(f"Failed to reconnect to session: {str(e)}", exc_info=True)
         print(f"Failed to reconnect to the session: {str(e)}")
 
         # Attempt to start a new session
@@ -116,6 +166,9 @@ def reconnect_driver():
             time.sleep(3)
             print("Started a new session.")
         except Exception as new_session_error:
+            logging.error(
+                f"Failed to create new session: {str(new_session_error)}", exc_info=True
+            )
             print(f"Failed to start a new session: {new_session_error}")
 
 
@@ -159,23 +212,32 @@ def change_device():
 
 # Control playback
 def play_music():
+    logging.debug("Attempting to play music")
     try:
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
+        logging.debug("Play button clicked")
         change_device()
+        logging.info(f"{CYAN}Music playback started{RESET}")
     except Exception as e:
         error_message = str(e)
+        logging.error(f"Play music error: {error_message}", exc_info=True)
         if "disconnected" in error_message:
-            print("Attempting to reconnect due to DevTools disconnection...")
+            logging.debug("DevTools disconnection detected")
+            logging.info(
+                f"{YELLOW}Attempting to reconnect due to DevTools disconnection...{RESET}"
+            )
             reconnect_driver()
             try:
                 play_button = driver.find_element(
                     By.XPATH, "//button[@aria-label='Play']"
                 )
                 play_button.click()
-                print("Playback started after reconnection.")
+                logging.info(f"{GREEN}Playback started after reconnection{RESET}")
             except Exception as e:
-                print(f"Error while trying to play after reconnection: {e}")
+                logging.info(
+                    f"{RED}Error while trying to play after reconnection: {e}{RESET}"
+                )
 
         elif "target window already closed" in error_message:
             driver.quit()
@@ -273,141 +335,6 @@ def previous_track():
  ######   #######  ##     ## ##     ## ##     ## ##    ## ########  
 """
 
-COMMAND_MAPPINGS = {
-    # System Commands
-    "search windows": [
-        "open start menu",
-        "show start menu",
-        "Windows search",
-    ],
-    "show desktop": ["show desktop", "minimize everything"],
-    "open settings": ["open settings", "settings"],
-    "lock screen": ["lock screen", "lock the computer"],
-    "take screenshot": ["take screenshot", "capture screen"],
-    "open file explorer": [
-        "open file explorer",
-        "explore files",
-    ],
-    "windows search": ["open search", "search"],
-    "open run dialog": ["open run dialog", "run command"],
-    "open task manager": [
-        "open task manager",
-        "task manager",
-    ],
-    "minimize all windows": [
-        "minimize all windows",
-        "minimize windows",
-    ],
-    "restore windows": [
-        "restore windows",
-        "restore all windows",
-    ],
-    #    "shutdown system": ["shutdown system", "turn off computer"],
-    #    "restart system": ["restart system", "reboot computer"],
-    #    "log off": ["log off", "sign out"],
-    # Application Commands
-    #     "open control panel": [
-    #         "open control panel",
-    #         "control panel",
-    #     ],
-    "open calculator": ["open calculator", "calculator"],
-    "open notepad": ["open notepad", "notepad"],
-    "open word": ["open word", "start word"],
-    "open excel": ["open excel", "start excel"],
-    "open powerpoint": [
-        "open powerpoint",
-        "start powerpoint",
-    ],
-    "open outlook": ["open outlook", "start outlook"],
-    "open paint": ["open paint", "start paint"],
-    "open command prompt": [
-        "open command prompt",
-        "open console",
-        "command prompt",
-        "Open command drop",
-    ],
-    "open powershell": ["open powershell", "powershell"],
-    "open edge": ["open edge", "start edge"],
-    "open chrome": ["open chrome", "start chrome"],
-    "open firefox": ["open firefox", "start firefox"],
-    # Volume Controls
-    "open sound control panel": [
-        "open sound control panel",
-        "open audio settings",
-    ],
-    "volume up": ["volume up", "increase volume"],
-    "volume down": ["volume down", "decrease volume"],
-    # "mute volume": ["mute volume", "mute sound"],
-    # Media Controls
-    "play media": [
-        "play media",
-        "play",
-        "play music",
-    ],
-    "stop media": [
-        "stop media",
-        "stop",
-        "stop music",
-    ],
-    "next track": [
-        "next track",
-        "next song",
-        "skip",
-        "play next song",
-    ],
-    "previous track": [
-        "previous track",
-        "previous song",
-        "replay",
-        "play previous song",
-    ],
-    # Custom or Complex Operations
-    "open device manager": [
-        "open device manager",
-        "device manager",
-    ],
-    "open disk management": [
-        "open disk management",
-        "disk management",
-        "format disk",
-        "hard disk",
-    ],
-    "open network connections": [
-        "open network connections",
-        "network connections",
-    ],
-    "open system properties": [
-        "open system properties",
-        "system properties",
-    ],
-    "open date and time": [
-        "open date and time",
-        "date and time",
-    ],
-    # System Commands
-    "ping google": [
-        "ping google",
-        "check internet connection",
-    ],
-    "flush dns": ["flush dns", "reset dns cache"],
-    # Add more as needed Play, pause, media.
-    "restart voicemeeter": [
-        "restart voice meter",
-        "set voice meter",
-    ],
-    "load display fusion profile": [
-        "display fusion",
-        "a computer start display fusion",
-        "load monitor profile",
-        "set monitor profile",
-    ],
-    # Add more as needed Play, pause, media.
-    "open negative screen": [
-        "open negative screen",
-        "invert screen",
-    ],
-}
-
 
 """
    ###     ######  ######## ####  #######  ##    ##  ######  
@@ -418,74 +345,6 @@ COMMAND_MAPPINGS = {
 ##     ## ##    ##    ##     ##  ##     ## ##   ### ##    ## 
 ##     ##  ######     ##    ####  #######  ##    ##  ######  
 """
-
-# Define actions for commands
-ACTIONS = {
-    # System Commands
-    "search windows": lambda: pyautogui.press("win"),
-    "show desktop": lambda: pyautogui.hotkey("win", "d"),
-    "open settings": lambda: pyautogui.hotkey("win", "i"),
-    "lock screen": lambda: pyautogui.hotkey("win", "l"),
-    "take screenshot": lambda: pyautogui.hotkey("win", "prtsc"),
-    "open file explorer": lambda: pyautogui.hotkey("win", "e"),
-    "windows search": lambda: pyautogui.hotkey("win", "s"),
-    "open run dialog": lambda: pyautogui.hotkey("win", "r"),
-    "open task manager": lambda: pyautogui.hotkey("ctrl", "shift", "esc"),
-    "minimize all windows": lambda: pyautogui.hotkey("win", "m"),
-    "restore windows": lambda: pyautogui.hotkey("win", "shift", "m"),
-    #    "shutdown system": lambda: os.system('shutdown /s /t 0'),
-    #    "restart system": lambda: os.system('shutdown /r /t 0'),
-    # "log off": lambda: os.system('shutdown /l'),
-    # Application Commands
-    "open control panel": lambda: os.system("control"),
-    "open calculator": lambda: os.system("calc"),
-    "open notepad": lambda: os.system("notepad"),
-    "open word": lambda: os.system("start winword"),
-    "open excel": lambda: os.system("start excel"),
-    "open powerpoint": lambda: os.system("start powerpnt"),
-    "open outlook": lambda: os.system("start outlook"),
-    "open paint": lambda: os.system("start mspaint"),
-    "open command prompt": lambda: os.system("start cmd"),
-    "open powershell": lambda: os.system("start powershell"),
-    "open edge": lambda: os.system("start msedge"),
-    "open chrome": lambda: os.system("start chrome"),
-    "open firefox": lambda: os.system("start firefox"),
-    # Volume Controls
-    "open sound control panel": lambda: os.system("control mmsys.cpl"),
-    "volume up": lambda: pyautogui.press("volumeup"),
-    "volume down": lambda: pyautogui.press("volumedown"),
-    "mute volume": lambda: pyautogui.press("volumemute"),
-    # Media Controls
-    "play media": play_music,
-    "stop media": pause_song,
-    "next track": next_track,
-    "previous track": previous_track,
-    # Custom or Complex Operations
-    "open device manager": lambda: os.system("devmgmt.msc"),
-    "open disk management": lambda: os.system("diskmgmt.msc"),
-    "open network connections": lambda: os.system("ncpa.cpl"),
-    "open system properties": lambda: os.system("sysdm.cpl"),
-    "open date and time": lambda: os.system("timedate.cpl"),
-    # System Commands
-    "ping google": lambda: os.system("ping www.google.com"),
-    "flush dns": lambda: os.system("ipconfig /flushdns"),
-    # Voicemeeter Commands
-    "restart voicemeeter": lambda: subprocess.run(
-        ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
-    ),
-    # DisplayFusion Commands
-    "load display fusion profile": lambda: subprocess.run(
-        [
-            "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
-            "-monitorloadprofile",
-            "Triple monitor medrivision bluegriffon textcrawler",
-        ]
-    ),
-    # Add more as needed
-    "open negative screen": lambda: subprocess.Popen(
-        ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
-    ),
-}
 
 
 """
@@ -880,487 +739,69 @@ def split_sentence(response):
    ##     #######   #######  ########  ######  
 """
 
-tools = [
-    {
-        "type": "function",
-        "function": {
-            "name": "search_windows",
-            "description": "Open the Windows start menu",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "show_desktop",
-            "description": "Minimize all open windows to show the desktop",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_settings",
-            "description": "Open Windows settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lock_screen",
-            "description": "Lock the computer screen",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "take_screenshot",
-            "description": "Take a screenshot",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_file_explorer",
-            "description": "Open the file explorer",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "windows_search",
-            "description": "Open the Windows search bar",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_run_dialog",
-            "description": "Open the Run dialog box",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_task_manager",
-            "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "minimize_all_windows",
-            "description": "Minimize all windows",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "restore_windows",
-            "description": "Restore minimized windows",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_control_panel",
-            "description": "Open the Control Panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_calculator",
-            "description": "Open the Calculator application",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_notepad",
-            "description": "Open Notepad",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_word",
-            "description": "Open Microsoft Word",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_excel",
-            "description": "Open Microsoft Excel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powerpoint",
-            "description": "Open Microsoft PowerPoint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_outlook",
-            "description": "Open Microsoft Outlook",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_paint",
-            "description": "Open Microsoft Paint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_command_prompt",
-            "description": "Open Command Prompt",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powershell",
-            "description": "Open PowerShell",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_edge",
-            "description": "Open Microsoft Edge",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_chrome",
-            "description": "Open Google Chrome",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_firefox",
-            "description": "Open Mozilla Firefox",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_sound_control_panel",
-            "description": "Open the Sound control panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "volume_up",
-            "description": "Increase the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "volume_down",
-            "description": "Decrease the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "mute_volume",
-            "description": "Mute the system volume",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "play_music",
-            "description": "Play media; optionally specify a song",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "song": {
-                        "type": "string",
-                        "description": "The name of the song or media file to play",
-                    }
-                },
-                "required": [],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "stop_media",
-            "description": "Stop media playback",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "next_track",
-            "description": "Skip to the next track or play next song",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "previous_track",
-            "description": "Go to the previous track",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "pause_song",
-            "description": "Pause media playback",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "restart_media",
-            "description": "Restart media playback",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_browser",
-            "description": "Open a specified browser",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "browser": {
-                        "type": "string",
-                        "description": "The name of the browser to open (e.g., 'Chrome', 'Firefox')",
-                    }
-                },
-                "required": ["browser"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_website",
-            "description": "Open a specified website",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "url": {
-                        "type": "string",
-                        "description": "The URL of the website to open",
-                    }
-                },
-                "required": ["url"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "search_google",
-            "description": "Search Google with a specified query",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "The search query for Google",
-                    }
-                },
-                "required": ["query"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_device_manager",
-            "description": "Open the Device Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_disk_management",
-            "description": "Open Disk Management or hard disk settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_network_connections",
-            "description": "Open Network Connections",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_system_properties",
-            "description": "Open System Properties",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_date_and_time",
-            "description": "Open Date and Time settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "ping_google",
-            "description": "Ping Google to check internet connectivity",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "flush_dns",
-            "description": "Flush the DNS resolver cache",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "restart_voicemeeter",
-            "description": "Restart Voicemeeter",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "load_display_fusion_profile",
-            "description": "Load a DisplayFusion monitor load profile",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "profile_name": {
-                        "type": "string",
-                        "description": "The name of the DisplayFusion profile to load",
-                    }
-                },
-                "required": ["profile_name"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_negative_screen",
-            "description": "Open the Negative Screen application",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-]
-
 
 def execute_command_run_with_tool(query):
-    route = route_query(query)  # Step 1: Determine if a tool is needed
+    try:
+        logging.debug(f"Processing command: {query}")
+        route = route_query(query)  # Step 1: Determine if a tool is needed
 
-    # Step 2: Handle the result of routing
-    if route == "NO TOOL":
-        # Use the general model if no tools are needed
-        run_general(query)
-    else:
-        # Step 3: Handle tool usage
-        tools_messages = [
-            {
-                "role": "system",
-                "content": """
-                1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
-                2. if there is "and" in the query, then you will have to select two functions
-                """,
-            },
-            {
-                "role": "user",
-                "content": query,
-            },
-        ]
-        # Step 4: Get the response from the model that handles tool usage
-        response = client.chat.completions.create(
-            model=TOOL_USE_MODEL,
-            messages=tools_messages,
-            tools=tools,
-            tool_choice="auto",  # Automatically decide which tool to use
-            max_tokens=4096,
-        )
-        response_message = response.choices[0].message
-        print(response_message)
-        tool_calls = response_message.tool_calls
-
-        # Step 5: Call the functions dynamically based on the model's tool calls
-        if tool_calls:
-            for tool_call in tool_calls:
-                # Extract arguments and function name
-                function_args = json.loads(tool_call.function.arguments)
-                function_name = tool_call.function.name
-
-                # Dynamically call the function using globals()
-                if function_name in globals():
-                    try:
-                        # Call the function with the arguments
-                        result = globals()[function_name](**function_args)
-                        print(f"Executed {function_name} with result: {result}")
-                        # visual_feedback(function_name, result)
-                    except Exception as e:
-                        print(f"Error executing function {function_name}: {e}")
-                else:
-                    print(f"Function {function_name} not found in globals.")
+        logging.debug(f"Route decision: {route}")
+        # Step 2: Handle the result of routing
+        if route == "NO TOOL":
+            # Use the general model if no tools are needed
+            run_general(query)
         else:
-            print("No tool calls were made by the model.")
+            # Step 3: Handle tool usage
+            tools_messages = [
+                {
+                    "role": "system",
+                    "content": """
+                    1. you are a tool selection assistant. pick the best possible tool among tools for the given query. 
+                    2. if there is "and" in the query, then you will have to select two functions
+                    """,
+                },
+                {
+                    "role": "user",
+                    "content": query,
+                },
+            ]
+            # Step 4: Get the response from the model that handles tool usage
+            response = client.chat.completions.create(
+                model=TOOL_USE_MODEL,
+                messages=tools_messages,
+                tools=tools,
+                tool_choice="auto",  # Automatically decide which tool to use
+                max_tokens=4096,
+            )
+            response_message = response.choices[0].message
+            print(response_message)
+            tool_calls = response_message.tool_calls
 
-    return True  # Function executed successfully
+            # Step 5: Call the functions dynamically based on the model's tool calls
+            if tool_calls:
+                for tool_call in tool_calls:
+                    # Extract arguments and function name
+                    function_args = json.loads(tool_call.function.arguments)
+                    function_name = tool_call.function.name
+
+                    # Dynamically call the function using globals()
+                    if function_name in globals():
+                        try:
+                            # Call the function with the arguments
+                            result = globals()[function_name](**function_args)
+                            print(f"Executed {function_name} with result: {result}")
+                            # visual_feedback(function_name, result)
+                        except Exception as e:
+                            print(f"Error executing function {function_name}: {e}")
+                    else:
+                        print(f"Function {function_name} not found in globals.")
+            else:
+                print("No tool calls were made by the model.")
+
+        return True  # Function executed successfully
+    except Exception as e:
+        logging.error(f"Command execution error: {str(e)}", exc_info=True)
+        return False
 
 
 def visual_feedback(function_name, result):
