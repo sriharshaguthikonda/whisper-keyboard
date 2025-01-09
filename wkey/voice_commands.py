@@ -47,6 +47,7 @@ from commands_and_tools import (
     COMMAND_MAPPINGS,
     ACTIONS,
     tools,
+    olma_tools,
     extra_tools,
 )
 
@@ -112,6 +113,10 @@ ROUTING_MODEL = "llama3-70b-8192"
 TOOL_USE_MODEL = "llama-3.3-70b-versatile"
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
+# OLLAMA_FUNC_MODEL = "qwen2.5-coder:0.5b"
+OLLAMA_FUNC_MODEL = "llama3.2:latest"
+# OLLAMA_FUNC_MODEL = "llama3-groq-tool-use:latest"
+# OLLAMA_FUNC_MODEL = "llama3.2:1b"
 
 
 # Path to your Edge WebDriver
@@ -243,6 +248,7 @@ def change_device():
             '//*[text()="This web browser"]',
         ).click()
         # Click the panel
+        return True
     except Exception as e:
         logging.error(
             f"Error while trying to play after reconnection: {e}", exc_info=True
@@ -250,7 +256,7 @@ def change_device():
 
 
 # Control playback
-def play_music():
+def play_music(argument="future proof"):
     try:
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
@@ -266,6 +272,7 @@ def play_music():
                 )
                 play_button.click()
                 print("Playback started after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
@@ -278,6 +285,7 @@ def play_music():
                 )
                 play_button.click()
                 print("Playback started after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
@@ -285,11 +293,12 @@ def play_music():
             print(f"Error while trying to play: {e}")
 
 
-def pause_song():
+def pause_song(argument="future proof"):
     try:
         pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
         pause_button.click()
         print("Playback paused.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -301,17 +310,19 @@ def pause_song():
                 )
                 pause_button.click()
                 print("Playback paused after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to pause after reconnection: {e}")
         else:
             print(f"Error while trying to pause: {e}")
 
 
-def next_track():
+def next_track(argument="future proof"):
     try:
         next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
         next_button.click()
         print("Next track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -323,6 +334,7 @@ def next_track():
                 )
                 next_button.click()
                 print("Next track after reconnection.")
+                return True
             except Exception as e:
                 print(
                     f"Error while trying to skip to next track after reconnection: {e}"
@@ -331,11 +343,12 @@ def next_track():
             print(f"Error while trying to skip to next track: {e}")
 
 
-def previous_track():
+def previous_track(argument="future proof"):
     try:
         prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
         prev_button.click()
         print("Previous track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -367,179 +380,163 @@ def previous_track():
 
 
 # Define action functions
-def search_windows():
+
+
+def perform_action(action):
     try:
-        pyautogui.press("win")
+        if action == "show_desktop":
+            pyautogui.hotkey("win", "d")
+        elif action == "open_settings":
+            pyautogui.hotkey("win", "i")
+        elif action == "lock_screen":
+            pyautogui.hotkey("win", "l")
+        elif action == "take_screenshot":
+            pyautogui.hotkey("win", "prtsc")
+        elif action == "windows_search":
+            pyautogui.hotkey("win", "s")
+        elif action == "open_run_dialog":
+            pyautogui.hotkey("win", "r")
+        elif action == "minimize_all_windows":
+            pyautogui.hotkey("win", "m")
+        elif action == "restore_windows":
+            pyautogui.hotkey("win", "shift", "m")
+        else:
+            logging.error(f"Unknown action: {action}")
+            return False
+        return True
     except Exception as e:
-        logging.error(f"Error executing search_windows: {e}", exc_info=True)
+        logging.error(f"Error executing {action}: {e}", exc_info=True)
+        return False
 
 
-def show_desktop():
+def open_task_manager(argument="future proof"):
     try:
-        pyautogui.hotkey("win", "d")
-    except Exception as e:
-        logging.error(f"Error executing show_desktop: {e}", exc_info=True)
-
-
-def open_settings():
-    try:
-        pyautogui.hotkey("win", "i")
-    except Exception as e:
-        logging.error(f"Error executing open_settings: {e}", exc_info=True)
-
-
-def lock_screen():
-    try:
-        pyautogui.hotkey("win", "l")
-    except Exception as e:
-        logging.error(f"Error executing lock_screen: {e}", exc_info=True)
-
-
-def take_screenshot():
-    try:
-        pyautogui.hotkey("win", "prtsc")
-    except Exception as e:
-        logging.error(f"Error executing take_screenshot: {e}", exc_info=True)
-
-
-def open_file_explorer():
-    try:
-        pyautogui.hotkey("win", "e")
-    except Exception as e:
-        logging.error(f"Error executing open_file_explorer: {e}", exc_info=True)
-
-
-def windows_search():
-    try:
-        pyautogui.hotkey("win", "s")
-    except Exception as e:
-        logging.error(f"Error executing windows_search: {e}", exc_info=True)
-
-
-def open_run_dialog():
-    try:
-        pyautogui.hotkey("win", "r")
-    except Exception as e:
-        logging.error(f"Error executing open_run_dialog: {e}", exc_info=True)
-
-
-def open_task_manager():
-    try:
-        pyautogui.hotkey("ctrl", "shift", "esc")
+        subprocess.run("taskmgr", check=True)
+        return True
     except Exception as e:
         logging.error(f"Error executing open_task_manager: {e}", exc_info=True)
+        return False
 
 
-def minimize_all_windows():
+def open_file_explorer(argument="future proof"):
     try:
-        pyautogui.hotkey("win", "m")
+        os.system("explorer")
+        return True
     except Exception as e:
-        logging.error(f"Error executing minimize_all_windows: {e}", exc_info=True)
-
-
-def restore_windows():
-    try:
-        pyautogui.hotkey("win", "shift", "m")
-    except Exception as e:
-        logging.error(f"Error executing restore_windows: {e}", exc_info=True)
+        logging.error(f"Error executing open_file_explorer: {e}", exc_info=True)
+        return False
 
 
 # Application commands
-def open_control_panel():
+def open_control_panel(argument="future proof"):
     try:
         os.system("control")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
 
 
-def open_calculator():
+def open_calculator(argument="future proof"):
     try:
         os.system("calc")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_calculator: {e}", exc_info=True)
 
 
-def open_notepad():
+def open_notepad(argument="future proof"):
     try:
         os.system("notepad")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_notepad: {e}", exc_info=True)
 
 
-def open_word():
+def open_word(argument="future proof"):
     try:
         os.system("start winword")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_word: {e}", exc_info=True)
 
 
-def open_excel():
+def open_excel(argument="future proof"):
     try:
         os.system("start excel")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_excel: {e}", exc_info=True)
 
 
-def open_powerpoint():
+def open_powerpoint(argument="future proof"):
     try:
         os.system("start powerpnt")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
 
 
-def open_outlook():
+def open_outlook(argument="future proof"):
     try:
         os.system("start outlook")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_outlook: {e}", exc_info=True)
 
 
-def open_paint():
+def open_paint(argument="future proof"):
     try:
         os.system("start mspaint")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_paint: {e}", exc_info=True)
 
 
-def open_command_prompt():
+def open_command_prompt(argument="future proof"):
     try:
         os.system("start cmd")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
 
 
-def open_powershell():
+def open_powershell(argument="future proof"):
     try:
         os.system("start powershell")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_powershell: {e}", exc_info=True)
 
 
-def open_edge():
+def open_edge(argument="future proof"):
     try:
         os.system("start msedge")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_edge: {e}", exc_info=True)
 
 
-def open_chrome():
+def open_chrome(argument="future proof"):
     try:
         os.system("start chrome")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_chrome: {e}", exc_info=True)
 
 
-def open_firefox():
+def open_firefox(argument="future proof"):
     try:
         os.system("start firefox")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_firefox: {e}", exc_info=True)
 
 
-def open_task_scheduler():
+def open_task_scheduler(argument="future proof"):
     try:
         os.system("taskschd.msc")
         logging.info(f"{GREEN}Opening Task Scheduler...{RESET}")
+        return True
     except Exception as e:
         logging.error(
             f"{RED}Error executing open_task_scheduler: {e}{RESET}", exc_info=True
@@ -547,9 +544,10 @@ def open_task_scheduler():
 
 
 # Volume controls
-def open_sound_control_panel():
+def open_sound_control_panel(argument="future proof"):
     try:
         os.system("control mmsys.cpl")
+        return True
     except Exception as e:
         logging.error(f"Error executing open_sound_control_panel: {e}", exc_info=True)
 
@@ -562,13 +560,13 @@ def kill_process_by_name(process_name):
                 print(
                     f"Process {process_name} with PID {proc.info['pid']} has been killed."
                 )
-                return
+                return True
         print(f"No process named {process_name} found.")
     except Exception as e:
         logging.error(f"Error executing kill_process_by_name: {e}", exc_info=True)
 
 
-def get_volume():
+def get_volume(argument="future proof"):
     try:
         volume_interface = get_volume_interface()
         current_volume = volume_interface.GetMasterVolumeLevelScalar()
@@ -585,6 +583,7 @@ def volume_up(steps=1):
         new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
         volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
         print(f"Volume increased to {new_volume * 100:.0f}%")
+        return True
     except Exception as e:
         logging.error(f"Error executing volume_up: {e}", exc_info=True)
 
@@ -596,6 +595,7 @@ def volume_down(steps=1):
         new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
         volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
         print(f"Volume decreased to {new_volume * 100:.0f}%")
+        return True
     except Exception as e:
         logging.error(f"Error executing volume_down: {e}", exc_info=True)
 
@@ -607,13 +607,14 @@ def set_volume(level):
             volume_interface.SetMasterVolumeLevelScalar(level, None)
             logging.info(f"{BLUE}Setting volume to {level * 100}%{RESET}")
             print(f"Volume set to {level * 100:.0f}%")
+            return True
         else:
             print("Volume level must be between 0.0 and 1.0")
     except Exception as e:
         logging.error(f"{RED}Error setting volume: {e}{RESET}", exc_info=True)
 
 
-def get_volume_interface():
+def get_volume_interface(argument="future proof"):
     try:
         devices = AudioUtilities.GetSpeakers()
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
@@ -623,62 +624,26 @@ def get_volume_interface():
         logging.error(
             f"{RED}ValueError in get_volume_interface: {e}{RESET}", exc_info=True
         )
-    except Exception as e:
-        logging.error(f"Error executing get_volume_interface: {e}", exc_info=True)
 
 
-def mute_volume():
+def mute_volume(argument="future proof"):
     try:
         pyautogui.press("volumemute")
+        return True
     except Exception as e:
         logging.error(f"Error executing mute_volume: {e}", exc_info=True)
 
 
-def stop_media():
+def stop_media(argument="future proof"):
     try:
         pause_song()
         print("Stopping media")
+        return True
     except Exception as e:
         logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
-# Custom or complex operations
-def open_device_manager():
-    try:
-        os.system("devmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
-
-
-def open_disk_management():
-    try:
-        os.system("diskmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
-
-
-def open_network_connections():
-    try:
-        os.system("ncpa.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
-
-
-def open_system_properties():
-    try:
-        os.system("sysdm.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
-
-
-def open_date_and_time():
-    try:
-        os.system("timedate.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
-
-
-def open_startup_folder():
+def open_startup_folder(argument="future proof"):
     try:
         # Open the current user's startup folder
         startup_path = os.path.join(
@@ -686,16 +651,18 @@ def open_startup_folder():
         )
         os.startfile(startup_path)
         logging.info(f"{GREEN}Opening startup folder at: {startup_path}{RESET}")
+        return True
     except Exception as e:
         logging.error(
             f"{RED}Error executing open_startup_folder: {e}{RESET}", exc_info=True
         )
 
 
-def manage_services():
+def manage_services(argument="future proof"):
     try:
         os.system("services.msc")
         logging.info(f"{GREEN}Opening Windows Services...{RESET}")
+        return True
     except Exception as e:
         logging.error(
             f"{RED}Error executing manage_services: {e}{RESET}", exc_info=True
@@ -703,7 +670,7 @@ def manage_services():
 
 
 # System commands
-def ping_google():
+def ping_google(argument="future proof"):
     try:
         # Run the ping command and capture the output
         result = subprocess.run(
@@ -722,20 +689,22 @@ def ping_google():
             )
         else:
             return "Could not determine the average ping."
+        return True
     except Exception as e:
         logging.error(f"Error executing ping_google: {e}", exc_info=True)
         return f"Error occurred: {str(e)}"
 
 
-def flush_dns():
+def flush_dns(argument="future proof"):
     try:
         os.system("ipconfig /flushdns")
+        return True
     except Exception as e:
         logging.error(f"Error executing flush_dns: {e}", exc_info=True)
 
 
 # Voicemeeter commands
-def restart_voicemeeter():
+def restart_voicemeeter(argument="future proof"):
     try:
         initial_volume = get_volume()
         print(initial_volume)
@@ -744,6 +713,7 @@ def restart_voicemeeter():
         )
         time.sleep(2)
         set_volume(initial_volume)
+        return True
     except Exception as e:
         logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
 
@@ -759,19 +729,21 @@ def load_display_fusion_profile(profile_name):
                 profile_name,
             ]
         )
+        return True
     except Exception as e:
         logging.error(
             f"Error executing load_display_fusion_profile: {e}", exc_info=True
         )
 
 
-def open_negative_screen():
+def open_negative_screen(argument="future proof"):
     try:
         subprocess.Popen(
             [
                 "C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"
             ]
         )
+        return True
     except Exception as e:
         logging.error(f"Error executing open_negative_screen: {e}", exc_info=True)
 
@@ -785,13 +757,13 @@ from datetime import datetime
 backup_directory = "J:\\"
 
 
-async def last_backup():
+async def last_backup(argument="future proof"):
     try:
         # List all files in the directory
         backup_files = [f for f in os.listdir(backup_directory) if f.endswith(".mrimg")]
         if not backup_files:
             await text_to_speech("No backup files found.")
-            return
+            return True
 
         # Get the most recent backup file by modification date
         latest_backup = max(
@@ -806,36 +778,40 @@ async def last_backup():
         # Calculate days since the last backup
         days_ago = (datetime.now() - last_backup_date).days
         await text_to_speech(f"Latest backup was {days_ago} days ago.")
+        return True
     except Exception as e:
         logging.error(f"Error executing last_backup: {e}", exc_info=True)
 
 
-def open_vscode():
+def open_vscode(argument="future proof"):
     try:
         # Path to the Visual Studio Code executable
         vscode_path = (
             r"C:\Users\deletable\AppData\Local\Programs\Microsoft VS Code\Code.exe"
         )
         subprocess.Popen([vscode_path])
+        return True
     except Exception as e:
         logging.error(f"Error executing open_vscode: {e}", exc_info=True)
 
 
-def start_whisper():
+def start_whisper(argument="future proof"):
     try:
         batch_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper_keyboard.bat"
         # Use runas to run as administrator
         subprocess.run(["runas", "/user:Administrator", f'cmd /c "{batch_path}"'])
         logging.info(f"{GREEN}Starting Whisper with administrator privileges...{RESET}")
+        return True
     except Exception as e:
         logging.error(f"{RED}Error executing start_whisper: {e}{RESET}", exc_info=True)
 
 
-def start_grok():
+def start_grok(argument="future proof"):
     try:
         shortcut_path = r"C:\Users\deletable\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\groq_Ollama_RAG_Chat.bat - Shortcut.lnk"
         os.startfile(shortcut_path)
         logging.info(f"{GREEN}Starting Grok...{RESET}")
+        return True
     except Exception as e:
         logging.error(f"{RED}Error executing start_grok: {e}{RESET}", exc_info=True)
 
@@ -1212,11 +1188,32 @@ def split_sentence(response):
         logging.error(f"Error executing split_sentence: {e}", exc_info=True)
 
 
+"""
+ ######   ########   #######   #######  
+##    ##  ##     ## ##     ## ##     ## 
+##        ##     ## ##     ## ##     ## 
+##   #### ########  ##     ## ##     ## 
+##    ##  ##   ##   ##     ## ##  ## ## 
+##    ##  ##    ##  ##     ## ##    ##  
+ ######   ##     ##  #######   ##### ## 
+"""
+
+
 import aiohttp
 import asyncio
 
 
-async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+async def execute_command_async(func, **args):
+    """Helper function to execute async functions"""
+    if asyncio.iscoroutinefunction(func):
+        return await func(**args)
+    return func(**args)
+
+
+def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+    # resetting result from functinos to false
+    result = False
+
     try:
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
@@ -1246,95 +1243,67 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
             },
         ]
 
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {api_key}"}
+        response = Groq_client.chat.completions.create(
+            model=TOOL_USE_MODEL,
+            messages=tools_messages,
+            tools=tools,
+            tool_choice="auto",
+            max_tokens=4096,
+        )
+        response_message = response.choices[0].message
+        print(response_message)
+        tool_calls = response_message.tool_calls
 
-        for attempt in range(max_retries):
-            try:
-                logging.info(f"{YELLOW}Attempt {attempt + 1} of {max_retries}{RESET}")
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        url,
-                        json={
-                            "model": TOOL_USE_MODEL,
-                            "messages": tools_messages,
-                            "stream": False,
-                            "tools": tools,
-                            "tool_choice": "auto",
-                            "max_tokens": 4096,
-                        },
-                        headers=headers,
-                    ) as response:
-                        if response.status == 404:
-                            logging.error(
-                                f"Groq API endpoint not found: {response.url}"
-                            )
-                            raise aiohttp.ClientResponseError(
-                                response.request_info,
-                                response.history,
-                                status=response.status,
-                                message=response.reason,
-                                headers=response.headers,
-                            )
-                        response.raise_for_status()
-                        response_data = await response.json()
+        if tool_calls:
+            for tool_call in tool_calls:
+                function_args = json.loads(tool_call.function.arguments)
+                function_name = tool_call.function.name
 
-                response_message = response_data["choices"][0]["message"]
-                logging.info(
-                    f"{CYAN}Received response from Groq client: {response_message}{RESET}"
-                )
-                tool_calls = response_message["tool_calls"]
+                if function_name in globals():
+                    try:
+                        logging.info(
+                            f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
+                        )
+                        func = globals()[function_name]
 
-                if tool_calls:
-                    for tool_call in tool_calls:
-                        function_args = json.loads(tool_call["function"]["arguments"])
-                        function_name = tool_call["function"]["name"]
-
-                        if function_name in globals():
+                        # Handle both async and sync functions
+                        if asyncio.iscoroutinefunction(func):
                             try:
-                                logging.info(
-                                    f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
+                                result = asyncio.run(
+                                    execute_command_async(func, **function_args)
                                 )
-                                func = globals()[function_name]
-                                if asyncio.iscoroutinefunction(func):
-                                    result = await func(**function_args)
-                                else:
-                                    result = func(**function_args)
-                                logging.info(
-                                    f"{GREEN}Executed {function_name} with result: {result}{RESET}"
-                                )
-                                return True
                             except Exception as e:
                                 logging.error(
                                     f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
                                     exc_info=True,
                                 )
-                                raise e
+
                         else:
-                            logging.error(
-                                f"{RED}Function {function_name} not found{RESET}"
-                            )
-                            return False
+                            try:
+                                result = func(**function_args)
+                                logging.info(
+                                    f"{GREEN}Executed {function_name} with result: {result}{RESET}"
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                    exc_info=True,
+                                )
+
+                    except Exception as e:
+                        logging.error(
+                            f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                            exc_info=True,
+                        )
+                        raise e
                 else:
-                    logging.error(f"{RED}No tool calls found in the response{RESET}")
+                    logging.error(f"{RED}Function {function_name} not found{RESET}")
+                # resetting result from functinos to false
+            return result
+        else:
+            logging.error(f"{RED}No tool calls found in the response{RESET}")
 
-                return True
-
-            except Exception as e:
-                logging.error(
-                    f"{RED}Error executing command: {str(e)}{RESET}", exc_info=True
-                )
-                if attempt < max_retries - 1:
-                    logging.info(
-                        f"{YELLOW}Retrying... ({attempt + 1}/{max_retries}){RESET}"
-                    )
-                    await asyncio.sleep(retry_delay)
-                else:
-                    logging.error(
-                        f"{RED}Failed to execute command after {max_retries} attempts{RESET}"
-                    )
-                    return False
-
+        return True
     except Exception as e:
         logging.error(
             f"{RED}Error in execute_command_run_with_tool: {str(e)}{RESET}",
@@ -1362,6 +1331,135 @@ def visual_feedback(function_name, result):
         root.mainloop()
     except Exception as e:
         logging.error(f"Error executing visual_feedback: {e}", exc_info=True)
+
+
+"""
+ #######  ##          ###    ##     ##    ###    
+##     ## ##         ## ##   ###   ###   ## ##   
+##     ## ##        ##   ##  #### ####  ##   ##  
+##     ## ##       ##     ## ## ### ## ##     ## 
+##     ## ##       ######### ##     ## ######### 
+##     ## ##       ##     ## ##     ## ##     ## 
+ #######  ######## ##     ## ##     ## ##     ## 
+"""
+
+"""
+TODO : 
+we have to solve this function :
+execute_command_run_with_tool_local
+TODO : 
+"""
+
+
+# Function to execute commands using Ollama
+def execute_command_run_with_tool_local(query, max_retries=3, retry_delay=2):
+    # resetting result from functions to false
+    result = False
+
+    # System message to guide the model
+    tools_messages = [
+        {
+            "role": "system",
+            "content": """You are a specialized assistant for controlling computer functions. 
+            the operating system is Windows 10. 
+            Your role is to:
+            1. Carefully analyze user queries to determine the most appropriate tools/functions in given tools and function descriptions. 
+            2. Select the most relevant tool or tools from the available options.
+            3. if ther is "and" in the query : it means they query has to split at that location and there are mulitple functions to be picked for each of the chunk of the query
+            4. For system controls (volume, media, windows), be very precise in tool selection.
+            5. most functions don't have or need arguments.
+
+
+            Examples:
+            - "play music" → use play_music()
+            - "skip" → use next_track()
+            - "minimize everything" → use minimize_all_windows()
+            - "check internet speed" → ping_google()
+
+            Only respond with tool calls, no conversational responses.""",
+        },
+        {
+            "role": "user",
+            "content": query,
+        },
+    ]
+
+    try:
+        logging.info(f"Executing execute_command_run_with_tool_local: {query}")
+        # Call Ollama's chat API
+        response = ollama.chat(
+            model=OLLAMA_FUNC_MODEL,
+            messages=tools_messages,
+            format="json",
+            tools=olma_tools,
+            keep_alive=-1,
+        )
+        logging.info(f" command: {response}")
+
+        # Process the response
+        tool_calls = response.get("message", {}).get("tool_calls", [])
+
+        if tool_calls:
+            logging.info(f" tool_calls: {tool_calls}")
+            for tool_call in tool_calls:
+                function_name = tool_call["function"]["name"]
+                # this was the issue
+                # function_args = tool_call["function"].get("arguments", {})
+                function_args = {"argument": "None"}
+
+                if function_name in globals():
+                    try:
+                        logging.info(
+                            f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
+                        )
+                        func = globals()[function_name]
+
+                        # Handle both async and sync functions
+                        if asyncio.iscoroutinefunction(func):
+                            try:
+                                result = asyncio.run(
+                                    execute_command_async(func, **function_args)
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                    exc_info=True,
+                                )
+                        else:
+                            try:
+                                result = func(**function_args)
+                                logging.info(
+                                    f"{GREEN}Executed {function_name} with result: {result}{RESET}"
+                                )
+                            except Exception as e:
+                                logging.error(
+                                    f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                    exc_info=True,
+                                )
+                    except Exception as e:
+                        logging.error(
+                            f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                            exc_info=True,
+                        )
+                        return result
+                else:
+                    logging.error(f"{RED}Function {function_name} not found{RESET}")
+                    return result
+            return result
+        else:
+            logging.error("No tool calls found in the response")
+            return False
+
+    except Exception as e:
+        logging.error(
+            f"Error in execute_command_run_with_tool: {str(e)}", exc_info=True
+        )
+        """
+        TODO we are calling execute_command_run_with_tool  here insted of calling if the result of the execute_command_run_with_tool_local is false in the faster_whisper....py script so we dont have to deal with thread and result queue and other bullshit!!
+        """
+        result = execute_command_run_with_tool(query)
+
+        return result
 
 
 """

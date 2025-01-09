@@ -432,7 +432,6 @@ ACTIONS = {
 
 extra_tools = [
     {
-        "type": "function",
         "function": {
             "name": "minimize_all_windows",
             "description": "Minimize all windows",
@@ -441,37 +440,33 @@ extra_tools = [
     },
 ]
 
+
 tools = [
     {
         "type": "function",
         "function": {
-            "name": "search_windows",
+            "name": "perform_action",
             "description": "Open the Windows start menu",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "show_desktop",
-            "description": "Minimize all open windows to show the desktop",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_settings",
-            "description": "Open Windows settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "lock_screen",
-            "description": "Lock the computer screen",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "show_desktop",
+                            "open_settings",
+                            "lock_screen",
+                            "take_screenshot",
+                            "windows_search",
+                            "open_run_dialog",
+                            "minimize_all_windows",
+                            "restore_windows",
+                        ],
+                        "description": "The action to perform.",
+                    }
+                },
+                "required": ["action"],
+            },
         },
     },
     {
@@ -493,24 +488,8 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "open_run_dialog",
-            "description": "Open the Run dialog box",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "open_task_manager",
             "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "restore_windows",
-            "description": "Restore minimized windows",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -693,7 +672,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "play_music",
-            "description": "Play media; optionally specify a song",
+            "description": "Play media;",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -939,6 +918,454 @@ tools = [
     },
     {
         "type": "function",
+        "function": {
+            "name": "start_grok",
+            "description": "Starts Grok application by opening the specified shortcut",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
+
+"""
+ #######  ##       ##     ##    ###       ########  #######  ##        ######  
+##     ## ##       ###   ###   ## ##         ##    ##     ## ##       ##    ## 
+##     ## ##       #### ####  ##   ##        ##    ##     ## ##       ##       
+##     ## ##       ## ### ## ##     ##       ##    ##     ## ##        ######  
+##     ## ##       ##     ## #########       ##    ##     ## ##             ## 
+##     ## ##       ##     ## ##     ##       ##    ##     ## ##       ##    ## 
+ #######  ######## ##     ## ##     ##       ##     #######  ########  ######  
+"""
+
+
+olma_tools = [
+    {
+        "function": {
+            "name": "perform_action",
+            "description": "Open the Windows start menu",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "show_desktop",
+                            "open_settings",
+                            "lock_screen",
+                            "take_screenshot",
+                            "windows_search",
+                            "open_run_dialog",
+                            "minimize_all_windows",
+                            "restore_windows",
+                        ],
+                        "description": "The action to perform.",
+                    }
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "take_screenshot",
+            "description": "Take a screenshot",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_file_explorer",
+            "description": "Open the file explorer",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_task_manager",
+            "description": "Open the Task Manager",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_control_panel",
+            "description": "Open the Control Panel",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_calculator",
+            "description": "Open the Calculator application",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_notepad",
+            "description": "Open Notepad",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_word",
+            "description": "Open Microsoft Word",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_excel",
+            "description": "Open Microsoft Excel",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_powerpoint",
+            "description": "Open Microsoft PowerPoint",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_outlook",
+            "description": "Open Microsoft Outlook",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_paint",
+            "description": "Open Microsoft Paint",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_command_prompt",
+            "description": "Open Command Prompt",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_powershell",
+            "description": "Open PowerShell",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_edge",
+            "description": "Open Microsoft Edge",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_chrome",
+            "description": "Open Google Chrome",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_firefox",
+            "description": "Open Mozilla Firefox",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_sound_control_panel",
+            "description": "Open the Sound control panel",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "volume_up",
+            "description": "Increase the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to increase the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "volume_down",
+            "description": "Decrease the system volume by a specified number of steps",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "steps": {
+                        "type": "integer",
+                        "description": "The number of steps to decrease the volume by (each step is 5%)",
+                        "default": 1,
+                    }
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "set_volume",
+            "description": "Set the system volume to a specific level",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "level": {
+                        "type": "number",
+                        "description": "The volume level to set (between 0.0 and 1.0)",
+                        "minimum": 0.0,
+                        "maximum": 1.0,
+                    }
+                },
+                "required": ["level"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "mute_volume",
+            "description": "Mute the system volume",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "play_music",
+            "description": "Play media;",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "stop_media",
+            "description": "Stop media playback",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "next_track",
+            "description": "Skip to the next track or play next song",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "previous_track",
+            "description": "play previous song or play previous music track",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "pause_song",
+            "description": "Pause media playback or pause spotify",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "restart_media",
+            "description": "Restart media playback",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_browser",
+            "description": "Open a specified browser",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "browser": {
+                        "type": "string",
+                        "description": "The name of the browser to open (e.g., 'Chrome', 'Firefox')",
+                    }
+                },
+                "required": ["browser"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "open_website",
+            "description": "Open a specified website",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the website to open",
+                    }
+                },
+                "required": ["url"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "search_google",
+            "description": "Search Google with a specified query",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query for Google",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "open_device_manager",
+            "description": "Open the Device Manager",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_disk_management",
+            "description": "Open Disk Management or hard disk settings",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_network_connections",
+            "description": "Open Network Connections",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_system_properties",
+            "description": "Open System Properties",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_date_and_time",
+            "description": "Open Date and Time settings",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "ping_google",
+            "description": "Ping Google to check internet connectivity",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "flush_dns",
+            "description": "Flush the DNS resolver cache",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "restart_voicemeeter",
+            "description": "Restart Voicemeeter",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "load_display_fusion_profile",
+            "description": "Load a DisplayFusion monitor load profile",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "profile_name": {
+                        "type": "string",
+                        "description": "The name of the DisplayFusion profile to load",
+                    }
+                },
+                "required": ["profile_name"],
+            },
+        },
+    },
+    {
+        "function": {
+            "name": "open_negative_screen",
+            "description": "Open the Negative Screen application",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "invert_screen",
+            "description": "Open the Negative Screen application",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "last_backup",
+            "description": "Determine how many days ago the latest backup was created.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_vscode",
+            "description": "Open Visual Studio Code on the user's machine.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_task_scheduler",
+            "description": "Opens Windows Task Scheduler",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "open_startup_folder",
+            "description": "Opens Windows startup folder where programs that run at startup are stored",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "manage_services",
+            "description": "Opens Windows Services manager to view and control system services",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "function": {
+            "name": "start_whisper",
+            "description": "Starts Whisper keyboard application with administrator privileges",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
         "function": {
             "name": "start_grok",
             "description": "Starts Grok application by opening the specified shortcut",

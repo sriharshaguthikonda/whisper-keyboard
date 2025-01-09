@@ -15,17 +15,6 @@ import threading
 import winsound
 import logging
 
-# Configure logging with both debug and error levels
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.StreamHandler(),
-        # logging.FileHandler("wkey_errors.log"),  # Also log to file
-    ],
-)
-
 import pyautogui
 import numpy as np
 import sounddevice as sd
@@ -45,10 +34,21 @@ from faster_whisper import WhisperModel
 from voice_commands import (
     execute_command_fuzzy,
     execute_command_run_with_tool,
+    execute_command_run_with_tool_local,
     start_driver,
     driver,
 )  # , driver_pid
+
 from pause_all import is_sound_playing_windows_processing
+
+
+from key_handling import (
+    last_press_time,
+    DEBOUNCE_DELAY,
+    on_press,
+    on_release,
+)
+
 
 from ctypes import cast, POINTER
 from comtypes import CLSCTX_ALL
@@ -65,6 +65,18 @@ import subprocess
 
 from voice_activity_detection import VoiceDetector
 
+
+# Configure logging with both debug and error levels
+logging.basicConfig(
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    handlers=[
+        logging.StreamHandler(),
+        # logging.FileHandler("wkey_errors.log"),  # Also log to file
+    ],
+)
+
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
 transcript_queue = queue.Queue()
@@ -76,6 +88,9 @@ BACKUP_QUEUE_SIZE = 5
 
 backup_audio_queue = queue.Queue(maxsize=BACKUP_QUEUE_SIZE)
 failed_transcription_queue = queue.Queue()
+# Create a thread-safe queue to hold exceptions
+exception_queue = queue.Queue()
+
 
 load_dotenv()
 key_label = os.environ.get("WKEY", "f24")
@@ -154,13 +169,18 @@ BRIGHT_WHITE = "\033[97m"
 """
 
 
-PRE_RECORDING_DURATION = 2  # seconds
+PRE_RECORDING_DURATION = 3  # seconds
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 buffer_index = 0
+"""TODO : this was cahnged recently because it was specifired earlier in the script audio_buffer = np.array([], dtype="float32")"""
+
+"""
 audio_buffer = []
+
+"""
 
 
 # Add error handling to audio callback
@@ -230,20 +250,26 @@ def set_volume(volume_level):
 
 
 def decrease_volume_all():
-    global initial_volume
-    current_volume = get_current_volume()
-    if initial_volume is None or current_volume != initial_volume:
-        initial_volume = current_volume
-    print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-    set_volume(0.1)  # Set volume to 10%
+    try:
+        global initial_volume
+        current_volume = get_current_volume()
+        if initial_volume is None or current_volume != initial_volume:
+            initial_volume = current_volume
+        print(f"Decreasing volume from {initial_volume * 100}% to 10%")
+        set_volume(0.1)  # Set volume to 10%
+    except Exception as e:
+        logging.error(f"Error setting volume: {e}", exc_info=True)
 
 
 def restore_volume_all():
-    global initial_volume
-    if initial_volume is not None:
-        print(f"Restoring volume to {initial_volume * 100}%")
-        set_volume(initial_volume)  # Restore to initial volume
-        initial_volume = None  # Reset initial volume after restoring
+    try:
+        global initial_volume
+        if initial_volume is not None:
+            print(f"Restoring volume to {initial_volume * 100}%")
+            set_volume(initial_volume)  # Restore to initial volume
+            initial_volume = None  # Reset initial volume after restoring
+    except Exception as e:
+        logging.error(f"Error setting volume: {e}", exc_info=True)
 
 
 def monitor_sound_processing():
@@ -331,25 +357,12 @@ def start_recording():
 """
 
 
-# Add error handling to VAD
-def adjust_vad_threshold():
-    try:
-        if len(audio_buffer) > 0:
-            rms = np.sqrt(np.mean(audio_buffer**2))
-        else:
-            rms = 0.0
-
-        if rms < 0.01:
-            return 0.3
-        elif rms < 0.05:
-            return 0.5
-        elif rms < 0.1:
-            return 0.7
-        else:
-            return 0.9
-    except Exception as e:
-        logging.error(f"Error in VAD threshold calculation: {e}", exc_info=True)
-        return 0.5  # Return default threshold
+# Get the last frames of audio for VAD analysis (30ms frame)
+frame_duration = 30  # ms
+frame_size = int(sample_rate * frame_duration / 1000)
+frames_to_skip = 2  # Number of initial frames to skip
+# Calculate the starting index after skipping frames
+start_index = frames_to_skip * frame_size
 
 
 def stop_recording(keyword_index):
@@ -405,30 +418,40 @@ def stop_recording(keyword_index):
             if isinstance(audio_buffer, list):
                 audio_buffer = np.array(audio_buffer)
 
-            # Get the last frames of audio for VAD analysis (30ms frame)
-            frame_duration = 30  # ms
-            frame_size = int(sample_rate * frame_duration / 1000)
             audio_frame = audio_buffer[-frame_size:]
 
             # Convert to int16 format required by webrtcvad
             audio_int16 = (audio_frame * 32767).astype(np.int16)
             audio_bytes = audio_int16.tobytes()
 
-            try:
-                # Use the VoiceDetector instance for voice detection
-                is_speech = vad_detector.vad.is_speech(
-                    audio_bytes, vad_detector.sample_rate
-                )
+            # Process the remaining frames
+            for i in range(start_index, len(audio_buffer), frame_size):
+                audio_frame = audio_buffer[i : i + frame_size]
 
-            except Exception as e:
-                logging.error(f"{RED}VAD error: {e}{RESET}", exc_info=True)
-                silent_time += 0.1  # Increment on error
+                # Convert to int16 format required by webrtcvad
+                audio_int16 = (audio_frame * 32767).astype(np.int16)
+                audio_bytes = audio_int16.tobytes()
 
-            if is_speech:
-                silent_time = 0  # Reset silent time if speech is detected
-                logging.info(f"{PINK}Voice detected, continuing recording...{RESET}")
-            else:
-                silent_time += 0.1  # Increment silent time if no speech is detected
+                try:
+                    # Perform VAD
+                    is_speech = vad_detector.vad.is_speech(audio_bytes, sample_rate)
+                    if is_speech:
+                        # Speech detected
+                        silent_time = 0
+                        logging.error("Voice detected, continuing recording...")
+                    else:
+                        # No speech detected
+                        silent_time += (
+                            frame_duration / 500
+                        )  # Increment on error, it wa originallly
+                        # silent_time += frame_duration/ 1000
+                        logging.info(f"{BRIGHT_MAGENTA}silence detected...")
+
+                except Exception as e:
+                    logging.error(f"VAD error: {e}", exc_info=True)
+                    silent_time += frame_duration / 500
+                    # Increment on error, it wa originallly
+                    # silent_time += frame_duration/ 1000
 
             # Check if the hard stop limit is reached
             if time.time() - recording_start_time > hard_stop_limit:
@@ -439,7 +462,7 @@ def stop_recording(keyword_index):
 
             time.sleep(0.1)
 
-    logging.info(f"{BRIGHT_BLUE}Processing audio...{RESET}")
+    logging.info(f"{BLUE}Processing audio...{RESET}")
     pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
 
     # Convert main recording to numpy array
@@ -463,16 +486,6 @@ def stop_recording(keyword_index):
     with recording_lock:
         recording = False
     logging.info(f"{BRIGHT_CYAN}Transcribing...{RESET}")
-
-
-def on_press(key):
-    if key == RECORD_KEY and not recording:
-        threading.Thread(target=start_recording).start()
-
-
-def on_release(key):
-    if key == RECORD_KEY and recording:
-        threading.Thread(target=stop_recording, args=(None,)).start()
 
 
 """
@@ -693,7 +706,8 @@ def listen_for_wake_word():
 
         except OSError as e:
             logging.error(
-                f"Critical error in wake word detection: {str(e)}", exc_info=True
+                f"{RED}Critical error in wake word detection: {str(e)}{RESET}",
+                exc_info=True,
             )
             print(f"Audio stream error: {e}")
             if wake_stream:
@@ -742,44 +756,65 @@ def cleanup():
 api_key = os.getenv("GROQ_API_KEY")
 client = Groq(api_key=api_key)
 
+prompt = None
+
 
 def transcribe_with_groq(audio_buffer, keyword_index):
-    transcription = ""
-    if keyword_index == 1:
-        prompt = Hey_computer_STT_prompt
-    else:
-        prompt = None
-
     try:
-        # Convert the audio buffer (NumPy array) to a byte stream in WAV format
-        byte_io = io.BytesIO()
-        wav_write(byte_io, sample_rate, audio_buffer)
-        byte_io.seek(0)  # Rewind to the beginning of the byte stream
+        """if keyword_index == 1:
+            prompt = Hey_computer_STT_prompt
+        else:
+            prompt = None"""
 
-        # Send the byte stream directly to the Groq API - removed await
-        transcription = client.audio.transcriptions.create(
-            file=("audio_buffer.wav", byte_io.read()),  # Use in-memory byte stream
-            model=groq_model,
-            prompt=prompt,
-            response_format="json",
-            language="en",
-            temperature=0.0,
-        )
-        return transcription.text
+        try:
+            # Convert the audio buffer (NumPy array) to a byte stream in WAV format
+            byte_io = io.BytesIO()
+            wav_write(byte_io, sample_rate, audio_buffer)
+            byte_io.seek(0)  # Rewind to the beginning of the byte stream
+
+            # Send the byte stream directly to the Groq API - removed await
+            transcription = client.audio.transcriptions.create(
+                file=("audio_buffer.wav", byte_io.read()),  # Use in-memory byte stream
+                model=groq_model,
+                prompt=prompt,
+                response_format="json",
+                language="en",
+                temperature=0.0,
+            )
+            #  clearing the audio buffer
+            audio_buffer = np.array([], dtype="float32")
+            logging.error(
+                f" {ORANGE}transcript from inside transcribe_with_groq {transcription.text}{RESET}"
+            )
+            return transcription.text
+
+        except Exception as e:
+            logging.error(f"Groq API error: {str(e)}", exc_info=True)
+            print(f"Groq API error: {e}")
+            return "Transcription failed"
     except Exception as e:
-        logging.error(f"Groq API error: {str(e)}", exc_info=True)
-        print(f"Groq API error: {e}")
-        raise
+        logging.error(f"Error in transcribe_with_local_model: {e}", exc_info=True)
+        return "Transcription failed"
+
+
+"""
+ #######  ##          ###    ##     ##    ###    
+##     ## ##         ## ##   ###   ###   ## ##   
+##     ## ##        ##   ##  #### ####  ##   ##  
+##     ## ##       ##     ## ## ### ## ##     ## 
+##     ## ##       ######### ##     ## ######### 
+##     ## ##       ##     ## ##     ## ##     ## 
+ #######  ######## ##     ## ##     ## ##     ## 
+"""
 
 
 def transcribe_with_local_model(audio_buffer, keyword_index):
     try:
-        transcription = ""
-        # Define prompt based on keyword_index
+        """# Define prompt based on keyword_index
         if keyword_index == 1:
             prompt = Hey_computer_STT_prompt
         else:
-            prompt = None
+            prompt = None"""
 
         try:
             logging.info("using WhisperModel on CUDA")
@@ -794,12 +829,26 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
             # Combine transcribed text from all segments
             transcription = " ".join(segment.text for segment in segments)
             logging.info(transcription)
+
+            #  clearing the audio buffer
+            audio_buffer = np.array([], dtype="float32")
+            logging.error(
+                f"{PINK}transcript from inside transcribe_with_local_model {transcription}{RESET}"
+            )
             return transcription
+
         except Exception as e:
             logging.info(f"Faster Whisper error: {e}")
             return "Transcription failed"
     except Exception as e:
         logging.error(f"Error in transcribe_with_local_model: {e}", exc_info=True)
+        return "Transcription failed"
+
+
+"""
+TODO :  change this function transcribe_with_retries:  https://chatgpt.com/c/677d83d6-8c40-8007-8d0d-b38b686752fa
+TODO :  change this function transcribe_with_retries:  https://chatgpt.com/c/677d83d6-8c40-8007-8d0d-b38b686752fa
+"""
 
 
 def transcribe_with_retries(
@@ -810,16 +859,20 @@ def transcribe_with_retries(
         try:
             logging.debug(f"Transcription attempt {attempt + 1}/{max_attempts}")
 
-            # Try Groq first with a timeout using threading.Timer
+            # Try Groq first with a timeout using threading.Event
             transcription_done = threading.Event()
             transcription_result = [None]
             transcription_error = [None]
 
             def transcribe():
                 try:
-                    transcription_result[0] = transcribe_with_groq(
-                        audio_buffer, keyword_index
+                    result = transcribe_with_groq(audio_buffer, keyword_index)
+                    logging.debug(
+                        f"{YELLOW}logging from inside transcribe_with_retries, transcript is {result}{RESET}"
                     )
+                    if result == "Transcription failed":
+                        raise ValueError("Groq transcription returned failure message")
+                    transcription_result[0] = result
                     transcription_done.set()
                 except Exception as e:
                     transcription_error[0] = e
@@ -839,10 +892,9 @@ def transcribe_with_retries(
             if transcription_error[0]:
                 raise transcription_error[0]
             if transcription_result[0]:
+                # Clearing the audio buffer
+                audio_buffer = np.array([], dtype="float32")
                 return transcription_result[0]
-
-            # If we get here with no result, try next attempt
-            continue
 
         except Exception as e:
             logging.error(
@@ -850,8 +902,11 @@ def transcribe_with_retries(
             )
             if attempt == max_attempts - 1:
                 # On last attempt, try local model
-                logging.info(f"{YELLOW}Falling back to local transcription{RESET}")
-                return transcribe_with_local_model(audio_buffer, keyword_index)
+                logging.info("Falling back to local transcription")
+                transcript = transcribe_with_local_model(audio_buffer, keyword_index)
+                # Clearing audio buffer
+                audio_buffer = np.array([], dtype="float32")
+                return transcript
 
     return None  # If all attempts fail
 
@@ -867,14 +922,22 @@ def transcribe_with_retries(
 """
 
 
+"""
+TODO :   Flipped the transcribed with GROC and transcribed with local model functions.
+TODO :   Flipped the transcribed with GROC and transcribed with local model functions.
+"""
+
+
 def process_audio_async():
     logging.debug("Starting async audio processing")
 
     while True:
         try:
+            logging.debug("Waiting for audio data from the queue")
             audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
                 timeout=5
             )
+            logging.debug(f"Received audio data with keyword index: {keyword_index}")
 
             if audio_buffer_for_processing is None:
                 logging.debug("Received stop signal")
@@ -882,76 +945,109 @@ def process_audio_async():
 
             # Store backup copy of audio before processing
             try:
+                logging.debug("Attempting to put audio data into backup queue")
                 backup_audio_queue.put_nowait(
                     (audio_buffer_for_processing.copy(), keyword_index)
                 )
+                logging.debug("Audio data successfully added to backup queue")
             except queue.Full:
+                logging.debug("Backup queue is full; removing oldest item")
                 backup_audio_queue.get()  # Remove oldest item if queue is full
                 backup_audio_queue.put(
                     (audio_buffer_for_processing.copy(), keyword_index)
                 )
+                logging.debug(
+                    "Oldest item removed and new audio data added to backup queue"
+                )
 
             try:
                 logging.info(f"{CYAN}Transcribing audio...{RESET}")
-                transcript = transcribe_with_local_model(
+                transcript = transcribe_with_groq(
                     audio_buffer_for_processing, keyword_index
                 )
+                logging.debug(f"Transcription result: {transcript}")
 
-                if not transcript or transcript.isspace():
-                    raise ValueError("Empty transcript received")
-
-                # Process successful transcript
-                transcript_lower = transcript.lower()
-                if (
-                    "computer" in transcript_lower or "lama" in transcript_lower
-                ) and keyword_index is not None:  # Adjust the threshold as needed
-                    # Find the index of the keyword
-                    if "computer" in transcript_lower:
-                        keyword_position = transcript_lower.index("computer")
-                    else:
-                        keyword_position = transcript_lower.index("lama")
-
-                    # Strip the part of the transcript before the keyword
-                    stripped_transcript = transcript[
-                        keyword_position:
-                    ]  # Keep from the keyword to the end
-
-                    # Put the stripped transcript on the queue
-                    transcript_queue.put((stripped_transcript, keyword_index))
-
-                    # Start the audio saving thread
-                    threading.Thread(
-                        target=save_audio,
-                        args=(
-                            audio_buffer_for_processing,
-                            keyword_index,
-                            "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
-                            sample_rate,
-                            "true_positive",
-                        ),
-                    ).start()
-
-                elif keyword_index is None:
-                    # transcript_queue.put((transcript, keyword_index))
-                    # this is being handled in the stop recording functino itself so we are skipping here
-                    pass
+                if not transcript or transcript == "Transcription failed":
+                    raise ValueError(f"{transcript} : received as transcript")
                 else:
-                    threading.Thread(
-                        target=save_audio,
-                        args=(
-                            audio_buffer_for_processing,
-                            keyword_index,
-                            "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
-                            sample_rate,
-                            "false_positive",
-                        ),
-                    ).start()
-                print(transcript)
+                    # Process successful transcript
+                    transcript_lower = transcript.lower()
+                    if (
+                        "computer" in transcript_lower or "lama" in transcript_lower
+                    ) and keyword_index is not None:
+                        # Find the index of the keyword
+                        if "computer" in transcript_lower:
+                            keyword_position = transcript_lower.index("computer") + len(
+                                "computer"
+                            )
+                        else:
+                            keyword_position = transcript_lower.index("lama") + len(
+                                "lama"
+                            )
 
-                logging.info(f"{GREEN}Transcription completed: {transcript}{RESET}")
+                        # Strip the part of the transcript before and including the keyword
+                        stripped_transcript = transcript[keyword_position:].strip()
+
+                        # Put the stripped transcript on the queue
+                        transcript_queue.put((stripped_transcript, keyword_index))
+
+                        threading.Thread(
+                            target=save_audio,
+                            args=(
+                                audio_buffer_for_processing,
+                                keyword_index,
+                                "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
+                                sample_rate,
+                                "true_positive",
+                            ),
+                        ).start()
+                        logging.debug("Audio saving thread started for true positive")
+
+                        # Clearing the audio buffer
+                        audio_buffer_for_processing = np.array([], dtype="float32")
+                        logging.debug("Audio buffer cleared")
+                        """
+                        TODO : "continue" was added recently
+                        """
+                        continue
+
+                    elif keyword_index is None:
+                        # This is being handled in the stop recording function itself, so we are skipping here
+                        # Clearing the audio buffer
+                        audio_buffer_for_processing = np.array([], dtype="float32")
+                        logging.debug("Audio buffer cleared for None keyword index")
+                        """
+                        originally pass
+                        """
+                        continue
+
+                    else:
+                        logging.debug("Starting audio saving thread for false positive")
+                        threading.Thread(
+                            target=save_audio,
+                            args=(
+                                audio_buffer_for_processing,
+                                keyword_index,
+                                "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
+                                sample_rate,
+                                "false_positive",
+                            ),
+                        ).start()
+                        logging.debug("Audio saving thread started for false positive")
+
+                        # Clearing the audio buffer
+                        audio_buffer_for_processing = np.array([], dtype="float32")
+                        logging.debug("Audio buffer cleared")
+                        continue
+                        """
+                        TODO : "continue" was added recently
+                        """
 
             except Exception as e:
                 logging.error(f"Transcription failed: {e}", exc_info=True)
+                # Clearing the audio buffer
+                audio_buffer_for_processing = np.array([], dtype="float32")
+                logging.debug("Audio buffer cleared after transcription failure")
 
                 # Recover audio from backup queue if needed
                 try:
@@ -960,15 +1056,112 @@ def process_audio_async():
                     logging.info(
                         f"{YELLOW}Audio saved to failed transcription queue{RESET}"
                     )
+                    # Clearing the audio buffer
+                    backup_audio = np.array([], dtype="float32")
+                    logging.debug(
+                        "Backup audio cleared after saving to failed transcription queue"
+                    )
                 except queue.Empty:
                     logging.error("No backup audio available")
 
         except queue.Empty:
+            logging.debug("Queue is empty; continuing to wait for audio data")
             continue
         except Exception as e:
             logging.error(
                 f"Critical error in audio processing: {str(e)}", exc_info=True
             )
+
+
+"""
+########    ###    #### ##       
+##         ## ##    ##  ##       
+##        ##   ##   ##  ##       
+######   ##     ##  ##  ##       
+##       #########  ##  ##       
+##       ##     ##  ##  ##       
+##       ##     ## #### ######## 
+"""
+
+
+def process_failed_transcriptions():
+    """Background worker to retry failed transcriptions"""
+    while True:
+        try:
+            audio_buffer, keyword_index = failed_transcription_queue.get(timeout=30)
+            logging.info(f"{YELLOW}Retrying failed transcription{RESET}")
+
+            try:
+                transcript = transcribe_with_local_model(audio_buffer, keyword_index)
+                if transcript:
+                    # transcript_queue.put((transcript, keyword_index))
+                    logging.info(
+                        f"{GREEN}Recovery successful: from process_failed_transcriptions{RESET}"
+                    )
+
+                    # Process successful transcript
+                    transcript_lower = transcript.lower()
+                    if (
+                        "computer" in transcript_lower or "lama" in transcript_lower
+                    ) and keyword_index is not None:  # Adjust the threshold as needed
+                        # Find the index of the keyword
+                        if "computer" in transcript_lower:
+                            keyword_position = transcript_lower.index("computer") + len(
+                                "computer"
+                            )
+                        else:
+                            keyword_position = transcript_lower.index("lama") + len(
+                                "lama"
+                            )
+
+                        # Strip the part of the transcript before and including the keyword
+                        stripped_transcript = transcript[keyword_position:].strip()
+
+                        # Put the stripped transcript on the queue
+                        transcript_queue.put((stripped_transcript, keyword_index))
+
+                        # Start the audio saving thread
+                        threading.Thread(
+                            target=save_audio,
+                            args=(
+                                audio_buffer,
+                                keyword_index,
+                                "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
+                                sample_rate,
+                                "true_positive",
+                            ),
+                        ).start()
+                        #  clearing the audio buffer
+                        audio_buffer = np.array([], dtype="float32")
+
+                    elif keyword_index is None:
+                        transcript_queue.put((transcript, keyword_index))
+                        # this is being handled in the stop recording functino itself so we are skipping here
+                        #  clearing the audio buffer
+                        audio_buffer = np.array([], dtype="float32")
+                        pass
+
+                    else:
+                        threading.Thread(
+                            target=save_audio,
+                            args=(
+                                audio_buffer,
+                                keyword_index,
+                                "J:\\Openwakeword_whisper_keyboard_training_data_hotword\\train",
+                                sample_rate,
+                                "false_positive",
+                            ),
+                        ).start()
+                        #  clearing the audio buffer
+                        audio_buffer = np.array([], dtype="float32")
+                    print(transcript)
+
+                logging.info(f"{GREEN}Transcription completed: {transcript}{RESET}")
+            except Exception as e:
+                logging.error(f"Recovery failed: {e}", exc_info=True)
+
+        except queue.Empty:
+            continue
 
 
 def start_listener():
@@ -1030,10 +1223,24 @@ def clean_transcript():
             transcript, keyword_index = transcript_queue.get()
 
             if keyword_index == 1:
-                if not execute_command_run_with_tool(transcript):
-                    execute_command_fuzzy(transcript)
+                threading.Thread(
+                    target=execute_command_run_with_tool_local,
+                    args=(transcript,),
+                    daemon=True,
+                ).start()
+                threading.Thread(
+                    target=monitor_clean_transcript,
+                    daemon=True,
+                ).start()
+                """if execute_command_run_with_tool_local(transcript):
+                    logging.error(
+                        f"{ORANGE}from inside clean_transcript - execute_command_run_with_tool_local {transcript}{RESET}"
+                    )
                 else:
-                    pass
+                    execute_command_run_with_tool(transcript)
+                    logging.error(
+                        f" {PINK}from inside clean_transcript -  execute_command_run_with_tool: {transcript}{RESET}"
+                    )"""
             else:
                 set_clipboard_content(transcript)
                 time.sleep(0.5)  # Ensure clipboard is updated
@@ -1043,9 +1250,9 @@ def clean_transcript():
 
         except Exception as e:
             logging.error(
-                f"An error occurred in clean_transcript: {str(e)}", exc_info=True
+                f"{RED}An error occurred in clean_transcript: {str(e)}{RESET}",
+                exc_info=True,
             )
-            print(f"An error occurred in clean_transcript: {e}")
 
 
 """
@@ -1059,29 +1266,43 @@ def clean_transcript():
 """
 
 
-def process_failed_transcriptions():
-    """Background worker to retry failed transcriptions"""
-    while True:
-        try:
-            audio, keyword_index = failed_transcription_queue.get(timeout=30)
-            logging.info(f"{YELLOW}Retrying failed transcription{RESET}")
+clean_transcript_thread = threading.Thread(
+    target=clean_transcript,
+    daemon=True,
+)
 
-            try:
-                transcript = transcribe_with_local_model(audio, keyword_index)
-                if transcript:
-                    transcript_queue.put((transcript, keyword_index))
-                    logging.info(f"{GREEN}Recovery successful{RESET}")
-            except Exception as e:
-                logging.error(f"Recovery failed: {e}", exc_info=True)
 
-        except queue.Empty:
-            continue
+def thread_target_with_exception_handling(target_func, *args, **kwargs):
+    try:
+        target_func(*args, **kwargs)
+    except Exception as e:
+        exception_queue.put(e)
+
+
+def monitor_clean_transcript(max_restarts=15):
+    global clean_transcript_thread
+
+    monitor_clean_transcript_counter = 0
+
+    while monitor_clean_transcript_counter < max_restarts:
+        if clean_transcript_thread.is_alive():
+            # logging.warning(f"{GREEN}clean_transcript thread is alive and well....{RESET}")
+            pass
+        else:
+            clean_transcript_thread.start()
+            logging.warning(
+                f"{RED}clean_transcript thread has terminated. Restarting...{RESET}"
+            )
+        monitor_clean_transcript_counter += 1
+        time.sleep(1)  # Brief pause before restarting
+
+    logging.warning(
+        f"{GREEN}clean_transcript thread is alive and well...after chekcing {max_restarts} times.{RESET}"
+    )
 
 
 def main():
-    global stream
-    global driver
-    global driver_pid
+    global stream, driver, driver_pid, clean_transcript_thread
 
     logging.debug("Initializing main application")
     logging.info(
@@ -1091,17 +1312,53 @@ def main():
     try:
         logging.debug("Starting background threads")
         # Start the microphone monitoring thread
-        threading.Thread(target=monitor_microphone_availability, daemon=True).start()
+        threading.Thread(
+            target=thread_target_with_exception_handling,
+            args=(monitor_microphone_availability,),
+            daemon=True,
+        ).start()
 
+        # Start other threads similarly
         # threading.Thread(target=monitor_sound_processing, daemon=True).start()
-        threading.Thread(target=clean_transcript, daemon=True).start()
-        threading.Thread(target=process_audio_async, daemon=True).start()
-        threading.Thread(target=listen_for_wake_word, daemon=True).start()
-        threading.Thread(target=start_driver, daemon=True).start()
-        threading.Thread(target=process_failed_transcriptions, daemon=True).start()
+        clean_transcript_thread = threading.Thread(
+            target=clean_transcript,
+            daemon=True,
+        )
+
+        clean_transcript_thread.start()
+        threading.Thread(
+            target=thread_target_with_exception_handling,
+            args=(process_audio_async,),
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=thread_target_with_exception_handling,
+            args=(listen_for_wake_word,),
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=thread_target_with_exception_handling,
+            args=(start_driver,),
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=thread_target_with_exception_handling,
+            args=(process_failed_transcriptions,),
+            daemon=True,
+        ).start()
+        # threading.Thread(target=monitor_clean_transcript,daemon=True,).start()
 
         with stream:
             start_listener()
+
+        # Monitor for exceptions in background threads
+        while True:
+            try:
+                exception = exception_queue.get(timeout=1)
+                logging.error(f"Exception in background thread: {exception}")
+            except queue.Empty:
+                # No exceptions, continue monitoring
+                pass
     except KeyboardInterrupt:
         logging.info("Application terminated by user")
         logging.debug("Received keyboard interrupt")
