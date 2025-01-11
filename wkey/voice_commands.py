@@ -1303,7 +1303,8 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                 logging.info(
                                     f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                                 )
-                                return True
+                                """TODO  we have removed "return True" here because to run mulltiple functions  """
+                                """return True"""
                             except Exception as e:
                                 logging.error(
                                     f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
@@ -1314,7 +1315,8 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                             logging.error(
                                 f"{RED}Function {function_name} not found{RESET}"
                             )
-                            return False
+                            """TODO  we have removed return False" here because to run mulltiple functions  """
+                            """return False"""
                 else:
                     logging.error(f"{RED}No tool calls found in the response{RESET}")
 
