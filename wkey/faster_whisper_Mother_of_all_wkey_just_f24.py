@@ -8,6 +8,7 @@
 ##    ##  #######            ##     ## ####  ######
 """
 
+import torch
 import os
 import io
 import time
@@ -51,20 +52,35 @@ from openwakeword.model import Model
 
 import subprocess
 
+
 # Initial setup and global variables
 initial_volume = None  # Variable to store initial volume
 transcript_queue = queue.Queue()
 audio_buffer_queue = queue.Queue()
 
 load_dotenv()
-key_label = os.environ.get("WKEY", "f24")
+# key_label = os.environ.get("WKEY", "f24")
+
+key_label = os.environ.get("WKEY", "ctrl_r")
 RECORD_KEY = Key[key_label]
 keyboard_controller = KeyboardController()
 recording = False
 stream = None
 audio_buffer = np.array([], dtype="float32")
 sample_rate = 16000
-model = WhisperModel("small.en", device="cuda", num_workers=8)
+
+
+if torch.cuda.is_available():
+    # CUDA is available; execute your CUDA-dependent code here
+    print("CUDA is available. Executing CUDA-dependent code.")
+    # Example: Set the default tensor type to CUDA
+    model = WhisperModel("small.en", device="cuda", num_workers=8)
+    # Your CUDA-specific operations
+else:
+    # CUDA is not available; handle accordingly
+    print("CUDA is not available. Executing fallback code.")
+    # Your fallback operations
+
 
 # "whisper-large-v3"
 # groq_model = "distil-whisper-large-v3-en"

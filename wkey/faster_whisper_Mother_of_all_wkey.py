@@ -201,7 +201,7 @@ channels = 1
 # for pre_recording_buffer_f24 for 2 second buffer is equlal to 16000 ie sample_rate*2
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 pre_recording_buffer_f24 = np.zeros(
-    (sample_rate * 2, channels), dtype=np.float32
+    (sample_rate * 3, channels), dtype=np.float32
 )  # 1 second buffer for F24
 buffer_index = 0
 audio_buffer = []
@@ -497,7 +497,7 @@ def stop_recording(keyword_index):
 
         if keyword_index == 1:
             stop_delay_threshold = (
-                1  # Time to wait before stopping after no speech is detected
+                0.5  # Time to wait before stopping after no speech is detected
             )
         elif keyword_index == 2:
             stop_delay_threshold = (
@@ -509,7 +509,10 @@ def stop_recording(keyword_index):
             )
         elif keyword_index is None:
             # stop_delay_threshold = (0  # Time to wait before stopping after no speech is detected )
-            # pre_recording_data = np.roll(pre_recording_buffer_f24, -buffer_index, axis=0).flatten()
+            pre_recording_data = np.roll(
+                pre_recording_buffer_f24, -buffer_index, axis=0
+            ).flatten()
+            audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
             audio_buffer_queue.put((audio_buffer, keyword_index))
 
             threading.Thread(target=restore_volume_all).start()
@@ -799,115 +802,80 @@ last_detection_time = 0  # Time when the last wake word was detected
 
 
 def listen_for_wake_word():
-    try:
-        global wake_stream, last_detection_time, recording
-        logging.info(f"{GREEN}Listening for wake words...{RESET}")
+    global wake_stream, last_detection_time, recording
+    print("Listening for wake words...")
 
-        while True:
-            try:
-                if wake_stream:
-                    data = wake_stream.read(CHUNK, exception_on_overflow=False)
-                    pcm = np.frombuffer(data, dtype=np.int16)
+    while True:
+        try:
+            if wake_stream:
+                data = wake_stream.read(CHUNK, exception_on_overflow=False)
+                pcm = np.frombuffer(data, dtype=np.int16)
 
-                    # Check for wake word using OpenWakeWord
-                    prediction = owwModel.predict(pcm)
-                    keyword_index = -1  # Default to no detection
-                    max_score = 0.0
+                # Check for wake word using OpenWakeWord
+                prediction = owwModel.predict(pcm)
+                keyword_index = -1  # Default to no detection
+                max_score = 0.0
 
-                    # Limit to only the most recent prediction scores for speed
-                    recent_predictions = list(owwModel.prediction_buffer.values())[-3:]
+                # Limit to only the most recent prediction scores for speed
+                recent_predictions = list(owwModel.prediction_buffer.values())[-8:]
 
-                    # Find the highest score among detected keywords
-                    for idx, scores in enumerate(recent_predictions):
-                        if (
-                            scores[-1] > max_score
-                        ):  # Check last score for this prediction
-                            max_score = scores[-1]
-                            keyword_index = idx
+                # Find the highest score among detected keywords
+                for idx, scores in enumerate(recent_predictions):
+                    if scores[-1] > max_score:  # Check last score for this prediction
+                        max_score = scores[-1]
+                        keyword_index = idx
 
-                    # Use individual threshold for each wake word
-                    current_time = time.time()
-                    if (
-                        keyword_index >= 0
-                        and max_score
-                        > THRESHOLDS.get(
-                            keyword_index, 0.4
-                        )  # Use threshold specific to keyword_index
-                        and (current_time - last_detection_time) > COOLDOWN_TIME
-                        and not recording
-                    ):
-                        logging.info(
-                            f"{PINK}{BOLD}Custom wake word 'keyword_index'{keyword_index} detected!{RESET}"
-                        )
-                        last_detection_time = (
-                            current_time  # Update the last detection time
-                        )
+                # Use individual threshold for each wake word
+                current_time = time.time()
+                if (
+                    keyword_index >= 0
+                    and max_score
+                    > THRESHOLDS.get(
+                        keyword_index, 0.4
+                    )  # Use threshold specific to keyword_index
+                    and (current_time - last_detection_time) > COOLDOWN_TIME
+                    and not recording
+                ):
+                    last_detection_time = current_time  # Update the last detection time
 
-                        if keyword_index == 0:  # Custom wake word: "hey_llama2 "
-                            pass
-                        elif keyword_index == 1:
-                            # Custom wake word: "hey_computer9"
-                            if recording is False:
-                                threading.Thread(
-                                    target=start_recording, args=(keyword_index,)
-                                ).start()
-                            threading.Thread(
-                                target=stop_recording, args=(keyword_index,)
-                            ).start()
-                        elif keyword_index == 2:  # Custom wake word: "rey_lama"
-                            logging.info(
-                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'rey_lama' detected!{RESET}"
-                            )
-                            if recording is False:
-                                threading.Thread(
-                                    target=start_recording, args=(keyword_index,)
-                                ).start()
-                            threading.Thread(
-                                target=stop_recording, args=(keyword_index,)
-                            ).start()
-                        elif keyword_index == 3:  # Custom wake word: "hey_google"
-                            logging.info(
-                                f"{BRIGHT_WHITE}{BOLD}Custom wake word 'hey_google' detected!{RESET}"
-                            )
-                            """if recording is False:
-                                threading.Thread(
-                                    target=start_recording, args=(keyword_index,)
-                                ).start()"""
-                            threading.Thread(decrease_volume_all).start()
-                            time.sleep(3)
-                            """threading.Thread(
-                                target=stop_recording, args=(keyword_index,)
-                            ).start()"""
-                            threading.Thread(restore_volume_all).start()
-                            """TODO: add the code to start the google assistant"""
-                        else:
-                            logging.info(
-                                f"{RED}Unknown wake word detected!{RESET}",
-                                keyword_index,
-                            )
+                    if keyword_index == 0:  # Custom wake word: "hey_llama2 "
+                        print("Custom wake word 'hey_llama' detected!")
+                        threading.Thread(target=start_recording).start()
+                        time.sleep(3)
+                        threading.Thread(
+                            target=stop_recording, args=(keyword_index,)
+                        ).start()
+                    elif keyword_index == 1:  # Custom wake word: "hey_computer10"
+                        print("Custom wake word 'hey_computer10' detected!")
+                        threading.Thread(target=start_recording).start()
+                        # time.sleep(1)
+                        threading.Thread(target=stop_recording, args=(1,)).start()
+                    elif keyword_index == 2:  # Custom wake word: "hey_computer10"
+                        print("Custom wake word 'hey_computer10' detected!")
+                        threading.Thread(target=start_recording).start()
+                        # time.sleep(1)
+                        threading.Thread(target=stop_recording, args=(2,)).start()
+                    else:
+                        print("Unknown wake word detected!", keyword_index)
 
-                else:
-                    logging.info(f"{YELLOW}Waiting for microphone...{RESET}")
-                    time.sleep(5)
+            else:
+                print("Waiting for microphone...")
+                time.sleep(5)
 
-            except OSError as e:
-                logging.info(f"{RED}Audio stream error: {e}{RESET}")
-                if wake_stream:
-                    try:
-                        if wake_stream.is_active():
-                            wake_stream.stop_stream()
-                        wake_stream.close()
-                    except OSError:
-                        logging.info(
-                            f"{RED}Stream already closed or failed to close.{RESET}"
-                        )
+        except OSError as e:
+            print(f"Audio stream error: {e}")
+            if wake_stream:
+                try:
+                    if wake_stream.is_active():
+                        wake_stream.stop_stream()
+                    wake_stream.close()
+                except OSError:
+                    print("Stream already closed or failed to close.")
 
-                wake_stream = None
+            wake_stream = None
 
-                # Attempt to reinitialize the wake word detection after an error
-                time.sleep(10)  # Wait before retrying to avoid rapid retry loops
-    except Exception as e:
-        logging.error(f"Error in listen_for_wake_word: {e}", exc_info=True)
+            # Attempt to reinitialize the wake word detection after an error
+            time.sleep(10)  # Wait before retrying to avoid rapid retry loops
 
 
 def cleanup():
@@ -1623,7 +1591,7 @@ def main():
 
         #        start_thread(monitor_state, "StateMonitor")
         # Add health monitor thread
-        start_thread(monitor_program_health, "HealthMonitor")
+        # start_thread(monitor_program_health, "HealthMonitor")
 
         with stream:
             # Start the async process_audio_async function
