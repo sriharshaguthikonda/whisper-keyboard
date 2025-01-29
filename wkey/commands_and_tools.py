@@ -5,6 +5,8 @@ import logging
 import re
 import asyncio
 from fuzzywuzzy import process
+import threading
+import time
 
 # ANSI Color codes
 BLUE = "\033[94m"
@@ -333,6 +335,7 @@ COMMAND_MAPPINGS = {
         "launch grok",
         "run grok",
     ],
+    "set alarm": ["set alarm", "alarm in"],
 }
 
 
@@ -417,6 +420,7 @@ ACTIONS = {
     "manage_services": lambda: os.system("services.msc"),
     "start_whisper": start_whisper,
     "start_grok": start_grok,
+    "set alarm": lambda minutes, message: set_alarm(minutes, message),
 }
 
 
@@ -943,6 +947,27 @@ tools = [
             "name": "start_grok",
             "description": "Starts Grok application by opening the specified shortcut",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_alarm",
+            "description": "Set an alarm with a TTS notification",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "minutes": {
+                        "type": "integer",
+                        "description": "The number of minutes to wait before the alarm goes off",
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "The message to be spoken when the alarm goes off",
+                    },
+                },
+                "required": ["minutes", "message"],
+            },
         },
     },
 ]

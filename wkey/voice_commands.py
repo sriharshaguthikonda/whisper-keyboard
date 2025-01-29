@@ -954,6 +954,30 @@ def run_ollama(query):
 
 
 """
+
+   ###    ##          ###    ########  ##     ## 
+  ## ##   ##         ## ##   ##     ## ###   ### 
+ ##   ##  ##        ##   ##  ##     ## #### #### 
+##     ## ##       ##     ## ########  ## ### ## 
+######### ##       ######### ##   ##   ##     ## 
+##     ## ##       ##     ## ##    ##  ##     ## 
+##     ## ######## ##     ## ##     ## ##     ## 
+
+
+"""
+
+
+def set_alarm(minutes, message):
+    def alarm():
+        time.sleep(minutes * 60)
+        for _ in range(5):  # Repeat the message 5 times
+            asyncio.run(text_to_speech(message))
+            time.sleep(1)  # Pause between repetitions
+
+    threading.Thread(target=alarm).start()
+
+
+"""
 ######## ########  ######  
    ##       ##    ##    ## 
    ##       ##    ##       
