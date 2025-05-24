@@ -161,6 +161,27 @@ def start_grok():
         logging.error(f"{RED}Error executing start_grok: {e}{RESET}", exc_info=True)
 
 
+def execute_system_command(command):
+    try:
+        os.system(command)
+    except Exception as e:
+        logging.error(f"Error executing {command}: {e}", exc_info=True)
+
+
+def execute_pyautogui_hotkey(*keys):
+    try:
+        pyautogui.hotkey(*keys)
+    except Exception as e:
+        logging.error(f"Error executing hotkey {keys}: {e}", exc_info=True)
+
+
+def execute_pyautogui_press(key):
+    try:
+        pyautogui.press(key)
+    except Exception as e:
+        logging.error(f"Error executing press {key}: {e}", exc_info=True)
+
+
 """
  ######   #######  ##     ## ##     ##    ###    ##    ## ########  
 ##    ## ##     ## ###   ### ###   ###   ## ##   ###   ## ##     ## 
@@ -352,53 +373,53 @@ COMMAND_MAPPINGS = {
 # Define actions for commands
 ACTIONS = {
     # System Commands
-    "search windows": lambda: pyautogui.press("win"),
-    "show desktop": lambda: pyautogui.hotkey("win", "d"),
-    "open settings": lambda: pyautogui.hotkey("win", "i"),
-    "lock screen": lambda: pyautogui.hotkey("win", "l"),
-    "take screenshot": lambda: pyautogui.hotkey("win", "prtsc"),
-    "open file explorer": lambda: pyautogui.hotkey("win", "e"),
-    "windows search": lambda: pyautogui.hotkey("win", "s"),
-    "open run dialog": lambda: pyautogui.hotkey("win", "r"),
-    "open task manager": lambda: pyautogui.hotkey("ctrl", "shift", "esc"),
-    "minimize all windows": lambda: pyautogui.hotkey("win", "m"),
-    "restore windows": lambda: pyautogui.hotkey("win", "shift", "m"),
+    "search windows": lambda: execute_pyautogui_press("win"),
+    "show desktop": lambda: execute_pyautogui_hotkey("win", "d"),
+    "open settings": lambda: execute_pyautogui_hotkey("win", "i"),
+    "lock screen": lambda: execute_pyautogui_hotkey("win", "l"),
+    "take screenshot": lambda: execute_pyautogui_hotkey("win", "prtsc"),
+    "open file explorer": lambda: execute_pyautogui_hotkey("win", "e"),
+    "windows search": lambda: execute_pyautogui_hotkey("win", "s"),
+    "open run dialog": lambda: execute_pyautogui_hotkey("win", "r"),
+    "open task manager": lambda: execute_pyautogui_hotkey("ctrl", "shift", "esc"),
+    "minimize all windows": lambda: execute_pyautogui_hotkey("win", "m"),
+    "restore windows": lambda: execute_pyautogui_hotkey("win", "shift", "m"),
     #    "shutdown system": lambda: os.system('shutdown /s /t 0'),
     #    "restart system": lambda: os.system('shutdown /r /t 0'),
     # "log off": lambda: os.system('shutdown /l'),
     # Application Commands
     "open control panel": lambda: os.system("control"),
-    "open calculator": lambda: os.system("calc"),
-    "open notepad": lambda: os.system("notepad"),
-    "open word": lambda: os.system("start winword"),
-    "open excel": lambda: os.system("start excel"),
-    "open powerpoint": lambda: os.system("start powerpnt"),
-    "open outlook": lambda: os.system("start outlook"),
-    "open paint": lambda: os.system("start mspaint"),
-    "open command prompt": lambda: os.system("start cmd"),
-    "open powershell": lambda: os.system("start powershell"),
-    "open edge": lambda: os.system("start msedge"),
-    "open chrome": lambda: os.system("start chrome"),
-    "open firefox": lambda: os.system("start firefox"),
+    "open calculator": lambda: execute_system_command("calc"),
+    "open notepad": lambda: execute_system_command("notepad"),
+    "open word": lambda: execute_system_command("start winword"),
+    "open excel": lambda: execute_system_command("start excel"),
+    "open powerpoint": lambda: execute_system_command("start powerpnt"),
+    "open outlook": lambda: execute_system_command("start outlook"),
+    "open paint": lambda: execute_system_command("start mspaint"),
+    "open command prompt": lambda: execute_system_command("start cmd"),
+    "open powershell": lambda: execute_system_command("start powershell"),
+    "open edge": lambda: execute_system_command("start msedge"),
+    "open chrome": lambda: execute_system_command("start chrome"),
+    "open firefox": lambda: execute_system_command("start firefox"),
     # Volume Controls
-    "open sound control panel": lambda: os.system("control mmsys.cpl"),
-    "volume up": lambda: pyautogui.press("volumeup"),
-    "volume down": lambda: pyautogui.press("volumedown"),
-    "mute volume": lambda: pyautogui.press("volumemute"),
+    "open sound control panel": lambda: execute_system_command("control mmsys.cpl"),
+    "volume up": lambda: execute_pyautogui_press("volumeup"),
+    "volume down": lambda: execute_pyautogui_press("volumedown"),
+    "mute volume": lambda: execute_pyautogui_press("volumemute"),
     # Media Controls
     "play media": play_music,
     "stop media": pause_song,
     "next track": next_track,
     "previous track": previous_track,
     # Custom or Complex Operations
-    "open device manager": lambda: os.system("devmgmt.msc"),
-    "open disk management": lambda: os.system("diskmgmt.msc"),
-    "open network connections": lambda: os.system("ncpa.cpl"),
-    "open system properties": lambda: os.system("sysdm.cpl"),
-    "open date and time": lambda: os.system("timedate.cpl"),
+    "open device manager": lambda: execute_system_command("devmgmt.msc"),
+    "open disk management": lambda: execute_system_command("diskmgmt.msc"),
+    "open network connections": lambda: execute_system_command("ncpa.cpl"),
+    "open system properties": lambda: execute_system_command("sysdm.cpl"),
+    "open date and time": lambda: execute_system_command("timedate.cpl"),
     # System Commands
-    "ping google": lambda: os.system("ping www.google.com"),
-    "flush dns": lambda: os.system("ipconfig /flushdns"),
+    "ping google": lambda: execute_system_command("ping www.google.com"),
+    "flush dns": lambda: execute_system_command("ipconfig /flushdns"),
     # Voicemeeter Commands
     "restart voicemeeter": lambda: subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
@@ -415,9 +436,9 @@ ACTIONS = {
     "open negative screen": lambda: subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     ),
-    "open_task_scheduler": lambda: os.system("taskschd.msc"),
-    "open_startup_folder": lambda: os.system("shell:startup"),
-    "manage_services": lambda: os.system("services.msc"),
+    "open_task_scheduler": lambda: execute_system_command("taskschd.msc"),
+    "open_startup_folder": lambda: execute_system_command("shell:startup"),
+    "manage_services": lambda: execute_system_command("services.msc"),
     "start_whisper": start_whisper,
     "start_grok": start_grok,
     "set alarm": lambda minutes, message: set_alarm(minutes, message),

@@ -116,7 +116,8 @@ vad_detector = VoiceDetector()
 
 load_dotenv()
 
-
+# Get the key label from environment variables, default to 'f24' if not set
+# key_label = os.environ.get("WKEY", "ctrl_r")
 key_label = os.environ.get("WKEY", "f24")
 RECORD_KEY = Key[key_label]
 
@@ -145,13 +146,14 @@ else:
     )
 
 # groq_model = "distil-whisper-large-v3-en"
-groq_model = "whisper-large-v3-turbo"
-# groq_model = "whisper-large-v3"
+# groq_model = "whisper-large-v3-turbo"
+groq_model = "whisper-large-v3"
 play_pause_pressed = False
 something_is_playing = False
 
 
 Hey_computer_STT_prompt = None
+
 """
 Hey_computer_STT_prompt = "
 1. possible words in the transcript which will form a sentence : [open start menu show windows search desktop minimize everything settings lock screen the take screenshot capture file explorer explore files run dialog command task manager restore all calculator notepad word excel powerpoint outlook paint console powershell edge chrome firefox sound control panel audio volume up increase down decrease play media music stop next track song skip previous replay device disk management network connections system properties date time ping google check internet connection flush dns reset cache restart voicemeeter set display fusion monitor profile negative invert]. 
@@ -764,8 +766,8 @@ MODEL_PATHS = [
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
     r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
+    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",  # New model path
     # r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
-    # r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",  # New model path
 ]
 
 # Load the OpenWakeWord models
@@ -783,7 +785,8 @@ CHUNK = 5120  # Optimal chunk size for OpenWakeWord
 THRESHOLDS = {
     0: 0.9,  # Threshold for "hey_jarvis"
     1: 0.1,  # Threshold for "hey_computer10"
-    2: 0.1,  # Threshold for "rey_lama"     3: 0.1,  # Threshold for "hey_google"
+    2: 0.1,  # Threshold for "rey_lama"
+    3: 0.1,  # Threshold for "hey_google"
 }
 
 COOLDOWN_TIME = 6  # Cooldown time in seconds after detecting a wake word
@@ -855,6 +858,12 @@ def listen_for_wake_word():
                         threading.Thread(target=start_recording).start()
                         # time.sleep(1)
                         threading.Thread(target=stop_recording, args=(2,)).start()
+                    elif keyword_index == 3:  # Custom wake word: "hey_computer10"
+                        print("Custom wake word 'hey_computer10' detected!")
+                        decrease_volume_all()
+                        time.sleep(3)
+                        restore_volume_all()
+
                     else:
                         print("Unknown wake word detected!", keyword_index)
 

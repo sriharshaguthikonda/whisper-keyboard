@@ -970,8 +970,13 @@ def run_ollama(query):
 def set_alarm(minutes, message):
     def alarm():
         time.sleep(minutes * 60)
+        # Load and play the chime sound
+        chime = AudioSegment.from_mp3(
+            r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\chime.mp3"
+        )  # Replace with the path to your chime file
+        play(chime)
         for _ in range(5):  # Repeat the message 5 times
-            asyncio.run(text_to_speech(message))
+            asyncio.run(text_to_speech(f" this is an alarm to {message}"))
             time.sleep(1)  # Pause between repetitions
 
     threading.Thread(target=alarm).start()
