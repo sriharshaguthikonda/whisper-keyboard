@@ -1,0 +1,285 @@
+/* Voice Pause Controller - Dark Theme (Visual Studio Dark) */
+
+QMainWindow {
+    background-color: #1E1E1E;
+    color: #CCCCCC;
+    font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* Typography */
+#titleLabel {
+    font-size: 20px;
+    font-weight: 600;
+    color: #FFFFFF;
+    margin: 0px;
+    padding: 4px 0px;
+}
+
+#subtitleLabel {
+    font-size: 13px;
+    color: #9CDCFE;
+    margin: 0px;
+    padding: 0px;
+    font-weight: normal;
+}
+
+#sectionLabel {
+    font-weight: 600;
+    font-size: 14px;
+    color: #CCCCCC;
+    margin: 0px 0px 8px 0px;
+    padding: 0px;
+}
+
+#hotkeyLabel {
+    color: #6A9955;
+    font-size: 11px;
+    font-style: italic;
+    margin: 8px 0px 0px 0px;
+    padding: 4px;
+}
+
+/* Cards and Frames */
+#statusCard {
+    background-color: #252526;
+    border: 1px solid #3E3E42;
+    border-radius: 8px;
+    margin: 2px;
+}
+
+#controlsFrame {
+    background-color: #252526;
+    border: 1px solid #3E3E42;
+    border-radius: 8px;
+    margin: 2px;
+}
+
+#settingsFrame {
+    background-color: #252526;
+    border: 1px solid #3E3E42;
+    border-radius: 8px;
+    margin: 2px;
+}
+
+/* Status Indicator */
+#statusIndicator {
+    font-size: 18px;
+    font-weight: 700;
+    color: #4EC9B0;
+    margin: 0px 0px 12px 0px;
+    padding: 8px;
+    background-color: rgba(78, 201, 176, 0.1);
+    border-radius: 6px;
+    border: 1px solid rgba(78, 201, 176, 0.2);
+}
+
+/* Timer Elements */
+#timerIcon {
+    font-size: 16px;
+    color: #DCDCAA;
+    min-width: 24px;
+    padding: 2px;
+}
+
+#timerTitle {
+    color: #CCCCCC;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 2px 8px;
+}
+
+#timerValue {
+    color: #9CDCFE;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: "Consolas", "Courier New", monospace;
+    padding: 2px;
+    min-width: 80px;
+}
+
+/* Buttons */
+#primaryButton {
+    background-color: #0E639C;
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 12px 24px;
+    min-height: 44px;
+}
+
+#primaryButton:hover {
+    background-color: #1177BB;
+    border: 1px solid #4FC3F7;
+}
+
+#primaryButton:pressed {
+    background-color: #0D5A8A;
+    border: 1px solid #0E639C;
+}
+
+#primaryButton:focus {
+    outline: none;
+    border: 2px solid #4FC3F7;
+}
+
+#secondaryButton {
+    background-color: #3C3C3C;
+    color: #CCCCCC;
+    border: 1px solid #5A5A5A;
+    border-radius: 5px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 16px;
+    min-height: 32px;
+}
+
+#secondaryButton:hover {
+    background-color: #464647;
+    border: 1px solid #6A6A6A;
+    color: #FFFFFF;
+}
+
+#secondaryButton:pressed {
+    background-color: #2D2D2D;
+    border: 1px solid #4A4A4A;
+}
+
+#secondaryButton:focus {
+    outline: none;
+    border: 2px solid #007ACC;
+}
+
+#tertiaryButton {
+    background-color: transparent;
+    color: #9CDCFE;
+    border: 1px solid #5A5A5A;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 12px;
+    min-height: 28px;
+}
+
+#tertiaryButton:hover {
+    background-color: #2D2D2D;
+    border: 1px solid #6A6A6A;
+    color: #FFFFFF;
+}
+
+#tertiaryButton:pressed {
+    background-color: #1A1A1A;
+    border: 1px solid #4A4A4A;
+}
+
+#tertiaryButton:focus {
+    outline: none;
+    border: 2px solid #007ACC;
+}
+
+/* Checkboxes */
+#settingsCheckbox {
+    color: #CCCCCC;
+    font-size: 13px;
+    font-weight: normal;
+    spacing: 8px;
+    padding: 4px 0px;
+}
+
+#settingsCheckbox::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #5A5A5A;
+    border-radius: 3px;
+    background-color: #2D2D2D;
+    margin-right: 8px;
+}
+
+#settingsCheckbox::indicator:hover {
+    border: 2px solid #007ACC;
+    background-color: #3C3C3C;
+}
+
+#settingsCheckbox::indicator:checked {
+    background-color: #007ACC;
+    border: 2px solid #007ACC;
+    image: url(data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIiIGhlaWdodD0iMTIiIHZpZXdCb3g9IjAgMCAxMiAxMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0ibTEwIDNzLTQuNSA0LjUtNi41IDYuNWwtMi0yIiBzdHJva2U9IiNmZmYiIHN0cm9rZS13aWR0aD0iMS41IiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiLz4KPC9zdmc+);
+}
+
+#settingsCheckbox::indicator:checked:hover {
+    background-color: #1177BB;
+    border: 2px solid #1177BB;
+}
+
+#settingsCheckbox::indicator:focus {
+    outline: none;
+    border: 2px solid #4FC3F7;
+}
+
+/* Scrollbars */
+QScrollBar:vertical {
+    background-color: #2D2D2D;
+    width: 12px;
+    border: none;
+    border-radius: 6px;
+}
+
+QScrollBar::handle:vertical {
+    background-color: #5A5A5A;
+    border-radius: 6px;
+    min-height: 20px;
+    margin: 2px;
+}
+
+QScrollBar::handle:vertical:hover {
+    background-color: #6A6A6A;
+}
+
+QScrollBar::handle:vertical:pressed {
+    background-color: #4A4A4A;
+}
+
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+    border: none;
+}
+
+/* Tooltips */
+QToolTip {
+    background-color: #2D2D2D;
+    color: #CCCCCC;
+    border: 1px solid #5A5A5A;
+    border-radius: 4px;
+    padding: 6px 8px;
+    font-size: 12px;
+}
+
+/* Selection */
+QWidget:focus {
+    outline: none;
+}
+
+/* Animation states for buttons */
+QPushButton {
+    transition: all 0.15s ease-in-out;
+}
+
+/* Disabled state */
+QPushButton:disabled {
+    background-color: #2D2D2D;
+    color: #6A6A6A;
+    border: 1px solid #3A3A3A;
+}
+
+QCheckBox:disabled {
+    color: #6A6A6A;
+}
+
+#settingsCheckbox::indicator:disabled {
+    background-color: #2D2D2D;
+    border: 2px solid #3A3A3A;
+}
