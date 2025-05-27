@@ -1,0 +1,95 @@
+QMainWindow {
+    background-color: #FFFFFF;
+    color: #1E1E1E;
+}
+
+#titleLabel {
+    font-size: 18px;
+    font-weight: bold;
+    color: #1E1E1E;
+    margin: 0;
+}
+
+#subtitleLabel {
+    font-size: 12px;
+    color: #6A6A6A;
+    margin: 0;
+}
+
+#statusCard, #controlsFrame, #settingsFrame {
+    background-color: #F8F8F8;
+    border: 1px solid #D1D1D1;
+    border-radius: 8px;
+}
+
+#statusIndicator {
+    font-size: 16px;
+    font-weight: bold;
+    color: #107C10;
+}
+
+#primaryButton {
+    background-color: #0078D4;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 8px 16px;
+    min-width: 100px;
+    min-height: 32px;
+}
+
+#primaryButton:hover {
+    background-color: #106EBE;
+}
+
+#primaryButton:pressed {
+    background-color: #005A9E;
+}
+
+#secondaryButton, #tertiaryButton {
+    background-color: #FFFFFF;
+    color: #323130;
+    border: 1px solid #8A8886;
+    border-radius: 4px;
+    font-size: 13px;
+    padding: 6px 12px;
+    min-width: 80px;
+    min-height: 28px;
+}
+
+#secondaryButton:hover, #tertiaryButton:hover {
+    background-color: #F3F2F1;
+}
+
+#sectionLabel {
+    font-weight: bold;
+    font-size: 13px;
+    color: #323130;
+}
+
+#settingsCheckbox {
+    color: #323130;
+    font-size: 12px;
+}
+
+#hotkeyLabel {
+    color: #6A6A6A;
+    font-size: 11px;
+}
+
+#timerTitle {
+    color: #323130;
+    font-size: 12px;
+}
+
+#timerValue {
+    color: #0078D4;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+#timerIcon {
+    font-size: 14px;
+}
