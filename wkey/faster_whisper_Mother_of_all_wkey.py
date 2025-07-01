@@ -99,7 +99,9 @@ load_dotenv()
 
 # Get the key label from environment variables, default to 'f24' if not set
 key_label = os.environ.get("WKEY", "f24")
+# key_label = os.environ.get("WKEY", "ctrl_r")
 RECORD_KEY = Key[key_label]
+
 
 keyboard_controller = KeyboardController()
 recording = False

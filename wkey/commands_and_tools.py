@@ -357,6 +357,7 @@ COMMAND_MAPPINGS = {
         "run grok",
     ],
     "set alarm": ["set alarm", "alarm in"],
+
 }
 
 

@@ -1325,10 +1325,23 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                     f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                                 )
                                 func = globals()[function_name]
-                                if asyncio.iscoroutinefunction(func):
-                                    result = await func(**function_args)
+                                # Get the function's parameters
+                                import inspect
+                                sig = inspect.signature(func)
+                                
+                                # Check if the function accepts any parameters
+                                if not any(param.kind == param.POSITIONAL_OR_KEYWORD for param in sig.parameters.values()):
+                                    # Function takes no parameters
+                                    if asyncio.iscoroutinefunction(func):
+                                        result = await func()
+                                    else:
+                                        result = func()
                                 else:
-                                    result = func(**function_args)
+                                    # Function expects parameters
+                                    if asyncio.iscoroutinefunction(func):
+                                        result = await func(**function_args)
+                                    else:
+                                        result = func(**function_args)
                                 logging.info(
                                     f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                                 )
