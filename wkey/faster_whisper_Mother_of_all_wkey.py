@@ -41,7 +41,7 @@ from pause_all import is_sound_playing_windows_processing
 import pyaudio
 from openwakeword.model import Model
 from concurrent.futures import ThreadPoolExecutor
-from .clipboard_utils import paste_transcript
+from clipboard_utils import paste_transcript
 import webrtcvad
 from voice_activity_detection import VoiceDetector
 import sys
