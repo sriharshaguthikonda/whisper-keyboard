@@ -41,8 +41,7 @@ from pause_all import is_sound_playing_windows_processing
 import pyaudio
 from openwakeword.model import Model
 from concurrent.futures import ThreadPoolExecutor
-import win32clipboard
-import ctypes
+from .clipboard_utils import paste_transcript
 import webrtcvad
 from voice_activity_detection import VoiceDetector
 import sys
@@ -137,7 +136,6 @@ wake_stream.start_stream()
 # Define beep sounds
 START_BEEP = (2080, 100)
 STOP_BEEP = (440, 100)
-PASTE_BEEP = (1060, 100)
 
 # Locks for synchronization
 recording_lock = threading.Lock()
@@ -953,7 +951,7 @@ async def process_audio_async():
 
             if keyword_index is None:
                 logging.info("pasing f24 transcription")
-                paste_transcript(transcript)
+                paste_transcript(transcript, beep)
                 continue
             elif keyword_index == 1:
                 if "computer" in transcript_lower:
@@ -971,7 +969,7 @@ async def process_audio_async():
                         keyword_position + len("lama") :
                     ]
                     logging.info(f"Processing lama command: {stripped_transcript}")
-                    paste_transcript(stripped_transcript)
+                    paste_transcript(stripped_transcript, beep)
                     continue
             elif keyword_index == 3:
                 if "google" in transcript_lower:
@@ -1041,7 +1039,7 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
     try:
         if keyword_index is None:
             if len(transcript) > 3:
-                paste_transcript(transcript)
+                paste_transcript(transcript, beep)
         elif keyword_index == 1 and "computer" in transcript:
             keyword_pos = transcript.index("computer")
             stripped = transcript[key_pos + len("computer") :].strip()
@@ -1051,7 +1049,7 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
             keyword_pos = transcript.index("lama")
             stripped = transcript[key_pos + len("lama") :].strip()
             if stripped:
-                paste_transcript(stripped)
+                paste_transcript(stripped, beep)
         else:
             logging.info(f"{YELLOW}No matching keyword found in transcript{RESET}")
     except Exception as e:
@@ -1114,69 +1112,6 @@ def monitor_state():
  ######  ######## #### ##        ########   #######  ##     ## ##     ## ########  
 """
 
-def set_clipboard_content(text):
-    try:
-        success = False
-        while not success:
-            try:
-                win32clipboard.OpenClipboard(0)
-                win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardText(text)
-                win32clipboard.CloseClipboard()
-                success = True
-            except win32clipboard.Error:
-                logging.info("Failed to open the clipboard. Retrying in 1 second...")
-                time.sleep(0.5)
-    except Exception as e:
-        logging.error(f"Error in set_clipboard_content: {e}", exc_info=True)
-
-def get_clipboard_content():
-    try:
-        win32clipboard.OpenClipboard(0)
-        data = win32clipboard.GetClipboardData()
-        win32clipboard.CloseClipboard()
-        return data
-    except win32clipboard.Error:
-        logging.info("Failed to open the clipboard. Returning an empty string.")
-        return ""
-    except Exception as e:
-        logging.error(f"Error in get_clipboard_content: {e}", exc_info=True)
-
-def send_input(text):
-    try:
-        for char in text:
-            ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 0, 0)
-            ctypes.windll.user32.keybd_event(ord(char.upper()), 0, 2, 0)
-    except Exception as e:
-        logging.error(f"Error in send_input: {e}", exc_info=True)
-
-def paste_transcript(transcript):
-    try:
-        set_clipboard_content(transcript)
-        ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)
-        ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)
-        ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
-        beep(PASTE_BEEP)
-        logging.info("Transcript pasted")
-    except Exception as e:
-        logging.error(f"Error in paste_transcript: {e}", exc_info=True)
-
-def run_command_with_retry(transcript):
-    try:
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                if execute_command_run_with_tool(transcript):
-                    return
-            except Exception as e:
-                logging.error(
-                    f"Error in execute_command_run_with_tool: {e}", exc_info=True
-                )
-            time.sleep(2)
-        logging.error(f"Failed to execute command after {max_retries} attempts")
-    except Exception as e:
-        logging.error(f"Error in run_command_with_retry: {e}", exc_info=True)
 
 async def clean_transcript():
     try:
