@@ -127,6 +127,9 @@ api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
 Groq_client = Groq(api_key=api_key)
 
+# Reusable HTTP session for Groq API calls
+groq_session = None
+
 p = pyaudio.PyAudio()
 wake_stream = p.open(
     format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=16000
@@ -775,6 +778,7 @@ def listen_for_wake_word():
 def cleanup():
     try:
         global wake_stream
+        global groq_session
         if wake_stream:
             try:
                 if wake_stream.is_active():
@@ -784,6 +788,9 @@ def cleanup():
                 logging.info(f"Error during cleanup: {e}")
             wake_stream = None
         p.terminate()
+        if groq_session is not None:
+            asyncio.get_event_loop().run_until_complete(groq_session.close())
+            groq_session = None
         logging.info("Cleanup completed.")
     except Exception as e:
         logging.error(f"Error in cleanup: {e}", exc_info=True)
@@ -840,37 +847,40 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
         "temperature": 0.0,
     }
 
+    global groq_session
     for attempt in range(max_retries):
         try:
-            async with aiohttp.ClientSession() as session:
-                form_data = aiohttp.FormData()
-                form_data.add_field(
-                    "file",
-                    byte_io.getvalue(),
-                    filename="pre_recording.wav",
-                    content_type="audio/wav",
-                )
-                form_data.add_field("model", groq_model)
-                form_data.add_field("response_format", "json")
-                form_data.add_field("prompt", "")
-                form_data.add_field("language", "en")
-                form_data.add_field("temperature", "0.0")
+            if groq_session is None:
+                groq_session = aiohttp.ClientSession()
 
-                async with session.post(
-                    url, data=form_data, headers=headers
-                ) as response:
-                    if response.status == 404:
-                        logging.error(f"Groq API endpoint not found: {response.url}")
-                        raise aiohttp.ClientResponseError(
-                            response.request_info,
-                            response.history,
-                            status=response.status,
-                            message=response.reason,
-                            headers=response.headers,
-                        )
-                    response.raise_for_status()
-                    transcription = await response.json()
-                    return transcription["text"].lower()
+            form_data = aiohttp.FormData()
+            form_data.add_field(
+                "file",
+                byte_io.getvalue(),
+                filename="pre_recording.wav",
+                content_type="audio/wav",
+            )
+            form_data.add_field("model", groq_model)
+            form_data.add_field("response_format", "json")
+            form_data.add_field("prompt", "")
+            form_data.add_field("language", "en")
+            form_data.add_field("temperature", "0.0")
+
+            async with groq_session.post(
+                url, data=form_data, headers=headers
+            ) as response:
+                if response.status == 404:
+                    logging.error(f"Groq API endpoint not found: {response.url}")
+                    raise aiohttp.ClientResponseError(
+                        response.request_info,
+                        response.history,
+                        status=response.status,
+                        message=response.reason,
+                        headers=response.headers,
+                    )
+                response.raise_for_status()
+                transcription = await response.json()
+                return transcription["text"].lower()
         except aiohttp.ClientResponseError as e:
             logging.error(
                 f"Groq API client error: {e.status}, message='{e.message}', url='{e.request_info.url}'",
@@ -937,15 +947,25 @@ async def process_audio_async():
             byte_io.seek(0)
 
             try:
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                transcript = None
+                if torch.cuda.is_available():
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
+                    )
+                    if not transcript or transcript == "Transcription failed":
+                        transcript = None
                 if transcript is None:
-                    logging.error("Transcription returned None")
-                    continue
+                    transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                    if transcript is None:
+                        logging.error("Transcription returned None")
+                        continue
             except groq.RateLimitError:
                 logging.error(
                     "Groq API rate limit reached, switching to local transcription."
                 )
-                transcript = transcribe_with_local_model(audio_buffer_for_processing)
+                transcript = transcribe_with_local_model(
+                    audio_buffer_for_processing, keyword_index
+                )
 
             transcript_lower = transcript.lower()
 
