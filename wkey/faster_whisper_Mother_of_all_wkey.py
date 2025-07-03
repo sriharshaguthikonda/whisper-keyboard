@@ -306,11 +306,15 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
 
 def start_recording(keyword_index=None):
-    """Modified start_recording that checks pause status"""
+    """Start recording audio.
+    
+    Args:
+        keyword_index: Index of the wake word that triggered recording, or None if triggered by F24 key
+    """
     try:
-        # Check if paused before starting
-        if check_pause_status():
-            logging.info(f"{YELLOW}Voice recognition is paused. Ignoring recording request.{RESET}")
+        # Only check pause status if this was triggered by a wake word (not F24 key)
+        if keyword_index is not None and check_pause_status():
+            logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
             return
             
         global stream, recording, play_pause_pressed, something_is_playing, True_positve_audio
@@ -501,13 +505,9 @@ last_key_press_time = 0
 recording_thread = None
 
 def on_press(key):
-    """Modified key press handler that respects pause status"""
+    """Key press handler for F24 key (bypasses pause status)"""
     try:
         global last_key_press_time, recording_thread, recording
-        
-        # Check if paused
-        if check_pause_status():
-            return
             
         current_time = time.time()
         if key == RECORD_KEY and not recording:
@@ -520,13 +520,9 @@ def on_press(key):
         logging.error(f"Error in on_press: {e}", exc_info=True)
 
 def on_release(key):
-    """Modified key release handler that respects pause status"""
+    """Key release handler for F24 key (bypasses pause status)"""
     try:
         global last_key_press_time, recording_thread, recording
-        
-        # Check if paused
-        if check_pause_status():
-            return
             
         current_time = time.time()
         if key == RECORD_KEY and recording:
