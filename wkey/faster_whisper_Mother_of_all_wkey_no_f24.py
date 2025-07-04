@@ -116,6 +116,15 @@ vad_detector = VoiceDetector()
 
 load_dotenv()
 
+# Load transcription settings
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
+DEFAULT_SETTINGS = {"use_local_gpu": True, "fallback_to_groq": True}
+try:
+    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+        SETTINGS = json.load(f)
+except Exception:
+    SETTINGS = DEFAULT_SETTINGS
+
 
 key_label = os.environ.get("WKEY", "f24")
 RECORD_KEY = Key[key_label]
@@ -135,13 +144,14 @@ stream = None
 audio_buffer = np.array([], dtype="float32")
 sample_rate = 16000
 
-# Check if CUDA is available
-if torch.cuda.is_available():
+# Initialize local model based on settings and GPU availability
+model = None
+if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
     model = WhisperModel("small.en", device="cuda", num_workers=8)
     logging.info(f"{GREEN}Initialized WhisperModel on CUDA{RESET}")
 else:
-    logging.warning(
-        f"{YELLOW}CUDA device not available. Please ensure your system supports CUDA.{RESET}"
+    logging.info(
+        f"{YELLOW}Local GPU model disabled or CUDA unavailable.{RESET}"
     )
 
 # groq_model = "distil-whisper-large-v3-en"
@@ -164,6 +174,9 @@ Hey_computer_STT_prompt = "
 api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
 Groq_client = Groq(api_key=api_key)
+
+# Reusable HTTP session for Groq API calls
+groq_session = None
 
 
 p = pyaudio.PyAudio()
@@ -886,6 +899,7 @@ def listen_for_wake_word():
 def cleanup():
     try:
         global wake_stream
+        global groq_session
         if wake_stream:
             try:
                 if wake_stream.is_active():
@@ -895,6 +909,9 @@ def cleanup():
                 logging.info(f"Error during cleanup: {e}")
             wake_stream = None
         p.terminate()
+        if groq_session is not None:
+            asyncio.get_event_loop().run_until_complete(groq_session.close())
+            groq_session = None
         logging.info("Cleanup completed.")
     except Exception as e:
         logging.error(f"Error in cleanup: {e}", exc_info=True)
@@ -957,37 +974,40 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
         "temperature": 0.0,
     }
 
+    global groq_session
     for attempt in range(max_retries):
         try:
-            async with aiohttp.ClientSession() as session:
-                form_data = aiohttp.FormData()
-                form_data.add_field(
-                    "file",
-                    byte_io.getvalue(),
-                    filename="pre_recording.wav",
-                    content_type="audio/wav",
-                )
-                form_data.add_field("model", groq_model)
-                form_data.add_field("response_format", "json")
-                form_data.add_field("prompt", "")
-                form_data.add_field("language", "en")
-                form_data.add_field("temperature", "0.0")
+            if groq_session is None:
+                groq_session = aiohttp.ClientSession()
 
-                async with session.post(
-                    url, data=form_data, headers=headers
-                ) as response:
-                    if response.status == 404:
-                        logging.error(f"Groq API endpoint not found: {response.url}")
-                        raise aiohttp.ClientResponseError(
-                            response.request_info,
-                            response.history,
-                            status=response.status,
-                            message=response.reason,
-                            headers=response.headers,
-                        )
-                    response.raise_for_status()
-                    transcription = await response.json()
-                    return transcription["text"].lower()
+            form_data = aiohttp.FormData()
+            form_data.add_field(
+                "file",
+                byte_io.getvalue(),
+                filename="pre_recording.wav",
+                content_type="audio/wav",
+            )
+            form_data.add_field("model", groq_model)
+            form_data.add_field("response_format", "json")
+            form_data.add_field("prompt", "")
+            form_data.add_field("language", "en")
+            form_data.add_field("temperature", "0.0")
+
+            async with groq_session.post(
+                url, data=form_data, headers=headers
+            ) as response:
+                if response.status == 404:
+                    logging.error(f"Groq API endpoint not found: {response.url}")
+                    raise aiohttp.ClientResponseError(
+                        response.request_info,
+                        response.history,
+                        status=response.status,
+                        message=response.reason,
+                        headers=response.headers,
+                    )
+                response.raise_for_status()
+                transcription = await response.json()
+                return transcription["text"].lower()
         except aiohttp.ClientResponseError as e:
             logging.error(
                 f"Groq API client error: {e.status}, message='{e.message}', url='{e.request_info.url}'",
@@ -1013,6 +1033,9 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
             prompt = None
 
         try:
+            if model is None:
+                logging.info("Local model not initialized")
+                return ""
             logging.info("using WhisperModel on CUDA")
             # Convert audio buffer (NumPy array) to WAV format in-memory
             byte_io = io.BytesIO()
@@ -1079,15 +1102,25 @@ async def process_audio_async():
             byte_io.seek(0)  # Rewind to the beginning of the byte stream
 
             try:
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-                if transcript is None:
-                    logging.error("Transcription returned None")
-                    continue
+                transcript = None
+                if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
+                    transcript = transcribe_with_local_model(
+                        audio_buffer_for_processing, keyword_index
+                    )
+                    if not transcript or transcript == "Transcription failed":
+                        transcript = None
+                if transcript is None and SETTINGS.get("fallback_to_groq", True):
+                    transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                    if transcript is None:
+                        logging.error("Transcription returned None")
+                        continue
             except groq.RateLimitError:
                 logging.error(
                     "Groq API rate limit reached, switching to local transcription."
                 )
-                transcript = transcribe_with_local_model(audio_buffer_for_processing)
+                transcript = transcribe_with_local_model(
+                    audio_buffer_for_processing, keyword_index
+                )
 
             transcript_lower = transcript.lower()
 
@@ -1203,9 +1236,10 @@ async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
     """Get transcript with retries and fallback"""
     for attempt in range(max_retries):
         try:
-            transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-            if transcript:
-                return transcript.lower()
+            if SETTINGS.get("fallback_to_groq", True):
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript:
+                    return transcript.lower()
         except Exception as e:
             logging.error(
                 f"{RED}Transcription attempt {attempt + 1} failed: {e}{RESET}"
