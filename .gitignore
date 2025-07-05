@@ -1,3 +1,6 @@
+# Local config
+voice_pause_config.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
