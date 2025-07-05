@@ -48,6 +48,8 @@ from commands_and_tools import (
     ACTIONS,
     tools,
     extra_tools,
+    open_application,
+    open_browser,
 )
 
 
@@ -452,88 +454,6 @@ def open_control_panel():
         logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
 
 
-def open_calculator():
-    try:
-        os.system("calc")
-    except Exception as e:
-        logging.error(f"Error executing open_calculator: {e}", exc_info=True)
-
-
-def open_notepad():
-    try:
-        os.system("notepad")
-    except Exception as e:
-        logging.error(f"Error executing open_notepad: {e}", exc_info=True)
-
-
-def open_word():
-    try:
-        os.system("start winword")
-    except Exception as e:
-        logging.error(f"Error executing open_word: {e}", exc_info=True)
-
-
-def open_excel():
-    try:
-        os.system("start excel")
-    except Exception as e:
-        logging.error(f"Error executing open_excel: {e}", exc_info=True)
-
-
-def open_powerpoint():
-    try:
-        os.system("start powerpnt")
-    except Exception as e:
-        logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
-
-
-def open_outlook():
-    try:
-        os.system("start outlook")
-    except Exception as e:
-        logging.error(f"Error executing open_outlook: {e}", exc_info=True)
-
-
-def open_paint():
-    try:
-        os.system("start mspaint")
-    except Exception as e:
-        logging.error(f"Error executing open_paint: {e}", exc_info=True)
-
-
-def open_command_prompt():
-    try:
-        os.system("start cmd")
-    except Exception as e:
-        logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
-
-
-def open_powershell():
-    try:
-        os.system("start powershell")
-    except Exception as e:
-        logging.error(f"Error executing open_powershell: {e}", exc_info=True)
-
-
-def open_edge():
-    try:
-        os.system("start msedge")
-    except Exception as e:
-        logging.error(f"Error executing open_edge: {e}", exc_info=True)
-
-
-def open_chrome():
-    try:
-        os.system("start chrome")
-    except Exception as e:
-        logging.error(f"Error executing open_chrome: {e}", exc_info=True)
-
-
-def open_firefox():
-    try:
-        os.system("start firefox")
-    except Exception as e:
-        logging.error(f"Error executing open_firefox: {e}", exc_info=True)
 
 
 def open_task_scheduler():
