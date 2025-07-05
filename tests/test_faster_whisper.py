@@ -1,0 +1,119 @@
+import importlib
+import io
+import types
+import numpy as np
+import pytest
+import asyncio
+
+@pytest.fixture
+def fw_module():
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+    yield mod
+    if hasattr(mod, 'reset_state'):
+        mod.reset_state()
+
+def test_validate_audio_buffer(fw_module):
+    sr = fw_module.sample_rate
+    assert fw_module.validate_audio_buffer(None) is False
+    assert fw_module.validate_audio_buffer(np.array([], dtype=np.float32)) is False
+    assert fw_module.validate_audio_buffer([1,2,3]) is False
+    short = np.zeros(int(sr * 0.05), dtype=np.float32)
+    assert fw_module.validate_audio_buffer(short) is False
+    good = np.zeros(int(sr * 0.2), dtype=np.float32)
+    assert fw_module.validate_audio_buffer(good) is True
+
+
+def test_create_wav_buffer(fw_module):
+    data = np.zeros(fw_module.sample_rate, dtype=np.float32)
+    buf = fw_module.create_wav_buffer(data)
+    assert isinstance(buf, io.BytesIO)
+    assert buf.getbuffer().nbytes > 0
+
+
+def test_check_pause_status(tmp_path, fw_module, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    flag = tmp_path / 'voice_pause_flag.txt'
+    flag.write_text('PAUSED')
+    fw_module.last_pause_check = 0
+    assert fw_module.check_pause_status() is True
+    flag.write_text('RUNNING')
+    fw_module.last_pause_check = 0
+    assert fw_module.check_pause_status() is False
+    flag.unlink()
+    fw_module.last_pause_check = 0
+    assert fw_module.check_pause_status() is False
+
+
+def test_beep(fw_module, monkeypatch):
+    called = {}
+    def fake(freq, dur):
+        called['freq'] = freq
+        called['dur'] = dur
+    monkeypatch.setattr(fw_module.winsound, 'Beep', fake)
+    fw_module.beep((440, 100))
+    assert called == {'freq': 440, 'dur': 100}
+
+
+def test_volume_functions(fw_module, monkeypatch):
+    monkeypatch.setattr(fw_module, 'get_volume', lambda: 0.5)
+    calls = []
+    monkeypatch.setattr(fw_module, 'set_volume', lambda v: calls.append(v))
+    fw_module.initial_volume = None
+    fw_module.decrease_volume_all()
+    assert fw_module.initial_volume == 0.5
+    assert calls[-1] == 0.1
+    fw_module.restore_volume_all()
+    assert calls[-1] == 0.5
+
+
+def test_save_audio(tmp_path, fw_module):
+    data = np.zeros(fw_module.sample_rate // 2, dtype=np.float32)
+    fw_module.save_audio(data, 1, directory=str(tmp_path), sample_rate=fw_module.sample_rate, type_of_audio='test')
+    files = list(tmp_path.glob('test_1_recording*.wav'))
+    assert len(files) == 1
+
+
+def test_transcribe_pre_recording_buffer(fw_module, monkeypatch):
+    monkeypatch.setattr(fw_module.Groq_client.audio.transcriptions, 'create', lambda **kw: types.SimpleNamespace(text='Hello'))
+    data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
+    text = fw_module.transcribe_pre_recording_buffer(data)
+    assert text == 'hello'
+
+
+def test_transcribe_with_local_model(fw_module, monkeypatch):
+    class Seg:
+        def __init__(self, text):
+            self.text = text
+    monkeypatch.setattr(fw_module.model, 'transcribe', lambda audio, language='en': ([Seg('hello'), Seg('world')], None))
+    data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
+    text = fw_module.transcribe_with_local_model(data, 0)
+    assert text == 'hello world'
+
+
+def test_get_transcript_with_retries(fw_module, monkeypatch):
+    calls = []
+    async def fake_groq(byte_io, keyword_index):
+        calls.append('remote')
+        if len(calls) < 2:
+            raise Exception('fail')
+        return 'remote text'
+    monkeypatch.setattr(fw_module, 'transcribe_with_groq_async', fake_groq)
+    monkeypatch.setattr(fw_module, 'transcribe_with_local_model', lambda b, k: 'local text')
+    byte_io = fw_module.create_wav_buffer(np.zeros(fw_module.sample_rate // 10, dtype=np.float32))
+    result = asyncio.run(fw_module.get_transcript_with_retries(byte_io, 1, max_retries=3))
+    assert result == 'remote text'
+    assert calls == ['remote', 'remote']
+
+
+def test_reset_state(fw_module, monkeypatch):
+    monkeypatch.setattr(fw_module, 'restore_volume_all', lambda: None)
+    fw_module.recording = True
+    fw_module.play_pause_pressed = True
+    fw_module.audio_buffer = np.ones(5, dtype=np.float32)
+    fw_module.reset_state()
+    assert fw_module.recording is False
+    assert fw_module.play_pause_pressed is False
+    assert isinstance(fw_module.audio_buffer, np.ndarray)
+    assert fw_module.audio_buffer.size == 0
+
