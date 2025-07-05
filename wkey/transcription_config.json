@@ -1,0 +1,4 @@
+{
+  "use_local_gpu": true,
+  "fallback_to_groq": true
+}

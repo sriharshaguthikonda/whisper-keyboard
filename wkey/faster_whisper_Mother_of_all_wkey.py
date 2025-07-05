@@ -50,6 +50,7 @@ from queue import Empty as QueueEmpty
 from contextlib import contextmanager
 import aiohttp
 import asyncio
+import json
 
 # Add global variables for pause functionality
 global_pause_active = False
@@ -96,6 +97,15 @@ vad_detector = VoiceDetector()
 
 load_dotenv()
 
+# Load transcription settings
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
+DEFAULT_SETTINGS = {"use_local_gpu": True, "fallback_to_groq": True}
+try:
+    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+        SETTINGS = json.load(f)
+except Exception:
+    SETTINGS = DEFAULT_SETTINGS
+
 # Get the key label from environment variables, default to 'f24' if not set
 key_label = os.environ.get("WKEY", "f24")
 # key_label = os.environ.get("WKEY", "ctrl_r")
@@ -108,13 +118,14 @@ stream = None
 audio_buffer = np.array([], dtype="float32")
 sample_rate = 16000
 
-# Check if CUDA is available
-if torch.cuda.is_available():
+# Initialize local model based on settings and GPU availability
+model = None
+if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
     model = WhisperModel("small.en", device="cuda", num_workers=8)
     logging.info(f"{GREEN}Initialized WhisperModel on CUDA{RESET}")
 else:
-    logging.warning(
-        f"{YELLOW}CUDA device not available. Please ensure your system supports CUDA.{RESET}"
+    logging.info(
+        f"{YELLOW}Local GPU model disabled or CUDA unavailable.{RESET}"
     )
 
 groq_model = "whisper-large-v3"
@@ -381,8 +392,8 @@ def start_recording(keyword_index=None):
  ######  ########  #######  ########     ########  ########  ######  
 ##    ##    ##    ##     ## ##     ##    ##     ## ##       ##    ## 
 ##          ##    ##     ## ##     ##    ##     ## ##       ##       
- ######     ##    ##     ## ########     ##       ########  ######   ##       
-      ##    ##    ##     ## ##           ##       ##   ##   ##       ##       
+ ######     ##    ##     ## ########     ##   ##   #######  ##
+      ##    ##    ##     ## ##           ##    ##  ##       ##        
 ##    ##    ##    ##     ## ##           ##    ##  ##       ##    ## 
  ######     ##     #######  ##           ##     ## ########  ######  
 """
@@ -900,6 +911,9 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
             prompt = None
 
         try:
+            if model is None:
+                logging.info("Local model not initialized")
+                return ""
             logging.info("using WhisperModel on CUDA")
             byte_io = io.BytesIO()
             wav_write(byte_io, sample_rate, audio_buffer)
@@ -1039,9 +1053,10 @@ def create_wav_buffer(audio_buffer):
 async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
     for attempt in range(max_retries):
         try:
-            transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-            if transcript:
-                return transcript.lower()
+            if SETTINGS.get("fallback_to_groq", True):
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript:
+                    return transcript.lower()
         except Exception as e:
             logging.error(
                 f"{RED}Transcription attempt {attempt + 1} failed: {e}{RESET}"

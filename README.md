@@ -30,7 +30,17 @@ export OPENAI_API_KEY=<your key>
 export WKEY=ctrl_r
 ```
 
-Run `wkey` in a terminal window to start listening. 
+Run `wkey` in a terminal window to start listening.
+
+### Settings GUI
+
+You can adjust transcription preferences using a small QtPy based GUI. Launch it with:
+
+```shell
+python -m wkey.Settings_GUI
+```
+
+This lets you toggle GPU usage and Groq fallback and edit your API key.
 
 If there are issues, check the additional requirements.
 

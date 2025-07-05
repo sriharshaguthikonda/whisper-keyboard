@@ -116,6 +116,15 @@ vad_detector = VoiceDetector()
 
 load_dotenv()
 
+# Load transcription settings
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
+DEFAULT_SETTINGS = {"use_local_gpu": True, "fallback_to_groq": True}
+try:
+    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
+        SETTINGS = json.load(f)
+except Exception:
+    SETTINGS = DEFAULT_SETTINGS
+
 
 key_label = os.environ.get("WKEY", "f24")
 RECORD_KEY = Key[key_label]
@@ -135,13 +144,14 @@ stream = None
 audio_buffer = np.array([], dtype="float32")
 sample_rate = 16000
 
-# Check if CUDA is available
-if torch.cuda.is_available():
+# Initialize local model based on settings and GPU availability
+model = None
+if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
     model = WhisperModel("small.en", device="cuda", num_workers=8)
     logging.info(f"{GREEN}Initialized WhisperModel on CUDA{RESET}")
 else:
-    logging.warning(
-        f"{YELLOW}CUDA device not available. Please ensure your system supports CUDA.{RESET}"
+    logging.info(
+        f"{YELLOW}Local GPU model disabled or CUDA unavailable.{RESET}"
     )
 
 # groq_model = "distil-whisper-large-v3-en"
@@ -1023,6 +1033,9 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
             prompt = None
 
         try:
+            if model is None:
+                logging.info("Local model not initialized")
+                return ""
             logging.info("using WhisperModel on CUDA")
             # Convert audio buffer (NumPy array) to WAV format in-memory
             byte_io = io.BytesIO()
@@ -1090,13 +1103,13 @@ async def process_audio_async():
 
             try:
                 transcript = None
-                if torch.cuda.is_available():
+                if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
                     transcript = transcribe_with_local_model(
                         audio_buffer_for_processing, keyword_index
                     )
                     if not transcript or transcript == "Transcription failed":
                         transcript = None
-                if transcript is None:
+                if transcript is None and SETTINGS.get("fallback_to_groq", True):
                     transcript = await transcribe_with_groq_async(byte_io, keyword_index)
                     if transcript is None:
                         logging.error("Transcription returned None")
@@ -1223,9 +1236,10 @@ async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
     """Get transcript with retries and fallback"""
     for attempt in range(max_retries):
         try:
-            transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-            if transcript:
-                return transcript.lower()
+            if SETTINGS.get("fallback_to_groq", True):
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript:
+                    return transcript.lower()
         except Exception as e:
             logging.error(
                 f"{RED}Transcription attempt {attempt + 1} failed: {e}{RESET}"
