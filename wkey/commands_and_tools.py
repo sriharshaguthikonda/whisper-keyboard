@@ -589,7 +589,7 @@ tools = [
             "description": "Open a common Windows application by name",
             "parameters": {
                 "type": "object",
-                "properties": {"app_name": {"type": "string"}},
+                "properties": {"app_name": {"type": "string", "enum": ["calculator", "notepad", "word", "excel", "powerpoint", "outlook", "paint", "command_prompt", "powershell"]}},
                 "required": ["app_name"],
             },
         },
