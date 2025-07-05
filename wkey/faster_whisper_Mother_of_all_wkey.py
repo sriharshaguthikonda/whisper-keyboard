@@ -106,11 +106,18 @@ try:
 except Exception:
     SETTINGS = DEFAULT_SETTINGS
 
-# Get the key label from environment variables, default to 'f24' if not set
-key_label = os.environ.get("WKEY", "f24")
-# key_label = os.environ.get("WKEY", "ctrl_r")
-RECORD_KEY = Key[key_label]
+# Get the key labels from environment variables, default to 'f24' if not set
+key_label = os.environ.get("WKEY", "f24").lower()
+# Support both 'f24' and 'ctrl_r' as valid keys
+if key_label not in ['f24', 'ctrl_r']:
+    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'f24'")
+    key_label = 'f24'
 
+# Store both possible record keys
+RECORD_KEYS = {
+    'f24': Key.f24,
+    'ctrl_r': Key.ctrl_r
+}
 
 keyboard_controller = KeyboardController()
 recording = False
@@ -516,30 +523,32 @@ last_key_press_time = 0
 recording_thread = None
 
 def on_press(key):
-    """Key press handler for F24 key (bypasses pause status)"""
+    """Key press handler for voice activation keys (bypasses pause status)"""
     try:
         global last_key_press_time, recording_thread, recording
             
         current_time = time.time()
-        if key == RECORD_KEY and not recording:
+        # Check if the pressed key is any of our record keys and we're not already recording
+        if key in RECORD_KEYS.values() and not recording:
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
                 if recording is False:
-                    logging.info(f"Key pressed: {key}")
+                    logging.info(f"Voice activation key pressed: {key}")
                     threading.Thread(target=start_recording, args=(None,)).start()
     except Exception as e:
         logging.error(f"Error in on_press: {e}", exc_info=True)
 
 def on_release(key):
-    """Key release handler for F24 key (bypasses pause status)"""
+    """Key release handler for voice activation keys (bypasses pause status)"""
     try:
         global last_key_press_time, recording_thread, recording
             
         current_time = time.time()
-        if key == RECORD_KEY and recording:
+        # Check if the released key is any of our record keys and we're currently recording
+        if key in RECORD_KEYS.values() and recording:
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
-                logging.info(f"Key released: {key}")
+                logging.info(f"Voice activation key released: {key}")
                 threading.Thread(target=stop_recording, args=(None,)).start()
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
@@ -1309,7 +1318,7 @@ def main():
     global driver_pid
 
     logging.info(
-        f"{CYAN}wkey is active. Hold down {BOLD}{RECORD_KEY}{RESET}{CYAN} to start dictating.{RESET}"
+        f"{CYAN}wkey is active. Hold down {BOLD}{key_label.upper()}{RESET}{CYAN} to start dictating.{RESET}"
     )
 
     def exception_handler(exc_type, exc_value, exc_traceback):
