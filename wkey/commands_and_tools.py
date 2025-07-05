@@ -502,14 +502,39 @@ extra_tools = [
 ]
 
 tools = [
+
+
     {
         "type": "function",
         "function": {
-            "name": "search_windows",
-            "description": "Open the Windows start menu",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "name": "open_application",
+            "description": "Open a common Windows application by name",
+            "parameters": {
+                "type": "object",
+                "properties": {"app_name": {"type": "string", "enum": ["calculator", "notepad", "word", "excel", "powerpoint", "outlook", "paint", "command_prompt", "powershell"]}},
+                "required": ["app_name"],
+            },
         },
     },
+
+
+
+
+    {
+        "type": "function",
+        "function": {
+            "name": "open_system_tool",
+            "description": "Open a system tool by name",
+            "parameters": {
+                "type": "object",
+                "properties": {"tool_name": {"type": "string", "enum": ["control_panel", "task_scheduler", "sound_control", "device_manager", "disk_management", "network_connections", "system_properties", "services", "task_manager", "run_dialog", "file_explorer"]}},
+                "required": ["tool_name"],
+            },
+        },
+    },
+
+
+    
     {
         "type": "function",
         "function": {
@@ -542,30 +567,7 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_file_explorer",
-            "description": "Open the file explorer",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_run_dialog",
-            "description": "Open the Run dialog box",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_task_manager",
-            "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -574,26 +576,7 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_control_panel",
-            "description": "Open the Control Panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_application",
-            "description": "Open a common Windows application by name",
-            "parameters": {
-                "type": "object",
-                "properties": {"app_name": {"type": "string", "enum": ["calculator", "notepad", "word", "excel", "powerpoint", "outlook", "paint", "command_prompt", "powershell"]}},
-                "required": ["app_name"],
-            },
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -606,14 +589,7 @@ tools = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_sound_control_panel",
-            "description": "Open the Sound control panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -780,46 +756,7 @@ tools = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_device_manager",
-            "description": "Open the Device Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_disk_management",
-            "description": "Open Disk Management or hard disk settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_network_connections",
-            "description": "Open Network Connections",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_system_properties",
-            "description": "Open System Properties",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_date_and_time",
-            "description": "Open Date and Time settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -893,14 +830,7 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_task_scheduler",
-            "description": "Opens Windows Task Scheduler",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -909,14 +839,8 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "manage_services",
-            "description": "Opens Windows Services manager to view and control system services",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
+
     {
         "type": "function",
         "function": {

@@ -405,10 +405,8 @@ def take_screenshot():
 
 
 def open_file_explorer():
-    try:
-        pyautogui.hotkey("win", "e")
-    except Exception as e:
-        logging.error(f"Error executing open_file_explorer: {e}", exc_info=True)
+    """Open File Explorer."""
+    open_system_tool("file_explorer")
 
 
 def windows_search():
@@ -419,17 +417,13 @@ def windows_search():
 
 
 def open_run_dialog():
-    try:
-        pyautogui.hotkey("win", "r")
-    except Exception as e:
-        logging.error(f"Error executing open_run_dialog: {e}", exc_info=True)
+    """Open the Run dialog."""
+    open_system_tool("run_dialog")
 
 
 def open_task_manager():
-    try:
-        pyautogui.hotkey("ctrl", "shift", "esc")
-    except Exception as e:
-        logging.error(f"Error executing open_task_manager: {e}", exc_info=True)
+    """Open the Task Manager."""
+    open_system_tool("task_manager")
 
 
 def minimize_all_windows():
@@ -446,32 +440,62 @@ def restore_windows():
         logging.error(f"Error executing restore_windows: {e}", exc_info=True)
 
 
+# System tools mapping
+SYSTEM_TOOLS = {
+    "control_panel": {"command": "control", "log_message": "Opening Control Panel..."},
+    "task_scheduler": {"command": "taskschd.msc", "log_message": "Opening Task Scheduler..."},
+    "sound_control": {"command": "mmsys.cpl", "log_message": "Opening Sound Control Panel..."},
+    "device_manager": {"command": "devmgmt.msc", "log_message": "Opening Device Manager..."},
+    "disk_management": {"command": "diskmgmt.msc", "log_message": "Opening Disk Management..."},
+    "network_connections": {"command": "ncpa.cpl", "log_message": "Opening Network Connections..."},
+    "system_properties": {"command": "sysdm.cpl", "log_message": "Opening System Properties..."},
+    "date_and_time": {"command": "timedate.cpl", "log_message": "Opening Date and Time Settings..."},
+    "services": {"command": "services.msc", "log_message": "Opening Services..."},
+    "task_manager": {"command": "taskmgr", "log_message": "Opening Task Manager..."},
+    "run_dialog": {"command": "win+r", "is_hotkey": True, "log_message": "Opening Run dialog..."},
+    "file_explorer": {"command": "explorer", "log_message": "Opening File Explorer..."}
+}
+
+
+def open_system_tool(tool_name):
+    """Open a system tool by name.
+    
+    Args:
+        tool_name (str): Name of the system tool to open. Must be a key in SYSTEM_TOOLS.
+    """
+    try:
+        tool = SYSTEM_TOOLS.get(tool_name)
+        if not tool:
+            raise ValueError(f"Unknown system tool: {tool_name}")
+            
+        if tool.get("log_message"):
+            logging.info(f"{GREEN}{tool['log_message']}{RESET}")
+            
+        if tool.get("is_hotkey"):
+            pyautogui.hotkey(*tool["command"].split('+'))
+        else:
+            os.system(tool["command"])
+            
+    except Exception as e:
+        logging.error(f"{RED}Error executing {tool_name}: {e}{RESET}", exc_info=True)
+        raise
+
+
 # Application commands
 def open_control_panel():
-    try:
-        os.system("control")
-    except Exception as e:
-        logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
-
-
+    """Open the Windows Control Panel."""
+    open_system_tool("control_panel")
 
 
 def open_task_scheduler():
-    try:
-        os.system("taskschd.msc")
-        logging.info(f"{GREEN}Opening Task Scheduler...{RESET}")
-    except Exception as e:
-        logging.error(
-            f"{RED}Error executing open_task_scheduler: {e}{RESET}", exc_info=True
-        )
+    """Open the Windows Task Scheduler."""
+    open_system_tool("task_scheduler")
 
 
 # Volume controls
 def open_sound_control_panel():
-    try:
-        os.system("control mmsys.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_sound_control_panel: {e}", exc_info=True)
+    """Open the Sound Control Panel."""
+    open_system_tool("sound_control")
 
 
 def kill_process_by_name(process_name):
@@ -562,40 +586,35 @@ def stop_media():
         logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
-# Custom or complex operations
+# System tools
 def open_device_manager():
-    try:
-        os.system("devmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
+    """Open the Device Manager."""
+    open_system_tool("device_manager")
 
 
 def open_disk_management():
-    try:
-        os.system("diskmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
+    """Open the Disk Management console."""
+    open_system_tool("disk_management")
 
 
 def open_network_connections():
-    try:
-        os.system("ncpa.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
+    """Open the Network Connections window."""
+    open_system_tool("network_connections")
 
 
 def open_system_properties():
-    try:
-        os.system("sysdm.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
+    """Open the System Properties dialog."""
+    open_system_tool("system_properties")
 
 
 def open_date_and_time():
-    try:
-        os.system("timedate.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
+    """Open the Date and Time settings."""
+    open_system_tool("date_and_time")
+
+
+def manage_services():
+    """Open the Services management console."""
+    open_system_tool("services")
 
 
 def open_startup_folder():
