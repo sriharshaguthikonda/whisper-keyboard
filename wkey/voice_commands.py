@@ -445,52 +445,113 @@ def restore_windows():
 
 
 # Application commands
-APPLICATION_COMMANDS = {
-    "control panel": "control",
-    "calculator": "calc",
-    "notepad": "notepad",
-    "word": "winword",
-    "excel": "excel",
-    "powerpoint": "powerpnt",
-    "outlook": "outlook",
-    "paint": "mspaint",
-    "command prompt": "cmd",
-    "powershell": "powershell",
-    "edge": "msedge",
-    "chrome": "chrome",
-    "firefox": "firefox",
-}
-
-
-SYSTEM_UTILITY_COMMANDS = {
-    "task_scheduler": "taskschd.msc",
-    "sound_control_panel": "control mmsys.cpl",
-    "device_manager": "devmgmt.msc",
-    "disk_management": "diskmgmt.msc",
-    "network_connections": "ncpa.cpl",
-    "system_properties": "sysdm.cpl",
-    "date_and_time": "timedate.cpl",
-    "services": "services.msc",
-}
-
-
-def open_application(app):
+def open_control_panel():
     try:
-        command = APPLICATION_COMMANDS.get(app.lower(), app)
-        os.system(f"start {command}")
+        os.system("control")
     except Exception as e:
-        logging.error(f"Error executing open_application({app}): {e}", exc_info=True)
+        logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
 
 
-def open_system_utility(utility):
+def open_calculator():
     try:
-        command = SYSTEM_UTILITY_COMMANDS.get(utility.lower())
-        if command:
-            os.system(command)
-        else:
-            logging.error(f"Unknown system utility: {utility}")
+        os.system("calc")
     except Exception as e:
-        logging.error(f"Error executing open_system_utility({utility}): {e}", exc_info=True)
+        logging.error(f"Error executing open_calculator: {e}", exc_info=True)
+
+
+def open_notepad():
+    try:
+        os.system("notepad")
+    except Exception as e:
+        logging.error(f"Error executing open_notepad: {e}", exc_info=True)
+
+
+def open_word():
+    try:
+        os.system("start winword")
+    except Exception as e:
+        logging.error(f"Error executing open_word: {e}", exc_info=True)
+
+
+def open_excel():
+    try:
+        os.system("start excel")
+    except Exception as e:
+        logging.error(f"Error executing open_excel: {e}", exc_info=True)
+
+
+def open_powerpoint():
+    try:
+        os.system("start powerpnt")
+    except Exception as e:
+        logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
+
+
+def open_outlook():
+    try:
+        os.system("start outlook")
+    except Exception as e:
+        logging.error(f"Error executing open_outlook: {e}", exc_info=True)
+
+
+def open_paint():
+    try:
+        os.system("start mspaint")
+    except Exception as e:
+        logging.error(f"Error executing open_paint: {e}", exc_info=True)
+
+
+def open_command_prompt():
+    try:
+        os.system("start cmd")
+    except Exception as e:
+        logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
+
+
+def open_powershell():
+    try:
+        os.system("start powershell")
+    except Exception as e:
+        logging.error(f"Error executing open_powershell: {e}", exc_info=True)
+
+
+def open_edge():
+    try:
+        os.system("start msedge")
+    except Exception as e:
+        logging.error(f"Error executing open_edge: {e}", exc_info=True)
+
+
+def open_chrome():
+    try:
+        os.system("start chrome")
+    except Exception as e:
+        logging.error(f"Error executing open_chrome: {e}", exc_info=True)
+
+
+def open_firefox():
+    try:
+        os.system("start firefox")
+    except Exception as e:
+        logging.error(f"Error executing open_firefox: {e}", exc_info=True)
+
+
+def open_task_scheduler():
+    try:
+        os.system("taskschd.msc")
+        logging.info(f"{GREEN}Opening Task Scheduler...{RESET}")
+    except Exception as e:
+        logging.error(
+            f"{RED}Error executing open_task_scheduler: {e}{RESET}", exc_info=True
+        )
+
+
+# Volume controls
+def open_sound_control_panel():
+    try:
+        os.system("control mmsys.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_sound_control_panel: {e}", exc_info=True)
 
 
 def kill_process_by_name(process_name):
@@ -582,6 +643,41 @@ def stop_media():
 
 
 # Custom or complex operations
+def open_device_manager():
+    try:
+        os.system("devmgmt.msc")
+    except Exception as e:
+        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
+
+
+def open_disk_management():
+    try:
+        os.system("diskmgmt.msc")
+    except Exception as e:
+        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
+
+
+def open_network_connections():
+    try:
+        os.system("ncpa.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
+
+
+def open_system_properties():
+    try:
+        os.system("sysdm.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
+
+
+def open_date_and_time():
+    try:
+        os.system("timedate.cpl")
+    except Exception as e:
+        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
+
+
 def open_startup_folder():
     try:
         # Open the current user's startup folder
@@ -598,7 +694,7 @@ def open_startup_folder():
 
 def manage_services():
     try:
-        open_system_utility("services")
+        os.system("services.msc")
         logging.info(f"{GREEN}Opening Windows Services...{RESET}")
     except Exception as e:
         logging.error(
