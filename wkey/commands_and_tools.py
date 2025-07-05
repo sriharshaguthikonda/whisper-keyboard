@@ -182,6 +182,40 @@ def execute_pyautogui_press(key):
         logging.error(f"Error executing press {key}: {e}", exc_info=True)
 
 
+def open_application(app_name):
+    """Launch a common Windows application by name."""
+    app_commands = {
+        "calculator": "calc",
+        "notepad": "notepad",
+        "word": "start winword",
+        "excel": "start excel",
+        "powerpoint": "start powerpnt",
+        "outlook": "start outlook",
+        "paint": "start mspaint",
+        "command_prompt": "start cmd",
+        "powershell": "start powershell",
+    }
+    command = app_commands.get(app_name.lower())
+    if command:
+        execute_system_command(command)
+    else:
+        logging.error(f"Unsupported application: {app_name}")
+
+
+def open_browser(browser):
+    """Open a web browser"""
+    browser_commands = {
+        "edge": "start msedge",
+        "chrome": "start chrome",
+        "firefox": "start firefox",
+    }
+    command = browser_commands.get(browser.lower())
+    if command:
+        execute_system_command(command)
+    else:
+        logging.error(f"Unsupported browser: {browser}")
+
+
 """
  ######   #######  ##     ## ##     ##    ###    ##    ## ########  
 ##    ## ##     ## ###   ### ###   ###   ## ##   ###   ## ##     ## 
@@ -390,18 +424,18 @@ ACTIONS = {
     # "log off": lambda: os.system('shutdown /l'),
     # Application Commands
     "open control panel": lambda: os.system("control"),
-    "open calculator": lambda: execute_system_command("calc"),
-    "open notepad": lambda: execute_system_command("notepad"),
-    "open word": lambda: execute_system_command("start winword"),
-    "open excel": lambda: execute_system_command("start excel"),
-    "open powerpoint": lambda: execute_system_command("start powerpnt"),
-    "open outlook": lambda: execute_system_command("start outlook"),
-    "open paint": lambda: execute_system_command("start mspaint"),
-    "open command prompt": lambda: execute_system_command("start cmd"),
-    "open powershell": lambda: execute_system_command("start powershell"),
-    "open edge": lambda: execute_system_command("start msedge"),
-    "open chrome": lambda: execute_system_command("start chrome"),
-    "open firefox": lambda: execute_system_command("start firefox"),
+    "open calculator": lambda: open_application("calculator"),
+    "open notepad": lambda: open_application("notepad"),
+    "open word": lambda: open_application("word"),
+    "open excel": lambda: open_application("excel"),
+    "open powerpoint": lambda: open_application("powerpoint"),
+    "open outlook": lambda: open_application("outlook"),
+    "open paint": lambda: open_application("paint"),
+    "open command prompt": lambda: open_application("command_prompt"),
+    "open powershell": lambda: open_application("powershell"),
+    "open edge": lambda: open_browser("edge"),
+    "open chrome": lambda: open_browser("chrome"),
+    "open firefox": lambda: open_browser("firefox"),
     # Volume Controls
     "open sound control panel": lambda: execute_system_command("control mmsys.cpl"),
     "volume up": lambda: execute_pyautogui_press("volumeup"),
@@ -468,14 +502,39 @@ extra_tools = [
 ]
 
 tools = [
+
+
     {
         "type": "function",
         "function": {
-            "name": "search_windows",
-            "description": "Open the Windows start menu",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "name": "open_application",
+            "description": "Open a common Windows application by name",
+            "parameters": {
+                "type": "object",
+                "properties": {"app_name": {"type": "string", "enum": ["calculator", "notepad", "word", "excel", "powerpoint", "outlook", "paint", "command_prompt", "powershell"]}},
+                "required": ["app_name"],
+            },
         },
     },
+
+
+
+
+    {
+        "type": "function",
+        "function": {
+            "name": "open_system_tool",
+            "description": "Open a system tool by name",
+            "parameters": {
+                "type": "object",
+                "properties": {"tool_name": {"type": "string", "enum": ["control_panel", "task_scheduler", "sound_control", "device_manager", "disk_management", "network_connections", "system_properties", "services", "task_manager", "run_dialog", "file_explorer"]}},
+                "required": ["tool_name"],
+            },
+        },
+    },
+
+
+    
     {
         "type": "function",
         "function": {
@@ -508,30 +567,7 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_file_explorer",
-            "description": "Open the file explorer",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_run_dialog",
-            "description": "Open the Run dialog box",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_task_manager",
-            "description": "Open the Task Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -540,118 +576,20 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+
     {
         "type": "function",
         "function": {
-            "name": "open_control_panel",
-            "description": "Open the Control Panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "name": "open_browser",
+            "description": "Open a web browser by name",
+            "parameters": {
+                "type": "object",
+                "properties": {"browser": {"type": "string", "enum": ["edge", "chrome", "firefox"]}},
+                "required": ["browser"],
+            },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_calculator",
-            "description": "Open the Calculator application",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_notepad",
-            "description": "Open Notepad",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_word",
-            "description": "Open Microsoft Word",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_excel",
-            "description": "Open Microsoft Excel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powerpoint",
-            "description": "Open Microsoft PowerPoint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_outlook",
-            "description": "Open Microsoft Outlook",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_paint",
-            "description": "Open Microsoft Paint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_command_prompt",
-            "description": "Open Command Prompt",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powershell",
-            "description": "Open PowerShell",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_edge",
-            "description": "Open Microsoft Edge",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_chrome",
-            "description": "Open Google Chrome",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_firefox",
-            "description": "Open Mozilla Firefox",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_sound_control_panel",
-            "description": "Open the Sound control panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -818,46 +756,7 @@ tools = [
             },
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_device_manager",
-            "description": "Open the Device Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_disk_management",
-            "description": "Open Disk Management or hard disk settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_network_connections",
-            "description": "Open Network Connections",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_system_properties",
-            "description": "Open System Properties",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_date_and_time",
-            "description": "Open Date and Time settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -931,14 +830,7 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_task_scheduler",
-            "description": "Opens Windows Task Scheduler",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
     {
         "type": "function",
         "function": {
@@ -947,14 +839,8 @@ tools = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
-    {
-        "type": "function",
-        "function": {
-            "name": "manage_services",
-            "description": "Opens Windows Services manager to view and control system services",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
+
+
     {
         "type": "function",
         "function": {

@@ -48,6 +48,8 @@ from commands_and_tools import (
     ACTIONS,
     tools,
     extra_tools,
+    open_application,
+    open_browser,
 )
 
 
@@ -402,32 +404,11 @@ def take_screenshot():
         logging.error(f"Error executing take_screenshot: {e}", exc_info=True)
 
 
-def open_file_explorer():
-    try:
-        pyautogui.hotkey("win", "e")
-    except Exception as e:
-        logging.error(f"Error executing open_file_explorer: {e}", exc_info=True)
-
-
 def windows_search():
     try:
         pyautogui.hotkey("win", "s")
     except Exception as e:
         logging.error(f"Error executing windows_search: {e}", exc_info=True)
-
-
-def open_run_dialog():
-    try:
-        pyautogui.hotkey("win", "r")
-    except Exception as e:
-        logging.error(f"Error executing open_run_dialog: {e}", exc_info=True)
-
-
-def open_task_manager():
-    try:
-        pyautogui.hotkey("ctrl", "shift", "esc")
-    except Exception as e:
-        logging.error(f"Error executing open_task_manager: {e}", exc_info=True)
 
 
 def minimize_all_windows():
@@ -444,114 +425,49 @@ def restore_windows():
         logging.error(f"Error executing restore_windows: {e}", exc_info=True)
 
 
-# Application commands
-def open_control_panel():
+
+
+# System tools mapping
+SYSTEM_TOOLS = {
+    "control_panel": {"command": "control", "log_message": "Opening Control Panel..."},
+    "task_scheduler": {"command": "taskschd.msc", "log_message": "Opening Task Scheduler..."},
+    "sound_control": {"command": "mmsys.cpl", "log_message": "Opening Sound Control Panel..."},
+    "device_manager": {"command": "devmgmt.msc", "log_message": "Opening Device Manager..."},
+    "disk_management": {"command": "diskmgmt.msc", "log_message": "Opening Disk Management..."},
+    "network_connections": {"command": "ncpa.cpl", "log_message": "Opening Network Connections..."},
+    "system_properties": {"command": "sysdm.cpl", "log_message": "Opening System Properties..."},
+    "date_and_time": {"command": "timedate.cpl", "log_message": "Opening Date and Time Settings..."},
+    "services": {"command": "services.msc", "log_message": "Opening Services..."},
+    "task_manager": {"command": "taskmgr", "log_message": "Opening Task Manager..."},
+    "run_dialog": {"command": "win+r", "is_hotkey": True, "log_message": "Opening Run dialog..."},
+    "file_explorer": {"command": "explorer", "log_message": "Opening File Explorer..."}
+}
+
+
+def open_system_tool(tool_name):
+    """Open a system tool by name.
+    
+    Args:
+        tool_name (str): Name of the system tool to open. Must be a key in SYSTEM_TOOLS.
+    """
     try:
-        os.system("control")
+        tool = SYSTEM_TOOLS.get(tool_name)
+        if not tool:
+            raise ValueError(f"Unknown system tool: {tool_name}")
+            
+        if tool.get("log_message"):
+            logging.info(f"{GREEN}{tool['log_message']}{RESET}")
+            
+        if tool.get("is_hotkey"):
+            pyautogui.hotkey(*tool["command"].split('+'))
+        else:
+            os.system(tool["command"])
+            
     except Exception as e:
-        logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
+        logging.error(f"{RED}Error executing {tool_name}: {e}{RESET}", exc_info=True)
+        raise
 
 
-def open_calculator():
-    try:
-        os.system("calc")
-    except Exception as e:
-        logging.error(f"Error executing open_calculator: {e}", exc_info=True)
-
-
-def open_notepad():
-    try:
-        os.system("notepad")
-    except Exception as e:
-        logging.error(f"Error executing open_notepad: {e}", exc_info=True)
-
-
-def open_word():
-    try:
-        os.system("start winword")
-    except Exception as e:
-        logging.error(f"Error executing open_word: {e}", exc_info=True)
-
-
-def open_excel():
-    try:
-        os.system("start excel")
-    except Exception as e:
-        logging.error(f"Error executing open_excel: {e}", exc_info=True)
-
-
-def open_powerpoint():
-    try:
-        os.system("start powerpnt")
-    except Exception as e:
-        logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
-
-
-def open_outlook():
-    try:
-        os.system("start outlook")
-    except Exception as e:
-        logging.error(f"Error executing open_outlook: {e}", exc_info=True)
-
-
-def open_paint():
-    try:
-        os.system("start mspaint")
-    except Exception as e:
-        logging.error(f"Error executing open_paint: {e}", exc_info=True)
-
-
-def open_command_prompt():
-    try:
-        os.system("start cmd")
-    except Exception as e:
-        logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
-
-
-def open_powershell():
-    try:
-        os.system("start powershell")
-    except Exception as e:
-        logging.error(f"Error executing open_powershell: {e}", exc_info=True)
-
-
-def open_edge():
-    try:
-        os.system("start msedge")
-    except Exception as e:
-        logging.error(f"Error executing open_edge: {e}", exc_info=True)
-
-
-def open_chrome():
-    try:
-        os.system("start chrome")
-    except Exception as e:
-        logging.error(f"Error executing open_chrome: {e}", exc_info=True)
-
-
-def open_firefox():
-    try:
-        os.system("start firefox")
-    except Exception as e:
-        logging.error(f"Error executing open_firefox: {e}", exc_info=True)
-
-
-def open_task_scheduler():
-    try:
-        os.system("taskschd.msc")
-        logging.info(f"{GREEN}Opening Task Scheduler...{RESET}")
-    except Exception as e:
-        logging.error(
-            f"{RED}Error executing open_task_scheduler: {e}{RESET}", exc_info=True
-        )
-
-
-# Volume controls
-def open_sound_control_panel():
-    try:
-        os.system("control mmsys.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_sound_control_panel: {e}", exc_info=True)
 
 
 def kill_process_by_name(process_name):
@@ -642,40 +558,6 @@ def stop_media():
         logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
-# Custom or complex operations
-def open_device_manager():
-    try:
-        os.system("devmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
-
-
-def open_disk_management():
-    try:
-        os.system("diskmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
-
-
-def open_network_connections():
-    try:
-        os.system("ncpa.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
-
-
-def open_system_properties():
-    try:
-        os.system("sysdm.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
-
-
-def open_date_and_time():
-    try:
-        os.system("timedate.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
 
 
 def open_startup_folder():
