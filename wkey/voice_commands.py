@@ -404,26 +404,11 @@ def take_screenshot():
         logging.error(f"Error executing take_screenshot: {e}", exc_info=True)
 
 
-def open_file_explorer():
-    """Open File Explorer."""
-    open_system_tool("file_explorer")
-
-
 def windows_search():
     try:
         pyautogui.hotkey("win", "s")
     except Exception as e:
         logging.error(f"Error executing windows_search: {e}", exc_info=True)
-
-
-def open_run_dialog():
-    """Open the Run dialog."""
-    open_system_tool("run_dialog")
-
-
-def open_task_manager():
-    """Open the Task Manager."""
-    open_system_tool("task_manager")
 
 
 def minimize_all_windows():
@@ -438,6 +423,8 @@ def restore_windows():
         pyautogui.hotkey("win", "shift", "m")
     except Exception as e:
         logging.error(f"Error executing restore_windows: {e}", exc_info=True)
+
+
 
 
 # System tools mapping
@@ -481,21 +468,6 @@ def open_system_tool(tool_name):
         raise
 
 
-# Application commands
-def open_control_panel():
-    """Open the Windows Control Panel."""
-    open_system_tool("control_panel")
-
-
-def open_task_scheduler():
-    """Open the Windows Task Scheduler."""
-    open_system_tool("task_scheduler")
-
-
-# Volume controls
-def open_sound_control_panel():
-    """Open the Sound Control Panel."""
-    open_system_tool("sound_control")
 
 
 def kill_process_by_name(process_name):
@@ -586,35 +558,6 @@ def stop_media():
         logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
-# System tools
-def open_device_manager():
-    """Open the Device Manager."""
-    open_system_tool("device_manager")
-
-
-def open_disk_management():
-    """Open the Disk Management console."""
-    open_system_tool("disk_management")
-
-
-def open_network_connections():
-    """Open the Network Connections window."""
-    open_system_tool("network_connections")
-
-
-def open_system_properties():
-    """Open the System Properties dialog."""
-    open_system_tool("system_properties")
-
-
-def open_date_and_time():
-    """Open the Date and Time settings."""
-    open_system_tool("date_and_time")
-
-
-def manage_services():
-    """Open the Services management console."""
-    open_system_tool("services")
 
 
 def open_startup_folder():
