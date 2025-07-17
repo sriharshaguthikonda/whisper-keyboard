@@ -127,15 +127,53 @@ sample_rate = 16000
 
 # Initialize local model based on settings and GPU availability
 model = None
-if SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available():
-    model = WhisperModel("small.en", device="cuda", num_workers=8)
-    logging.info(f"{GREEN}Initialized WhisperModel on CUDA{RESET}")
+if SETTINGS.get("use_local_gpu", True):
+    if torch.cuda.is_available():
+        try:
+            # Set CUDA to use version 12.3 explicitly
+            if os.name == 'nt':  # Windows
+                cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3"
+                if os.path.exists(cuda_path):
+                    os.environ['CUDA_HOME'] = cuda_path
+                    os.environ['PATH'] = f"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
+            
+            logging.info(f"CUDA is available. Devices: {torch.cuda.device_count()}")
+            logging.info(f"Current device: {torch.cuda.current_device()}")
+            logging.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'No CUDA devices'}")
+            
+            # Initialize model with explicit CUDA device
+            model = WhisperModel(
+                "small.en",
+                device="cuda",
+                compute_type="float16",  # Use float16 for better performance
+                num_workers=4            # Reduce workers to prevent OOM
+            )
+            
+            # Test the model with a small tensor to verify it's working
+            test_tensor = torch.zeros(1).cuda()
+            logging.info(f"{GREEN}Successfully initialized WhisperModel on CUDA device: {torch.cuda.get_device_name(0)}{RESET}")
+            
+        except Exception as e:
+            logging.error(f"{RED}Failed to initialize WhisperModel on CUDA: {str(e)}{RESET}")
+            logging.info(f"{YELLOW}Falling back to CPU mode{RESET}")
+            try:
+                model = WhisperModel("small.en", device="cpu", compute_type="int8")
+                logging.info(f"{YELLOW}Initialized WhisperModel on CPU as fallback{RESET}")
+            except Exception as cpu_e:
+                logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(cpu_e)}{RESET}")
+    else:
+        logging.info(f"{YELLOW}CUDA is not available. Checking CPU fallback...{RESET}")
+        try:
+            model = WhisperModel("small.en", device="cpu", compute_type="int8")
+            logging.info(f"{YELLOW}Initialized WhisperModel on CPU{RESET}")
+        except Exception as e:
+            logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(e)}{RESET}")
 else:
-    logging.info(
-        f"{YELLOW}Local GPU model disabled or CUDA unavailable.{RESET}"
-    )
+    logging.info(f"{YELLOW}Local GPU model is disabled in settings{RESET}")
 
-groq_model = "whisper-large-v3"
+#groq_model = "whisper-large-v3"
+groq_model = "distil-whisper-large-v3-en"
+
 play_pause_pressed = False
 something_is_playing = False
 
@@ -965,26 +1003,41 @@ async def process_audio_async():
             wav_write(byte_io, sample_rate, audio_buffer_for_processing)
             byte_io.seek(0)
 
+            # Track transcription attempts and timing
+            transcript = None
+            groq_success = False
+            groq_error = None
+            
+            # First try Groq API
             try:
-                transcript = None
-                if torch.cuda.is_available():
-                    transcript = transcribe_with_local_model(
+                groq_start_time = time.time()
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript is not None:
+                    groq_success = True
+                    groq_duration = time.time() - groq_start_time
+                    logging.info(f"Groq transcription successful in {groq_duration:.2f}s")
+                    
+            except (groq.RateLimitError, Exception) as e:
+                groq_error = str(e)
+                logging.warning(f"Groq API error, will try local model: {groq_error}")
+                
+            # If Groq failed or was too slow, try local model
+            if not groq_success and torch.cuda.is_available():
+                try:
+                    local_start_time = time.time()
+                    local_transcript = transcribe_with_local_model(
                         audio_buffer_for_processing, keyword_index
                     )
-                    if not transcript or transcript == "Transcription failed":
-                        transcript = None
-                if transcript is None:
-                    transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-                    if transcript is None:
-                        logging.error("Transcription returned None")
-                        continue
-            except groq.RateLimitError:
-                logging.error(
-                    "Groq API rate limit reached, switching to local transcription."
-                )
-                transcript = transcribe_with_local_model(
-                    audio_buffer_for_processing, keyword_index
-                )
+                    if local_transcript and local_transcript != "Transcription failed":
+                        local_duration = time.time() - local_start_time
+                        logging.info(f"Local transcription successful in {local_duration:.2f}s")
+                        transcript = local_transcript
+                except Exception as e:
+                    logging.error(f"Local transcription failed: {e}")
+            
+            if not transcript:
+                logging.error("All transcription attempts failed")
+                continue
 
             transcript_lower = transcript.lower()
 
