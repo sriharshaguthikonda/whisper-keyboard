@@ -1096,11 +1096,11 @@ async def process_audio_async():
 
             try:
                 audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
-                    timeout=1
+                    timeout=0.1
                 )
             except QueueEmpty:
                 global_state["is_processing"] = False
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(0.05)
                 continue
 
             # Validate audio buffer
