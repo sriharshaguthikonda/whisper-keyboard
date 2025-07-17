@@ -85,7 +85,13 @@ def test_transcribe_with_local_model(fw_module, monkeypatch):
     class Seg:
         def __init__(self, text):
             self.text = text
-    monkeypatch.setattr(fw_module.model, 'transcribe', lambda audio, language='en': ([Seg('hello'), Seg('world')], None))
+    fw_module.model = types.SimpleNamespace()
+    monkeypatch.setattr(
+        fw_module.model,
+        'transcribe',
+        lambda audio, language='en': ([Seg('hello'), Seg('world')], None),
+        raising=False,
+    )
     data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
     text = fw_module.transcribe_with_local_model(data, 0)
     assert text == 'hello world'
@@ -116,4 +122,29 @@ def test_reset_state(fw_module, monkeypatch):
     assert fw_module.play_pause_pressed is False
     assert isinstance(fw_module.audio_buffer, np.ndarray)
     assert fw_module.audio_buffer.size == 0
+
+
+def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
+    monkeypatch.setattr(fw_module, 'restore_volume_all', lambda: None)
+    monkeypatch.setattr(fw_module, 'beep', lambda *a, **k: None)
+
+    fw_module.recording = True
+    fw_module.play_pause_pressed = False
+    fw_module.stream = types.SimpleNamespace(active=False)
+    fw_module.buffer_index = 0
+
+    fw_module.pre_recording_buffer = np.arange(
+        fw_module.BUFFER_SIZE, dtype=np.float32
+    ).reshape(-1, 1)
+    fw_module.audio_buffer = np.array([10.0, 11.0, 12.0], dtype=np.float32)
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    fw_module.stop_recording(None)
+
+    queued_audio, idx = fw_module.audio_buffer_queue.get_nowait()
+    assert idx is None
+    assert len(queued_audio) == fw_module.BUFFER_SIZE + 3
+    assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
 

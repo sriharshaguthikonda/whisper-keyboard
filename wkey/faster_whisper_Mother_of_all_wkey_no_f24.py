@@ -521,13 +521,23 @@ def stop_recording(keyword_index):
                 1  # Time to wait before stopping after no speech is detected
             )
         elif keyword_index is None:
-            # stop_delay_threshold = (0  # Time to wait before stopping after no speech is detected )
-            # pre_recording_data = np.roll(pre_recording_buffer_f24, -buffer_index, axis=0).flatten()
+            # For manual recordings triggered by a key press, include the
+            # pre-recording buffer so the audio leading up to the key press is
+            # also transcribed.
+            audio_buffer = np.concatenate(
+                [
+                    np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten(),
+                    audio_buffer,
+                ],
+                axis=0,
+            )
+
             audio_buffer_queue.put((audio_buffer, keyword_index))
 
             threading.Thread(target=restore_volume_all).start()
 
-            # clearing the audio buffer - if not it will cause concat transcripts
+            # clear the audio buffer to avoid concatenating with the next
+            # recording
             audio_buffer = np.array([], dtype="float32")
 
             if play_pause_pressed:
@@ -537,7 +547,9 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
-            logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
+            logging.info(
+                f"{MAGENTA}Recording stopped. Processing audio...{RESET}"
+            )
             return
         else:
             stop_delay_threshold = (
