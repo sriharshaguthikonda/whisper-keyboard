@@ -215,9 +215,6 @@ BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
-pre_recording_buffer_f24 = np.zeros(
-    (sample_rate * 3, channels), dtype=np.float32
-)
 buffer_index = 0
 audio_buffer = []
 
@@ -483,10 +480,15 @@ def stop_recording(keyword_index):
         elif keyword_index == 3:
             stop_delay_threshold = 1
         elif keyword_index is None:
-            pre_recording_data = np.roll(
-                pre_recording_buffer_f24, -buffer_index, axis=0
-            ).flatten()
-            audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+            # Include the audio that was captured before the key press so
+            # the transcription contains the lead-up to the manual recording.
+            audio_buffer = np.concatenate(
+                [
+                    np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten(),
+                    audio_buffer,
+                ],
+                axis=0,
+            )
             audio_buffer_queue.put((audio_buffer, keyword_index))
 
             threading.Thread(target=restore_volume_all).start()

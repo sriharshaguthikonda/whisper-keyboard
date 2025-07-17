@@ -87,6 +87,8 @@ pynput = types.ModuleType('pynput')
 class DummyKey(dict):
     def __getitem__(self, item):
         return item
+    def __getattr__(self, attr):
+        return attr
 pynput.keyboard = types.SimpleNamespace(
     Controller=lambda: None,
     Key=DummyKey(),
