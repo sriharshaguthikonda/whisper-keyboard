@@ -328,13 +328,15 @@ def monitor_sound_processing():
 global True_positve_audio
 True_positve_audio = True
 
-def check_keywords_in_transcription(pre_recording_data, keyword_index):
+def check_keywords_in_transcription(pre_recording_data, keyword_index, source_of_stop):
     global True_positve_audio, recording
+    if source_of_stop == "keyboard":
+        return
     try:
         pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
 
         logging.error(
-            f"pre_recording_transcript: {pre_recording_transcript} keyword_index: {keyword_index}"
+            f"pre_recording_transcript: {pre_recording_transcript} keyword_index: {keyword_index} source_of_stop: {source_of_stop}"
         )
 
         if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
@@ -345,7 +347,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
-            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+            threading.Thread(target=stop_recording, args=(keyword_index, source_of_stop)).start()
         elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
@@ -354,7 +356,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
-            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+            threading.Thread(target=stop_recording, args=(keyword_index, source_of_stop)).start()
         elif keyword_index == 3 and "jarvis" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
@@ -363,12 +365,12 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
-            threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+            threading.Thread(target=stop_recording, args=(keyword_index,source_of_stop)).start()
 
     except Exception as e:
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
 
-def start_recording(keyword_index=None):
+def start_recording(keyword_index=None, source_of_stop="None"):
     """Start recording audio.
     
     Args:
@@ -434,7 +436,7 @@ def start_recording(keyword_index=None):
 
                 threading.Thread(
                     target=check_keywords_in_transcription,
-                    args=(pre_recording_data, keyword_index),
+                    args=(pre_recording_data, keyword_index, source_of_stop),
                 ).start()
 
     except Exception as e:
@@ -451,7 +453,7 @@ def start_recording(keyword_index=None):
 """
 
 
-def stop_recording(keyword_index):
+def stop_recording(keyword_index: int | None, source_of_stop: str) :
     try:
         global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector
 
@@ -484,13 +486,13 @@ def stop_recording(keyword_index):
             pre_recording_buffer, -buffer_index, axis=0
         ).flatten()
 
-        if keyword_index == 1:
+        if keyword_index == 1 and source_of_stop == "hotword":
             stop_delay_threshold = 0.5
-        elif keyword_index == 2:
+        elif keyword_index == 2 and source_of_stop == "hotword":
             stop_delay_threshold = 1
-        elif keyword_index == 3:
+        elif keyword_index == 3 and source_of_stop == "hotword":
             stop_delay_threshold = 1
-        elif keyword_index is None:
+        elif keyword_index is None or source_of_stop == "keyboard":
             # For manual recording, only include 1 second of pre-recording buffer
             one_second_samples = int(sample_rate * 1.0)  # 1 second worth of samples
             pre_recording_data_limited = pre_recording_data[-one_second_samples:]  # Take last 1 second
@@ -502,7 +504,7 @@ def stop_recording(keyword_index):
                 ],
                 axis=0,
             )
-            audio_buffer_queue.put((audio_buffer, keyword_index))
+            audio_buffer_queue.put((audio_buffer, keyword_index, source_of_stop))
 
             threading.Thread(target=restore_volume_all).start()
             audio_buffer = np.array([], dtype="float32")
@@ -553,7 +555,7 @@ def stop_recording(keyword_index):
 
                 time.sleep(0.1)
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
-        audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
+        audio_buffer_queue.put((audio_buffer.copy(), keyword_index, source_of_stop))
         audio_buffer = np.array([], dtype="float32")
 
         threading.Thread(target=restore_volume_all).start()
@@ -589,7 +591,10 @@ def on_press(key):
                 last_key_press_time = current_time
                 if recording is False:
                     logging.info(f"Voice activation key pressed: {key}")
-                    threading.Thread(target=start_recording, args=(None,)).start()
+                    if key == RECORD_KEYS["f24"]:
+                        threading.Thread(target=start_recording, args=(1,"keyboard")).start()
+                    else:
+                        threading.Thread(target=start_recording, args=(None,"keyboard")).start()
     except Exception as e:
         logging.error(f"Error in on_press: {e}", exc_info=True)
 
@@ -604,7 +609,10 @@ def on_release(key):
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
                 logging.info(f"Voice activation key released: {key}")
-                threading.Thread(target=stop_recording, args=(None,)).start()
+                if key == RECORD_KEYS["f24"]:
+                    threading.Thread(target=stop_recording, args=(1,"keyboard")).start()
+                else:
+                    threading.Thread(target=stop_recording, args=(None,"keyboard")).start()
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
 
@@ -814,17 +822,17 @@ def listen_for_wake_word():
 
                     if keyword_index == 0:
                         print("Custom wake word 'hey_jarvis' detected!")
-                        threading.Thread(target=start_recording).start()
+                        threading.Thread(target=start_recording, args=(keyword_index, "hotword")).start()
                         time.sleep(3)
-                        threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+                        threading.Thread(target=stop_recording, args=(keyword_index, "hotword")).start()
                     elif keyword_index == 1:
                         print("Custom wake word 'hey_computer10' detected!")
-                        threading.Thread(target=start_recording).start()
-                        threading.Thread(target=stop_recording, args=(1,)).start()
+                        threading.Thread(target=start_recording, args=(keyword_index, "hotword")).start()
+                        threading.Thread(target=stop_recording, args=(keyword_index, "hotword")).start()
                     elif keyword_index == 2:
                         print("Custom wake word 'hey_lama' detected!")
-                        threading.Thread(target=start_recording).start()
-                        threading.Thread(target=stop_recording, args=(2,)).start()
+                        threading.Thread(target=start_recording, args=(keyword_index, "hotword")).start()
+                        threading.Thread(target=stop_recording, args=(keyword_index, "hotword")).start()
                     elif keyword_index == 3:
                         print("Custom wake word 'hey_google' detected!")
                         decrease_volume_all()
@@ -909,7 +917,7 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
         )
         return ""
 
-async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
+async def transcribe_with_groq_async(byte_io, keyword_index, source_of_stop, max_retries=3):
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
     data = {
@@ -969,7 +977,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
     logging.error(f"Failed to transcribe after {max_retries} attempts")
     return None
 
-def transcribe_with_local_model(audio_buffer, keyword_index):
+def transcribe_with_local_model(audio_buffer, keyword_index, source_of_stop):
     try:
         if keyword_index == 1:
             prompt = Hey_computer_STT_prompt
@@ -1006,7 +1014,7 @@ async def process_audio_async():
             global_state["is_processing"] = True
 
             try:
-                audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
+                audio_buffer_for_processing, keyword_index, source_of_stop = audio_buffer_queue.get(
                     timeout=1
                 )
             except QueueEmpty:
@@ -1030,7 +1038,7 @@ async def process_audio_async():
             # First try Groq API
             try:
                 groq_start_time = time.time()
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index, source_of_stop)
                 if transcript is not None:
                     groq_success = True
                     groq_duration = time.time() - groq_start_time
@@ -1045,7 +1053,7 @@ async def process_audio_async():
                 try:
                     local_start_time = time.time()
                     local_transcript = transcribe_with_local_model(
-                        audio_buffer_for_processing, keyword_index
+                        audio_buffer_for_processing, keyword_index, source_of_stop
                     )
                     if local_transcript and local_transcript != "Transcription failed":
                         local_duration = time.time() - local_start_time
@@ -1061,18 +1069,21 @@ async def process_audio_async():
             transcript_lower = transcript.lower()
 
             if keyword_index is None:
-                logging.info("F24 key pressed - sending directly to Groq command execution")
-                transcript_queue.put((transcript.strip(), 1))  # Use keyword_index=1 to route to execute_command_run_with_tool
+                logging.info("pasing f24 transcription")
+                paste_transcript(transcript, beep)
                 continue
-            elif keyword_index == 1:
+            elif keyword_index == 1 and source_of_stop == "hotword":
                 if "computer" in transcript_lower:
                     keyword_position = transcript_lower.index("computer")
                     stripped_transcript = transcript_lower[
                         keyword_position + len("computer") :
                     ]
                     logging.info(f"Processing computer command: {stripped_transcript}")
-                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
+                    transcript_queue.put((stripped_transcript.strip(), keyword_index, source_of_stop))
                     continue
+            elif keyword_index == 1 and source_of_stop == "keyboard":
+                transcript_queue.put((transcript.strip(), keyword_index, source_of_stop))
+                continue
             elif keyword_index == 2:
                 if "lama" in transcript_lower:
                     keyword_position = transcript_lower.index("lama")
@@ -1131,11 +1142,11 @@ def create_wav_buffer(audio_buffer):
         logging.error(f"{RED}Error creating WAV buffer: {e}{RESET}", exc_info=True)
         return None
 
-async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
+async def get_transcript_with_retries(byte_io, keyword_index, source_of_stop, max_retries=3):
     for attempt in range(max_retries):
         try:
             if SETTINGS.get("fallback_to_groq", True):
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index, source_of_stop)
                 if transcript:
                     return transcript.lower()
         except Exception as e:
@@ -1230,13 +1241,13 @@ async def clean_transcript():
     try:
         while True:
             try:
-                transcript, keyword_index = transcript_queue.get()
+                transcript, keyword_index, source_of_stop = transcript_queue.get()
                 logging.error(f"Transcript received in clean_transcript: {transcript}")
                 if keyword_index == 1:
                     logging.error(
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
-                    await execute_command_run_with_tool(transcript)
+                    await execute_command_run_with_tool(transcript, source_of_stop)
                 elif keyword_index == 2:
                     pass
                 elif keyword_index == 3:
