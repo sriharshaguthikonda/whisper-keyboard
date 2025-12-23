@@ -366,12 +366,15 @@ def previous_track():
 """
 
 
-# Define action functions
-def search_windows():
+def search_everything(query: str = ""):
     try:
-        pyautogui.press("win")
+        everything_path = r"C:\Program Files\Everything 1.5a\Everything64.exe"
+        cmd = [everything_path]
+        if query:
+            cmd.extend(["-search", query])
+        subprocess.run(cmd)
     except Exception as e:
-        logging.error(f"Error executing search_windows: {e}", exc_info=True)
+        logging.error(f"Error executing search_everything: {e}", exc_info=True)
 
 
 def show_desktop():
@@ -746,6 +749,9 @@ def restart_voicemeeter():
         set_volume(initial_volume)
     except Exception as e:
         logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
+
+
+
 
 
 # DisplayFusion commands
@@ -1245,7 +1251,7 @@ import aiohttp
 import asyncio
 
 
-async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+async def execute_command_run_with_tool(query, source_of_stop, max_retries=3, retry_delay=2):
     try:
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
