@@ -521,6 +521,7 @@ class VoicePauseController(QMainWindow):
             # Get current volume before restarting
             
             # Restart Voicemeeter
+            """
             voicemeeter_path = r"C:\Program Files (x86)\VB\Voicemeeter\voicemeeter8x64.exe"
             subprocess.Popen([voicemeeter_path, "-r"], 
                             shell=True,
@@ -532,6 +533,7 @@ class VoicePauseController(QMainWindow):
             
             # Restore volume
             return True
+            """
         except Exception as e:
             error_msg = f"Error in restart_voicemeeter: {str(e)}"
             print(error_msg)

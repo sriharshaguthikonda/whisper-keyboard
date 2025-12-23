@@ -171,8 +171,8 @@ if SETTINGS.get("use_local_gpu", True):
 else:
     logging.info(f"{YELLOW}Local GPU model is disabled in settings{RESET}")
 
-#groq_model = "whisper-large-v3"
-groq_model = "distil-whisper-large-v3-en"
+groq_model = "whisper-large-v3"
+#groq_model = "distil-whisper-large-v3-en"
 
 play_pause_pressed = False
 something_is_playing = False
@@ -210,13 +210,23 @@ audio_data_lock = threading.Lock()
  ######     ##    ##     ## ######## ##     ## ##     ## 
 """
 
-PRE_RECORDING_DURATION = 3
+PRE_RECORDING_DURATION = 2
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
 pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
 buffer_index = 0
 audio_buffer = []
+
+
+PRE_RECORDING_DURATION_F24 = 1
+BUFFER_SIZE_F24 = PRE_RECORDING_DURATION_F24 * sample_rate
+channels = 1
+
+pre_recording_buffer_f24 = np.zeros((BUFFER_SIZE_F24, channels), dtype=np.float32)
+buffer_index_f24 = 0
+audio_buffer_f24 = []
+
 
 # Add a context manager for audio operations
 @contextmanager
@@ -440,6 +450,7 @@ def start_recording(keyword_index=None):
  ######     ##     #######  ##           ##     ## ########  ######  
 """
 
+
 def stop_recording(keyword_index):
     try:
         global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector
@@ -480,11 +491,13 @@ def stop_recording(keyword_index):
         elif keyword_index == 3:
             stop_delay_threshold = 1
         elif keyword_index is None:
-            # Include the audio that was captured before the key press so
-            # the transcription contains the lead-up to the manual recording.
+            # For manual recording, only include 1 second of pre-recording buffer
+            one_second_samples = int(sample_rate * 1.0)  # 1 second worth of samples
+            pre_recording_data_limited = pre_recording_data[-one_second_samples:]  # Take last 1 second
+            
             audio_buffer = np.concatenate(
                 [
-                    np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten(),
+                    pre_recording_data_limited,
                     audio_buffer,
                 ],
                 axis=0,
@@ -557,6 +570,8 @@ def stop_recording(keyword_index):
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
         reset_state()
+
+
 
 DEBOUNCE_TIME = 0.5
 last_key_press_time = 0
@@ -851,6 +866,7 @@ def cleanup():
     except Exception as e:
         logging.error(f"Error in cleanup: {e}", exc_info=True)
 
+
 """
  ######   ########   #######   #######  
 ##    ##  ##     ## ##     ## ##     ## 
@@ -860,6 +876,7 @@ def cleanup():
 ##    ##  ##    ##  ##     ## ##    ##  
  ######   ##     ##  #######   ##### ## 
 """
+
 
 transcribe_pre_recording_buffer_prompt = "you are downstream to hotword detection algorithm. check if you are able to detect the wake word 'computer' or 'lama' in the audio"
 
@@ -898,7 +915,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
     data = {
         "model": groq_model,
         "response_format": "json",
-        "prompt": "",
+        "prompt": "Transcribe the audio. Wherever a number is spoken, output it as digits with no spaces (e.g. “twenty twenty three” → “2023”, “one two three” → “123”). Do not spell any numbers in words; leave all other text unchanged.",
         "language": "en",
         "temperature": 0.0,
     }
@@ -936,7 +953,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
                     )
                 response.raise_for_status()
                 transcription = await response.json()
-                return transcription["text"].lower()
+                return transcription["text"].strip().lower()
         except aiohttp.ClientResponseError as e:
             logging.error(
                 f"Groq API client error: {e.status}, message='{e.message}', url='{e.request_info.url}'",
@@ -1044,8 +1061,8 @@ async def process_audio_async():
             transcript_lower = transcript.lower()
 
             if keyword_index is None:
-                logging.info("pasing f24 transcription")
-                paste_transcript(transcript, beep)
+                logging.info("F24 key pressed - sending directly to Groq command execution")
+                transcript_queue.put((transcript.strip(), 1))  # Use keyword_index=1 to route to execute_command_run_with_tool
                 continue
             elif keyword_index == 1:
                 if "computer" in transcript_lower:
@@ -1134,7 +1151,8 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
     try:
         if keyword_index is None:
             if len(transcript) > 3:
-                paste_transcript(transcript, beep)
+                # Trim any leading/trailing spaces before pasting
+                paste_transcript(transcript.strip(), beep)
         elif keyword_index == 1 and "computer" in transcript:
             keyword_pos = transcript.index("computer")
             stripped = transcript[key_pos + len("computer") :].strip()

@@ -1,4 +1,4 @@
-original_audio = """ You're an F2 in GP clinic, a 16-year-old patient has booked the appointment, name Rohan Robinson. They would like to talk about a concern. This is the first time they have come to the hospital regarding the issue. Rohan Robertson? Yeah. Age? 16. 16, Rohan Robertson, 16 year old, has come to you with some concern, deal with it. Let's deal with the concerns, right?
+original_audio_transcript= """ You're an F2 in GP clinic, a 16-year-old patient has booked the appointment, name Rohan Robinson. They would like to talk about a concern. This is the first time they have come to the hospital regarding the issue. Rohan Robertson? Yeah. Age? 16. 16, Rohan Robertson, 16 year old, has come to you with some concern, deal with it. Let's deal with the concerns, right?
 Mr. Rohan Robinson, age 16 year, presented to the GP, or the GP. GP. All right. Shall I enter the room? Yes.
 enter to the room. Hello, um, and my name is Dr. Sattar with James and 7074073. Hello, my name is Dr. Sattar, one of the doctors working in GP setting. Uh doctor. And I can see from the notes that you came in today with some concerns. But before we move further, can I confirm your name and your date of birth, please? Yes, doctor, I'm Rohan Robinson, I'm 16 years old. Yep. So, Rohan, tell me, how can I help you today?
 I feel good about my body, doctor. All right, would you mind elaborating? What do you mean you don't feel good about it?
@@ -157,92 +157,284 @@ Yeah, that's economically. They tend to take it. Yeah, they do take it. There wa
 Unless you are referred today, you need to hear from CAMHS geriatric team next few weeks. Leaflet. Exactly. I have to take a leave now. I'll go. Yeah. Tomorrow we will do, I will come early, hopefully. Okay. Okay. Fine. We will do some cases, cases also, and we will learn."""
 
 
-Processed_Audio_Transcript_tiny="the logs you are seeing the apartment start up lots of was library as a lot of also martin it's components these logs indicate that the martin has been successfully order to and thirty four speech ago we shouldn't cost of living your grip just jobs here we don't proceeding though the good a speech it could be because this group these how waiting for arguing with the process the asked model you are using was model does not have a specific week or"
-
-Unprocessed_Audio_Transcript_tiny=" The logs you are seeing are normal startup logs for BOSQ library as it loads and model  and its components.  These logs indicate that the model has been successfully loaded and it's ready for speech recognition tasks.  However, if your script just stops here without proceeding to recognize speech,  it could be because the script is now waiting for audio input to process.  The BOSQ model you are using, BOSQ model does not have a specific record."
-
-
-Processed_Audio_Transcript_medium="  class returns a tuple containing a generator over transcribed segments and an instance  of transcription info.  You need to iterate over the segments to concatenate their tricks for the final transcript.  Ensure that the whisper model initialization matches the actual class and method names  for the Oster whisper library.  The provided code assumes whisper model is correct class for initializing the model,  which may need to be adjusted based on the actual library usage.  This code snippet assumes that the transcription method can directly accept a NumPy array  processed audio and unprocessed audio as its input.  You may need to adjust this part if the method expects."
-
-Unprocessed_Audio_Transcript_medium= " class returns a tuple containing a generator over transcribed segments and an instance  of transcription info. You need to iterate over the segments to concatenate their tricks  for the final transcript. Ensure that the whisper model initialization matches the actual  class and method names for the faster whisper library. The provided code assumes whisper  is correct class for initializing the model, which may need to be adjusted based on the  actual library usage. This code snippet assumes that the transcription method can directly  accept the numpy array processed audio and unprocessed audio as its input. You may need  to adjust this part if the method expects."
-
-
-
-groq_processed_transcript_v3 = "The transcribe method of the Whisper Model class returns a tool containing a generator over transcribed segments and an instance  of transcription info.  You need to iterate over the segments to concatenate their text for the final transcript.  Ensure that the whisper model initialization matches the actual class and method names  for the foster whisper library.  The provided code assumes whisper model is correct class for initializing the model,  which may need to be adjusted based on the actual library usage.  This code snippet assumes that the transcription method can directly accept a NumPy array of  processed audio and unprocessed audio as its input.  You may need to adjust this part if the method expects."
-
-phone_processed_transcript_v3= "The transcribe method of the Whisper Model class returns a tuple containing a generator over transcribed segments and an instance  of transcription info. You need to iterate over the segments to concatenate their text  for the final transcript. Ensure that the whisper model initialization matches the actual  class and method names for the faster whisper library. The provided code assumes whisper  model is correct class for initializing the model, which may need to be adjusted based  on the actual library usage. This code snippet assumes that the transcription method can  directly accept a NumPy array processed audio and unprocessed audio as its input. You may  need to adjust this part if the method expects."
-
-
-
-groq_processed_transcript_large =" class returns a tool containing a generator over transcribed segments and an instance  of transcription info.  You need to iterate over the segments to concatenate their text for the final transcript.  Ensure that the whisper model initialization matches the actual class and method names  for the foster whisper library.  The provided code assumes whisper model is correct class for initializing the model,  which may need to be adjusted based on the actual library usage.  This code snippet assumes that the transcription method can directly accept a NumPy array of  processed audio and unprocessed audio as its input.  You may need to adjust this part if the method expects."
-
-phone_processed_transcript_large = " class returns a tuple containing a generator over transcribed segments and an instance  of transcription info. You need to iterate over the segments to concatenate their text  for the final transcript. Ensure that the whisper model initialization matches the actual  class and method names for the faster whisper library. The provided code assumes whisper  model is correct class for initializing the model, which may need to be adjusted based  on the actual library usage. This code snippet assumes that the transcription method can  directly accept a NumPy array processed audio and unprocessed audio as its input. You may  need to adjust this part if the method expects."
-
-
-groq_processed_transcript_small =" The transcribe method of the Whisper model class returns a tuple containing a generator  over transcribed segments and an instance of transcription info.  You need to iterate over the segments to concatenate the text for the final transcript.  Ensure that the Whisper model visualization matches the actual class and method names  from the faster Whisper library.  The provided code assumes Whisper model is the correct class for initializing the model  which may need to be adjusted based on the actual library use.  The code snippet assumes that the transcribed method can be directly accepted at NumPy array  processed audio and unprocessed audio as its input.  You may need to adjust this part if the method expects."
-
-
-phone_processed_transcript_small = " The transcribe method of the Whisper model class returns a tuple containing a generator  over transcribed segments and an instance of transcription info.  You need to iterate over the segments to concatenate the text for the final transcript.  Ensure that the Whisper model initialization matches the actual class and method names  from the faster Whisper library.  The provided code assumes Whisper model is the correct class for initializing the model  which may need to be adjusted based on the actual library use.  The code snippet assumes that the transcribed method can be directly accept a numpy array  processed audio and unprocessed audio as its input.  You may need to adjust this part if the method expects."
-
-def count_mistakes(original, transcript):
-    original_words = set(original.split())
-    transcript_words = set(transcript.split())
-    mistakes = len(original_words.symmetric_difference(transcript_words))
-    return mistakes
-
-processed_mistakes = count_mistakes(original_audio, groq_processed_transcript)
-unprocessed_mistakes = count_mistakes(original_audio, phone_processed_transcript)
-
-print("Mistakes in processed transcript:", processed_mistakes)
-print("Mistakes in unprocessed transcript:", unprocessed_mistakes)
-
-
-
-
-
+import re
+import string
 from difflib import SequenceMatcher
+from collections import Counter
+import math
 
-def similarity(a, b):
-    return SequenceMatcher(None, a, b).ratio()
+def preprocess_text(text):
+    """
+    Clean and normalize text for fair comparison
+    """
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Remove punctuation
+    text = text.translate(str.maketrans('', '', string.punctuation))
+    
+    # Remove extra whitespace and normalize
+    text = ' '.join(text.split())
+    
+    # Optional: Remove common filler words that STT might insert/miss
+    filler_words = {'um', 'uh', 'er', 'ah', 'like', 'you know'}
+    words = text.split()
+    words = [w for w in words if w not in filler_words]
+    
+    return ' '.join(words)
 
-processed_similarity = similarity(original_audio, groq_processed_transcript)
-unprocessed_similarity = similarity(original_audio, phone_processed_transcript)
+def word_error_rate(reference, hypothesis):
+    """
+    Calculate Word Error Rate (WER) - the standard metric for STT evaluation
+    WER = (S + D + I) / N
+    where S = substitutions, D = deletions, I = insertions, N = total words in reference
+    """
+    ref_words = preprocess_text(reference).split()
+    hyp_words = preprocess_text(hypothesis).split()
+    
+    # Use SequenceMatcher to find operations
+    matcher = SequenceMatcher(None, ref_words, hyp_words)
+    
+    substitutions = 0
+    deletions = 0
+    insertions = 0
+    
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == 'replace':
+            substitutions += max(i2 - i1, j2 - j1)
+        elif op == 'delete':
+            deletions += i2 - i1
+        elif op == 'insert':
+            insertions += j2 - j1
+    
+    total_words = len(ref_words)
+    if total_words == 0:
+        return float('inf') if len(hyp_words) > 0 else 0.0
+    
+    wer = (substitutions + deletions + insertions) / total_words
+    return wer
 
-print(processed_similarity, unprocessed_similarity)
+def character_error_rate(reference, hypothesis):
+    """
+    Calculate Character Error Rate (CER) - useful for languages with no clear word boundaries
+    """
+    ref_chars = preprocess_text(reference).replace(' ', '')
+    hyp_chars = preprocess_text(hypothesis).replace(' ', '')
+    
+    matcher = SequenceMatcher(None, ref_chars, hyp_chars)
+    
+    errors = 0
+    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+        if op == 'replace':
+            errors += max(i2 - i1, j2 - j1)
+        elif op == 'delete':
+            errors += i2 - i1
+        elif op == 'insert':
+            errors += j2 - j1
+    
+    total_chars = len(ref_chars)
+    if total_chars == 0:
+        return float('inf') if len(hyp_chars) > 0 else 0.0
+    
+    cer = errors / total_chars
+    return cer
+
+def bleu_score_approximation(reference, hypothesis):
+    """
+    Simplified BLEU score calculation
+    Measures n-gram overlap between reference and hypothesis
+    """
+    ref_words = preprocess_text(reference).split()
+    hyp_words = preprocess_text(hypothesis).split()
+    
+    if len(hyp_words) == 0:
+        return 0.0
+    
+    # Calculate 1-gram to 4-gram precision
+    scores = []
+    
+    for n in range(1, min(5, len(hyp_words) + 1)):
+        if len(ref_words) < n:
+            break
+            
+        ref_ngrams = Counter([tuple(ref_words[i:i+n]) for i in range(len(ref_words)-n+1)])
+        hyp_ngrams = Counter([tuple(hyp_words[i:i+n]) for i in range(len(hyp_words)-n+1)])
+        
+        if len(hyp_ngrams) == 0:
+            scores.append(0.0)
+            continue
+            
+        overlap = sum(min(ref_ngrams[ngram], hyp_ngrams[ngram]) for ngram in hyp_ngrams)
+        precision = overlap / len(hyp_ngrams)
+        scores.append(precision)
+    
+    if not scores or all(score == 0 for score in scores):
+        return 0.0
+    
+    # Geometric mean of precisions
+    valid_scores = [s for s in scores if s > 0]
+    if valid_scores:
+        bleu = math.prod(valid_scores) ** (1.0 / len(valid_scores))
+    else:
+        bleu = 0.0
+    
+    # Brevity penalty
+    ref_len = len(ref_words)
+    hyp_len = len(hyp_words)
+    
+    if hyp_len > ref_len:
+        bp = 1.0
+    elif hyp_len == 0:
+        bp = 0.0
+    else:
+        bp = math.exp(1 - ref_len / hyp_len)
+    
+    return bleu * bp
+
+def semantic_similarity(reference, hypothesis):
+    """
+    Semantic similarity using word overlap (Jaccard similarity)
+    """
+    ref_words = set(preprocess_text(reference).split())
+    hyp_words = set(preprocess_text(hypothesis).split())
+    
+    if len(ref_words) == 0 and len(hyp_words) == 0:
+        return 1.0
+    
+    intersection = len(ref_words.intersection(hyp_words))
+    union = len(ref_words.union(hyp_words))
+    
+    # Jaccard similarity
+    jaccard = intersection / union if union > 0 else 0.0
+    
+    return jaccard
+
+def comprehensive_evaluation(original, transcript, model_name="Model"):
+    """
+    Comprehensive evaluation using multiple metrics
+    """
+    wer = word_error_rate(original, transcript)
+    cer = character_error_rate(original, transcript)
+    bleu = bleu_score_approximation(original, transcript)
+    semantic = semantic_similarity(original, transcript)
+    
+    # Traditional similarity (for comparison)
+    traditional_sim = SequenceMatcher(None, 
+                                     preprocess_text(original), 
+                                     preprocess_text(transcript)).ratio()
+    
+    results = {
+        'model': model_name,
+        'word_error_rate': wer,
+        'character_error_rate': cer,
+        'bleu_score': bleu,
+        'semantic_similarity': semantic,
+        'traditional_similarity': traditional_sim,
+        'accuracy': max(0, 1 - wer)  # Word accuracy, ensure non-negative
+    }
+    
+    return results
+
+def print_results(results):
+    """
+    Print results in a readable format
+    """
+    print(f"\n=== {results['model']} ===")
+    print(f"Word Error Rate (WER): {results['word_error_rate']:.3f} (lower is better)")
+    print(f"Character Error Rate (CER): {results['character_error_rate']:.3f} (lower is better)")
+    print(f"Word Accuracy: {results['accuracy']:.3f} (higher is better)")
+    print(f"BLEU Score: {results['bleu_score']:.3f} (higher is better)")
+    print(f"Semantic Similarity: {results['semantic_similarity']:.3f} (higher is better)")
+    print(f"Traditional Similarity: {results['traditional_similarity']:.3f} (higher is better)")
+
+def rank_models(results_list, primary_metric='accuracy'):
+    """
+    Rank models based on a primary metric
+    """
+    if primary_metric == 'word_error_rate' or primary_metric == 'character_error_rate':
+        # Lower is better for error rates
+        ranked = sorted(results_list, key=lambda x: x[primary_metric])
+    else:
+        # Higher is better for accuracy, BLEU, similarity
+        ranked = sorted(results_list, key=lambda x: x[primary_metric], reverse=True)
+    
+    return ranked
+
+# Main evaluation with your actual transcripts
+if __name__ == "__main__":
+    # Your actual transcripts
 
 
-
-processed_similarity = similarity(original_audio, Processed_Audio_Transcript_tiny)
-unprocessed_similarity = similarity(original_audio, Unprocessed_Audio_Transcript_tiny)
-
-print("Processed_Audio_Transcript_tiny",processed_similarity, unprocessed_similarity)
-
-
-processed_similarity = similarity(original_audio, groq_processed_transcript_small)
-unprocessed_similarity = similarity(original_audio, phone_processed_transcript_small)
-
-print(processed_similarity, unprocessed_similarity)
-
-
-
-processed_similarity = similarity(original_audio, Processed_Audio_Transcript_medium)
-unprocessed_similarity = similarity(original_audio, Unprocessed_Audio_Transcript_medium)
-
-print(processed_similarity, unprocessed_similarity)
-
-
-
-processed_similarity = similarity(original_audio, groq_processed_transcript_v3)
-unprocessed_similarity = similarity(original_audio, phone_processed_transcript_v3)
-
-print(processed_similarity, unprocessed_similarity)
-
-
-processed_similarity = similarity(original_audio, groq_processed_transcript_large)
-unprocessed_similarity = similarity(original_audio, phone_processed_transcript_large)
-
-print(processed_similarity, unprocessed_similarity)
-
-
-
-
+    # List of models and their transcripts
+    models_and_transcripts = [
+        ("Groq Processed", groq_processed_transcript),
+        ("Phone Processed", phone_processed_transcript),
+    ]
+    
+    results_list = []
+    
+    print("SPEECH-TO-TEXT MODEL EVALUATION")
+    print("=" * 60)
+    
+    for model_name, transcript in models_and_transcripts:
+        results = comprehensive_evaluation(original_audio_transcript, transcript, model_name)
+        results_list.append(results)
+        print_results(results)
+    
+    # Summary comparison
+    print("\n" + "="*70)
+    print("SUMMARY COMPARISON")
+    print("="*70)
+    print(f"{'Model':<20} {'WER':<8} {'CER':<8} {'Accuracy':<10} {'BLEU':<8} {'Semantic':<10}")
+    print("-" * 70)
+    
+    for results in results_list:
+        print(f"{results['model']:<20} "
+              f"{results['word_error_rate']:<8.3f} "
+              f"{results['character_error_rate']:<8.3f} "
+              f"{results['accuracy']:<10.3f} "
+              f"{results['bleu_score']:<8.3f} "
+              f"{results['semantic_similarity']:<10.3f}")
+    
+    # Rankings
+    print("\n" + "="*50)
+    print("MODEL RANKINGS")
+    print("="*50)
+    
+    # Rank by different metrics
+    metrics = ['accuracy', 'word_error_rate', 'bleu_score', 'semantic_similarity']
+    
+    for metric in metrics:
+        print(f"\nRanked by {metric.replace('_', ' ').title()}:")
+        ranked = rank_models(results_list, metric)
+        for i, result in enumerate(ranked, 1):
+            print(f"{i}. {result['model']}: {result[metric]:.3f}")
+    
+    # Overall best model (composite score)
+    print(f"\n{'='*50}")
+    print("COMPOSITE SCORE RANKING")
+    print("="*50)
+    
+    # Calculate composite score (normalize metrics and combine)
+    for result in results_list:
+        # Normalize metrics to 0-1 scale where 1 is best
+        normalized_accuracy = result['accuracy']
+        normalized_wer = max(0, 1 - result['word_error_rate'])  # Invert WER
+        normalized_bleu = result['bleu_score']
+        normalized_semantic = result['semantic_similarity']
+        
+        # Weighted composite score
+        composite = (
+            0.4 * normalized_accuracy +
+            0.3 * normalized_wer +
+            0.2 * normalized_bleu +
+            0.1 * normalized_semantic
+        )
+        result['composite_score'] = composite
+    
+    composite_ranked = sorted(results_list, key=lambda x: x['composite_score'], reverse=True)
+    
+    for i, result in enumerate(composite_ranked, 1):
+        print(f"{i}. {result['model']}: {result['composite_score']:.3f}")
+    
+    print(f"\nBest Overall Model: {composite_ranked[0]['model']}")
