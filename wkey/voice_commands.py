@@ -1256,7 +1256,7 @@ import aiohttp
 import asyncio
 
 
-async def execute_command_run_with_tool(query, source_of_stop, max_retries=3, retry_delay=2):
+async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
     try:
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
