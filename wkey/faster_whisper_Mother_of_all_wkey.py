@@ -51,6 +51,7 @@ from contextlib import contextmanager
 import aiohttp
 import asyncio
 import json
+from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 
 # Add global variables for pause functionality
 global_pause_active = False
@@ -1261,18 +1262,53 @@ async def clean_transcript():
 ##     ## ##     ## #### ##    ## 
 """
 
-def display_pause_status():
-    """Display current pause status in console"""
-    while True:
-        try:
-            if check_pause_status():
-                print(f"{RED}🔴 VOICE RECOGNITION PAUSED{RESET}")
-            else:
-                print(f"{GREEN}🟢 Voice recognition active - Say 'Hey computer' or wake word...{RESET}")
-            time.sleep(10)
-        except Exception as e:
-            logging.error(f"Error in display_pause_status: {e}")
-            time.sleep(10)
+_spinner = None
+_spinner_thread = None
+
+def display_pause_status(start: bool = True):
+    """Start/stop the pause-status spinner."""
+    global _spinner, _spinner_thread
+
+    if start:
+        if _spinner_thread and _spinner_thread.is_alive():
+            return  # already running
+
+        _spinner = make_status_display(
+            check_pause_status=check_pause_status,
+            active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word...{RESET}",
+            paused_message=f"{RED}VOICE RECOGNITION PAUSED{RESET}",
+            spinner_frames=(
+                f"{GREEN}▁{RESET}",
+                f"{RED}█{RESET}",
+                f"{BLUE}▄{RESET}",
+                f"{RED}█{RESET}",
+                f"{YELLOW}▄{RESET}",
+                f"{YELLOW}▂{RESET}",
+                f"{YELLOW}█{RESET}",
+                f"{GREEN}▃{RESET}",
+                f"{BLUE}▂{RESET}",
+                f"{GREEN}█{RESET}",
+                f"{GREEN}▁{RESET}",
+                f"{BLUE}▄{RESET}",
+            ),
+            refresh_interval=0.1,
+        )
+
+        def runner():
+            try:
+                _spinner()
+            except Exception as e:
+                logging.exception("Error in display_pause_status: %s", e)
+
+        _spinner_thread = threading.Thread(target=runner, daemon=True)
+        _spinner_thread.start()
+    else:
+        if _spinner:
+            _spinner.stop()
+        if _spinner_thread:
+            _spinner_thread.join(timeout=1)
+        _spinner = None
+        _spinner_thread = None
 
 def start_thread(target, name):
     try:
