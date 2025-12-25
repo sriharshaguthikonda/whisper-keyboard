@@ -117,15 +117,20 @@ ollama_model = "llama3.2:latest"
 # Path to your Edge WebDriver
 webdriver_path = r"C:\Users\deletable\Downloads\edgedriver_win64\msedgedriver.exe"
 
-# Set up Edge options
-options = Options()
-options.add_argument(
-    r"user-data-dir=C:\\Users\\YourUsername\\AppData\\Local\\Microsoft\\Edge\\User Data"
-)  # Adjust this to your user data directory
-options.add_argument(r"profile-directory=Profile 1")  # Adjust this to your profile name
+# Set up Edge options (use dedicated profile to avoid collisions/crashes)
+EDGE_PROFILE_DIR = r"C:\Users\deletable\AppData\Local\Microsoft\Edge\User Data\Profile_wkey_selenium"
+os.makedirs(EDGE_PROFILE_DIR, exist_ok=True)
 
-# Add remote allow origins
+options = Options()
+options.add_argument(f"user-data-dir={EDGE_PROFILE_DIR}")
+options.add_argument("profile-directory=Profile_wkey_selenium")
+
+# Add stability flags to reduce DevToolsActivePort/lock issues
 options.add_argument("--remote-allow-origins=*")
+options.add_argument("--no-first-run")
+options.add_argument("--no-default-browser-check")
+options.add_argument("--disable-features=msEdgeReporting")  # reduce telemetry side-effects
+options.add_argument("--remote-debugging-port=0")  # allow dynamic debug port
 
 # Start minimized
 # options.add_argument("--start-minimized")
@@ -366,12 +371,15 @@ def previous_track():
 """
 
 
-# Define action functions
-def search_windows():
+def search_everything(query: str = ""):
     try:
-        pyautogui.press("win")
+        everything_path = r"C:\Program Files\Everything 1.5a\Everything64.exe"
+        cmd = [everything_path]
+        if query:
+            cmd.extend(["-search", query])
+        subprocess.run(cmd)
     except Exception as e:
-        logging.error(f"Error executing search_windows: {e}", exc_info=True)
+        logging.error(f"Error executing search_everything: {e}", exc_info=True)
 
 
 def show_desktop():
@@ -746,6 +754,9 @@ def restart_voicemeeter():
         set_volume(initial_volume)
     except Exception as e:
         logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
+
+
+
 
 
 # DisplayFusion commands
@@ -1245,7 +1256,7 @@ import aiohttp
 import asyncio
 
 
-async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+async def execute_command_run_with_tool(query, source_of_stop, max_retries=3, retry_delay=2):
     try:
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")

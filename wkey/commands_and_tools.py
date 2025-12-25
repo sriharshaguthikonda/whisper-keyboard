@@ -471,9 +471,18 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "search_windows",
-            "description": "Open the Windows start menu",
-            "parameters": {"type": "object", "properties": {}, "required": []},
+            "name": "search_everything",
+            "description": "Search Windows files using Everything (focuses results)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search text to send to Everything. If omitted, opens Everything.",
+                    }
+                },
+                "required": [],
+            },
         },
     },
     {
