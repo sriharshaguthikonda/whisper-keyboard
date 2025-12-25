@@ -119,6 +119,12 @@ RECORD_KEYS = {
     'ctrl_r': Key.ctrl_r
 }
 
+def map_key_to_keyword_index(key):
+    """Return keyword index for a given manual trigger key."""
+    if key == RECORD_KEYS['f24']:
+        return 0  # Route directly to execute_command_run_with_tool
+    return None  # Default manual (paste) pathway
+
 keyboard_controller = KeyboardController()
 recording = False
 stream = None
@@ -171,8 +177,8 @@ if SETTINGS.get("use_local_gpu", True):
 else:
     logging.info(f"{YELLOW}Local GPU model is disabled in settings{RESET}")
 
-#groq_model = "whisper-large-v3"
-groq_model = "distil-whisper-large-v3-en"
+groq_model = "whisper-large-v3"
+#groq_model = "distil-whisper-large-v3-en"
 
 play_pause_pressed = False
 something_is_playing = False
@@ -368,8 +374,8 @@ def start_recording(keyword_index=None):
         keyword_index: Index of the wake word that triggered recording, or None if triggered by F24 key
     """
     try:
-        # Only check pause status if this was triggered by a wake word (not F24 key)
-        if keyword_index is not None and check_pause_status():
+        # Only check pause status if this was triggered by a wake word (not manual keys)
+        if keyword_index not in (None, 0) and check_pause_status():
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
             return
             
@@ -417,9 +423,7 @@ def start_recording(keyword_index=None):
         beep(START_BEEP)
         logging.info(f"{CYAN}Listening...{RESET}")
 
-        if keyword_index is None:
-            pass
-        else:
+        if keyword_index not in (None, 0) and keyword_index not in RECORD_KEYS.values():
             if pre_recording_buffer is not None and pre_recording_buffer.size > 0:
                 pre_recording_data = np.roll(
                     pre_recording_buffer, -buffer_index, axis=0
@@ -482,7 +486,7 @@ def stop_recording(keyword_index):
             stop_delay_threshold = 1
         elif keyword_index == 3:
             stop_delay_threshold = 1
-        elif keyword_index is None:
+        elif keyword_index in (None, 0):
             pre_recording_data = np.roll(
                 pre_recording_buffer_f24, -buffer_index, axis=0
             ).flatten()
@@ -572,7 +576,10 @@ def on_press(key):
                 last_key_press_time = current_time
                 if recording is False:
                     logging.info(f"Voice activation key pressed: {key}")
-                    threading.Thread(target=start_recording, args=(None,)).start()
+                    keyword_index = map_key_to_keyword_index(key)
+                    threading.Thread(
+                        target=start_recording, args=(keyword_index,)
+                    ).start()
     except Exception as e:
         logging.error(f"Error in on_press: {e}", exc_info=True)
 
@@ -587,7 +594,10 @@ def on_release(key):
             if current_time - last_key_press_time > DEBOUNCE_TIME:
                 last_key_press_time = current_time
                 logging.info(f"Voice activation key released: {key}")
-                threading.Thread(target=stop_recording, args=(None,)).start()
+                keyword_index = map_key_to_keyword_index(key)
+                threading.Thread(
+                    target=stop_recording, args=(keyword_index,)
+                ).start()
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
 
@@ -920,9 +930,8 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
             form_data.add_field("language", "en")
             form_data.add_field("temperature", "0.0")
 
-            async with groq_session.post(
-                url, data=form_data, headers=headers
-            ) as response:
+            async with groq_session.post(url, data=form_data, headers=headers) as response:
+                response_text = await response.text()
                 if response.status == 404:
                     logging.error(f"Groq API endpoint not found: {response.url}")
                     raise aiohttp.ClientResponseError(
@@ -931,6 +940,10 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
                         status=response.status,
                         message=response.reason,
                         headers=response.headers,
+                    )
+                if response.status >= 400:
+                    logging.error(
+                        f"Groq API error {response.status} {response.reason}: {response_text}"
                     )
                 response.raise_for_status()
                 transcription = await response.json()
@@ -1041,8 +1054,12 @@ async def process_audio_async():
 
             transcript_lower = transcript.lower()
 
+            if keyword_index == 0:
+                logging.info("Routing F24 transcript directly to execute_command_run_with_tool")
+                transcript_queue.put((transcript.strip(), 0))
+                continue
             if keyword_index is None:
-                logging.info("pasing f24 transcription")
+                logging.info("pasing ctrl_r transcription")
                 paste_transcript(transcript, beep)
                 continue
             elif keyword_index == 1:
@@ -1212,7 +1229,7 @@ async def clean_transcript():
             try:
                 transcript, keyword_index = transcript_queue.get()
                 logging.error(f"Transcript received in clean_transcript: {transcript}")
-                if keyword_index == 1:
+                if keyword_index in (0, 1):
                     logging.error(
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
