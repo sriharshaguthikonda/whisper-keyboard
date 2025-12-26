@@ -182,6 +182,15 @@ LAUNCH_COMMANDS = {
     "powerpoint": "start powerpnt",
     "outlook": "start outlook",
     "paint": "start mspaint",
+    "device manager": "devmgmt.msc",
+    "disk management": "diskmgmt.msc",
+    "network connections": "ncpa.cpl",
+    "system properties": "sysdm.cpl",
+    "date and time": "timedate.cpl",
+    "task scheduler": "taskschd.msc",
+    "startup folder": "shell:startup",
+    "services": "services.msc",
+    "sound control panel": "mmsys.cpl",
 }
 
 
@@ -434,7 +443,7 @@ ACTIONS = {
     "open chrome": lambda: launch_application("chrome"),
     "open firefox": lambda: launch_application("firefox"),
     # Volume Controls
-    "open sound control panel": lambda: execute_system_command("control mmsys.cpl"),
+    "open sound control panel": lambda: launch_application("sound control panel"),
     "volume up": lambda: execute_pyautogui_press("volumeup"),
     "volume down": lambda: execute_pyautogui_press("volumedown"),
     "mute volume": lambda: execute_pyautogui_press("volumemute"),
@@ -444,11 +453,11 @@ ACTIONS = {
     "next track": next_track,
     "previous track": previous_track,
     # Custom or Complex Operations
-    "open device manager": lambda: execute_system_command("devmgmt.msc"),
-    "open disk management": lambda: execute_system_command("diskmgmt.msc"),
-    "open network connections": lambda: execute_system_command("ncpa.cpl"),
-    "open system properties": lambda: execute_system_command("sysdm.cpl"),
-    "open date and time": lambda: execute_system_command("timedate.cpl"),
+    "open device manager": lambda: launch_application("device manager"),
+    "open disk management": lambda: launch_application("disk management"),
+    "open network connections": lambda: launch_application("network connections"),
+    "open system properties": lambda: launch_application("system properties"),
+    "open date and time": lambda: launch_application("date and time"),
     # System Commands
     "ping google": lambda: execute_system_command("ping www.google.com"),
     "flush dns": lambda: execute_system_command("ipconfig /flushdns"),
@@ -468,9 +477,9 @@ ACTIONS = {
     "open negative screen": lambda: subprocess.Popen(
         ["C:\\Program Files\\Negative screen\\NegativeScreen-custom-multi-monitor.exe"]
     ),
-    "open_task_scheduler": lambda: execute_system_command("taskschd.msc"),
-    "open_startup_folder": lambda: execute_system_command("shell:startup"),
-    "manage_services": lambda: execute_system_command("services.msc"),
+    "open_task_scheduler": lambda: launch_application("task scheduler"),
+    "open_startup_folder": lambda: launch_application("startup folder"),
+    "manage_services": lambda: launch_application("services"),
     "start_whisper": start_whisper,
     "start_grok": start_grok,
     "set alarm": lambda minutes, message: set_alarm(minutes, message),
@@ -503,13 +512,13 @@ tools = [
         "type": "function",
         "function": {
             "name": "launch_application",
-            "description": "Launch a supported desktop app (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).",
+            "description": "Launch a supported desktop app (sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "app": {
                         "type": "string",
-                        "description": "Name of the app to launch. Supported: cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint.",
+                        "description": "Name of the app to launch. Supported: sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint.",
                     }
                 },
                 "required": ["app"],
@@ -594,14 +603,6 @@ tools = [
         "function": {
             "name": "restore_windows",
             "description": "Restore minimized windows",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_sound_control_panel",
-            "description": "Open the Sound control panel",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
@@ -769,46 +770,6 @@ tools = [
                 },
                 "required": ["query"],
             },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_device_manager",
-            "description": "Open the Device Manager",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_disk_management",
-            "description": "Open Disk Management or hard disk settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_network_connections",
-            "description": "Open Network Connections",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_system_properties",
-            "description": "Open System Properties",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_date_and_time",
-            "description": "Open Date and Time settings",
-            "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
     {

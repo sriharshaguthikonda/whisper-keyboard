@@ -8,6 +8,7 @@ from ctypes import cast, POINTER
 
 import re
 import string
+import itertools
 from fuzzywuzzy import process
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
@@ -107,10 +108,17 @@ def initialize_groq_client():
 # Define models
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
-# TOOL_USE_MODEL = "llama3-groq-8b-8192-tool-use-preview"
-# TOOL_USE_MODEL = "llama3-groq-70b-8192-tool-use-preview"
-# TOOL_USE_MODEL = "llama-3.1-8b-instant"
-TOOL_USE_MODEL = "llama-3.3-70b-versatile"
+TOOL_USE_MODELS = [
+    "llama-3.3-70b-versatile",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "qwen/qwen3-32b",
+    "openai/gpt-oss-20b",
+
+]
+_tool_use_cycle = itertools.cycle(TOOL_USE_MODELS)
+
+def next_tool_use_model():
+    return next(_tool_use_cycle)
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
@@ -453,98 +461,6 @@ def restore_windows():
         logging.error(f"Error executing restore_windows: {e}", exc_info=True)
 
 
-# Application commands
-def open_control_panel():
-    try:
-        os.system("control")
-    except Exception as e:
-        logging.error(f"Error executing open_control_panel: {e}", exc_info=True)
-
-
-def open_calculator():
-    try:
-        os.system("calc")
-    except Exception as e:
-        logging.error(f"Error executing open_calculator: {e}", exc_info=True)
-
-
-def open_notepad():
-    try:
-        os.system("notepad")
-    except Exception as e:
-        logging.error(f"Error executing open_notepad: {e}", exc_info=True)
-
-
-def open_word():
-    try:
-        os.system("start winword")
-    except Exception as e:
-        logging.error(f"Error executing open_word: {e}", exc_info=True)
-
-
-def open_excel():
-    try:
-        os.system("start excel")
-    except Exception as e:
-        logging.error(f"Error executing open_excel: {e}", exc_info=True)
-
-
-def open_powerpoint():
-    try:
-        os.system("start powerpnt")
-    except Exception as e:
-        logging.error(f"Error executing open_powerpoint: {e}", exc_info=True)
-
-
-def open_outlook():
-    try:
-        os.system("start outlook")
-    except Exception as e:
-        logging.error(f"Error executing open_outlook: {e}", exc_info=True)
-
-
-def open_paint():
-    try:
-        os.system("start mspaint")
-    except Exception as e:
-        logging.error(f"Error executing open_paint: {e}", exc_info=True)
-
-
-def open_command_prompt():
-    try:
-        os.system("start cmd")
-    except Exception as e:
-        logging.error(f"Error executing open_command_prompt: {e}", exc_info=True)
-
-
-def open_powershell():
-    try:
-        os.system("start powershell")
-    except Exception as e:
-        logging.error(f"Error executing open_powershell: {e}", exc_info=True)
-
-
-def open_edge():
-    try:
-        os.system("start msedge")
-    except Exception as e:
-        logging.error(f"Error executing open_edge: {e}", exc_info=True)
-
-
-def open_chrome():
-    try:
-        os.system("start chrome")
-    except Exception as e:
-        logging.error(f"Error executing open_chrome: {e}", exc_info=True)
-
-
-def open_firefox():
-    try:
-        os.system("start firefox")
-    except Exception as e:
-        logging.error(f"Error executing open_firefox: {e}", exc_info=True)
-
-
 def open_task_scheduler():
     try:
         os.system("taskschd.msc")
@@ -651,66 +567,18 @@ def stop_media():
         logging.error(f"Error executing stop_media: {e}", exc_info=True)
 
 
+def _run_tts_safely(text: str):
+    """
+    Run text_to_speech whether or not an event loop is already running.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(text_to_speech(text=text))
+    except RuntimeError:
+        asyncio.run(text_to_speech(text=text))
+
+
 # Custom or complex operations
-def open_device_manager():
-    try:
-        os.system("devmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_device_manager: {e}", exc_info=True)
-
-
-def open_disk_management():
-    try:
-        os.system("diskmgmt.msc")
-    except Exception as e:
-        logging.error(f"Error executing open_disk_management: {e}", exc_info=True)
-
-
-def open_network_connections():
-    try:
-        os.system("ncpa.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_network_connections: {e}", exc_info=True)
-
-
-def open_system_properties():
-    try:
-        os.system("sysdm.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_system_properties: {e}", exc_info=True)
-
-
-def open_date_and_time():
-    try:
-        os.system("timedate.cpl")
-    except Exception as e:
-        logging.error(f"Error executing open_date_and_time: {e}", exc_info=True)
-
-
-def open_startup_folder():
-    try:
-        # Open the current user's startup folder
-        startup_path = os.path.join(
-            os.getenv("APPDATA"), "Microsoft\\Windows\\Start Menu\\Programs\\Startup"
-        )
-        os.startfile(startup_path)
-        logging.info(f"{GREEN}Opening startup folder at: {startup_path}{RESET}")
-    except Exception as e:
-        logging.error(
-            f"{RED}Error executing open_startup_folder: {e}{RESET}", exc_info=True
-        )
-
-
-def manage_services():
-    try:
-        os.system("services.msc")
-        logging.info(f"{GREEN}Opening Windows Services...{RESET}")
-    except Exception as e:
-        logging.error(
-            f"{RED}Error executing manage_services: {e}{RESET}", exc_info=True
-        )
-
-
 # System commands
 def ping_google():
     try:
@@ -724,10 +592,8 @@ def ping_google():
 
         if match:
             avg_ping = match.group(1)
-            asyncio.run(
-                text_to_speech(
-                    text=f"The average ping to Google was {avg_ping} milleseconds, {avg_ping} milleseconds"
-                )
+            _run_tts_safely(
+                f"The average ping to Google was {avg_ping} milleseconds, {avg_ping} milleseconds"
             )
         else:
             return "Could not determine the average ping."
@@ -1293,12 +1159,15 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
 
         for attempt in range(max_retries):
             try:
-                logging.info(f"{YELLOW}Attempt {attempt + 1} of {max_retries}{RESET}")
+                tool_model = next_tool_use_model()
+                logging.info(
+                    f"{YELLOW}Attempt {attempt + 1} of {max_retries} using model {tool_model}{RESET}"
+                )
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         url,
                         json={
-                            "model": TOOL_USE_MODEL,
+                            "model": tool_model,
                             "messages": tools_messages,
                             "stream": False,
                             "tools": tools,
@@ -1327,6 +1196,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 )
                 tool_calls = response_message["tool_calls"]
 
+                overall_success = True
                 if tool_calls:
                     for tool_call in tool_calls:
                         function_args = json.loads(tool_call["function"]["arguments"])
@@ -1365,17 +1235,20 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                                     f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
                                     exc_info=True,
                                 )
-                                raise e
+                                overall_success = False
+                                continue
                         else:
                             logging.error(
                                 f"{RED}Function {function_name} not found{RESET}"
                             )
                             """TODO  we have removed return False" here because to run mulltiple functions  """
                             """return False"""
+                            overall_success = False
+                            continue
                 else:
                     logging.error(f"{RED}No tool calls found in the response{RESET}")
 
-                return True
+                return overall_success
 
             except Exception as e:
                 logging.error(
