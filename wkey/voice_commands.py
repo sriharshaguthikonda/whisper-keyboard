@@ -8,7 +8,6 @@ from ctypes import cast, POINTER
 
 import re
 import string
-import itertools
 from fuzzywuzzy import process
 from selenium import webdriver
 from selenium.webdriver.edge.service import Service
@@ -51,6 +50,7 @@ from commands_and_tools import (
     extra_tools,
     launch_application,
 )
+from model_rotation import next_tool_use_model
 
 
 # ANSI Color codes
@@ -108,17 +108,6 @@ def initialize_groq_client():
 # Define models
 ROUTING_MODEL = "llama3-70b-8192"
 # ROUTING_MODEL = "llama-3.2-1b-preview"
-TOOL_USE_MODELS = [
-    "llama-3.3-70b-versatile",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "qwen/qwen3-32b",
-    "openai/gpt-oss-20b",
-
-]
-_tool_use_cycle = itertools.cycle(TOOL_USE_MODELS)
-
-def next_tool_use_model():
-    return next(_tool_use_cycle)
 GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 

@@ -11,10 +11,15 @@
 """
 
 import os
+import sys
 import time
+import queue
 import threading
+import asyncio
+import base64
+import json
+import io
 import winsound
-import pyautogui
 import numpy as np
 import sounddevice as sd
 import pythoncom
@@ -22,6 +27,7 @@ import io
 from scipy.io.wavfile import write as wav_write
 import groq
 from groq import Groq
+from model_rotation import next_audio_stt_model
 import torch
 import queue
 import logging
@@ -178,8 +184,8 @@ if SETTINGS.get("use_local_gpu", True):
 else:
     logging.info(f"{YELLOW}Local GPU model is disabled in settings{RESET}")
 
-groq_model = "whisper-large-v3"
-#groq_model = "distil-whisper-large-v3-en"
+def get_groq_audio_model():
+    return next_audio_stt_model()
 
 play_pause_pressed = False
 something_is_playing = False
@@ -879,9 +885,10 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
         byte_io.seek(0)
 
         try:
+            model_name = get_groq_audio_model()
             transcription = Groq_client.audio.transcriptions.create(
                 file=("pre_recording.wav", byte_io.getvalue()),
-                model=groq_model,
+                model=model_name,
                 response_format="json",
                 prompt=transcribe_pre_recording_buffer_prompt,
                 language="en",
@@ -904,8 +911,9 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
 async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
+    model_name = get_groq_audio_model()
     data = {
-        "model": groq_model,
+        "model": model_name,
         "response_format": "json",
         "prompt": "",
         "language": "en",
@@ -925,7 +933,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
                 filename="pre_recording.wav",
                 content_type="audio/wav",
             )
-            form_data.add_field("model", groq_model)
+            form_data.add_field("model", model_name)
             form_data.add_field("response_format", "json")
             form_data.add_field("prompt", "")
             form_data.add_field("language", "en")
