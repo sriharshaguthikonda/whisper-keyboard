@@ -167,6 +167,37 @@ def execute_system_command(command):
     except Exception as e:
         logging.error(f"Error executing {command}: {e}", exc_info=True)
 
+LAUNCH_COMMANDS = {
+    "cmd": "start cmd",
+    "command prompt": "start cmd",
+    "powershell": "start powershell",
+    "edge": "start msedge",
+    "chrome": "start chrome",
+    "firefox": "start firefox",
+    "calculator": "calc",
+    "notepad": "notepad",
+    "control panel": "control",
+    "word": "start winword",
+    "excel": "start excel",
+    "powerpoint": "start powerpnt",
+    "outlook": "start outlook",
+    "paint": "start mspaint",
+}
+
+
+def launch_application(app: str):
+    try:
+        normalized = app.strip().lower()
+        if normalized not in LAUNCH_COMMANDS:
+            # fallback to closest known app if confidence is good
+            match, score = process.extractOne(normalized, list(LAUNCH_COMMANDS.keys()))
+            if score < 80:
+                raise ValueError(f"Unsupported application: {app}")
+            normalized = match
+        execute_system_command(LAUNCH_COMMANDS[normalized])
+    except Exception as e:
+        logging.error(f"Error executing launch_application for {app}: {e}", exc_info=True)
+
 
 def execute_pyautogui_hotkey(*keys):
     try:
@@ -389,19 +420,19 @@ ACTIONS = {
     #    "restart system": lambda: os.system('shutdown /r /t 0'),
     # "log off": lambda: os.system('shutdown /l'),
     # Application Commands
-    "open control panel": lambda: os.system("control"),
-    "open calculator": lambda: execute_system_command("calc"),
-    "open notepad": lambda: execute_system_command("notepad"),
-    "open word": lambda: execute_system_command("start winword"),
-    "open excel": lambda: execute_system_command("start excel"),
-    "open powerpoint": lambda: execute_system_command("start powerpnt"),
-    "open outlook": lambda: execute_system_command("start outlook"),
-    "open paint": lambda: execute_system_command("start mspaint"),
-    "open command prompt": lambda: execute_system_command("start cmd"),
-    "open powershell": lambda: execute_system_command("start powershell"),
-    "open edge": lambda: execute_system_command("start msedge"),
-    "open chrome": lambda: execute_system_command("start chrome"),
-    "open firefox": lambda: execute_system_command("start firefox"),
+    "open control panel": lambda: launch_application("control panel"),
+    "open calculator": lambda: launch_application("calculator"),
+    "open notepad": lambda: launch_application("notepad"),
+    "open word": lambda: launch_application("word"),
+    "open excel": lambda: launch_application("excel"),
+    "open powerpoint": lambda: launch_application("powerpoint"),
+    "open outlook": lambda: launch_application("outlook"),
+    "open paint": lambda: launch_application("paint"),
+    "open command prompt": lambda: launch_application("cmd"),
+    "open powershell": lambda: launch_application("powershell"),
+    "open edge": lambda: launch_application("edge"),
+    "open chrome": lambda: launch_application("chrome"),
+    "open firefox": lambda: launch_application("firefox"),
     # Volume Controls
     "open sound control panel": lambda: execute_system_command("control mmsys.cpl"),
     "volume up": lambda: execute_pyautogui_press("volumeup"),
@@ -468,6 +499,23 @@ extra_tools = [
 ]
 
 tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "launch_application",
+            "description": "Launch a supported desktop app (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app": {
+                        "type": "string",
+                        "description": "Name of the app to launch. Supported: cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint.",
+                    }
+                },
+                "required": ["app"],
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -546,110 +594,6 @@ tools = [
         "function": {
             "name": "restore_windows",
             "description": "Restore minimized windows",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_control_panel",
-            "description": "Open the Control Panel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_calculator",
-            "description": "Open the Calculator application",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_notepad",
-            "description": "Open Notepad",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_word",
-            "description": "Open Microsoft Word",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_excel",
-            "description": "Open Microsoft Excel",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powerpoint",
-            "description": "Open Microsoft PowerPoint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_outlook",
-            "description": "Open Microsoft Outlook",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_paint",
-            "description": "Open Microsoft Paint",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_command_prompt",
-            "description": "Open Command Prompt",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_powershell",
-            "description": "Open PowerShell",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_edge",
-            "description": "Open Microsoft Edge",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_chrome",
-            "description": "Open Google Chrome",
-            "parameters": {"type": "object", "properties": {}, "required": []},
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "open_firefox",
-            "description": "Open Mozilla Firefox",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

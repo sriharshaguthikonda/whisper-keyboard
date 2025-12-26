@@ -292,7 +292,7 @@ def decrease_volume_all():
         if initial_volume is None or current_volume != initial_volume:
             initial_volume = current_volume
         print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-        set_volume(0.1)
+        set_volume(0.05)
     except Exception as e:
         logging.error(f"Error in decrease_volume_all: {e}", exc_info=True)
 

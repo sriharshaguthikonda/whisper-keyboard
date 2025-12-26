@@ -48,6 +48,7 @@ from commands_and_tools import (
     ACTIONS,
     tools,
     extra_tools,
+    launch_application,
 )
 
 
@@ -1270,6 +1271,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 3. Only use tools that exactly match the user's intent
                 4. For system controls (volume, media, windows), be very precise in tool selection
                 5. If no exact tool matches the query, do not force a tool selection
+                6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).
 
                 Examples:
                 - "play music" → use play_song()
