@@ -3,7 +3,6 @@ import logging
 import time
 import win32clipboard
 
-from voice_commands import execute_command_run_with_tool
 
 PASTE_BEEP = (1060, 100)
 
@@ -55,12 +54,16 @@ def send_input(text: str) -> None:
         logging.error("Error in send_input: %s", exc, exc_info=True)
 
 
-def paste_transcript(transcript: str, beep_func=None) -> None:
-    """Paste ``transcript`` to the active window and optionally beep.
+def paste_transcript(transcript: str = "", beep_func=None, **kwargs) -> None:
+    """Paste text to the active window and optionally beep.
 
+    Supports legacy keyword ``text`` for compatibility with tool calls.
     Leading whitespace is trimmed to avoid unwanted spaces when inserting.
     """
     try:
+        # Accept either transcript or text
+        if not transcript and "text" in kwargs:
+            transcript = kwargs.get("text", "")
         cleaned = transcript.lstrip()
         set_clipboard_content(cleaned)
         ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
@@ -77,6 +80,7 @@ def paste_transcript(transcript: str, beep_func=None) -> None:
 def run_command_with_retry(transcript: str, max_retries: int = 3) -> None:
     """Attempt to execute ``transcript`` as a command, retrying on failure."""
     try:
+        from voice_commands import execute_command_run_with_tool  # local import to avoid circular dependency
         for _ in range(max_retries):
             try:
                 if execute_command_run_with_tool(transcript):

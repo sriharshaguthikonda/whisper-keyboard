@@ -31,6 +31,10 @@ import json
 import io
 import edge_tts
 import pyttsx4
+from clipboard_utils import (
+    paste_transcript, 
+    set_clipboard_content,
+    )
 
 import asyncio
 import threading

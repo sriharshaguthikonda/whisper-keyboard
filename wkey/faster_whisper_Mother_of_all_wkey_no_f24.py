@@ -162,6 +162,10 @@ something_is_playing = False
 
 
 Hey_computer_STT_prompt = None
+General_gorq_system_prompt = (
+    "when outputting numbers, no spaces, no commas, no hyphens, just numbers like "
+    "for example:84567945"
+)
 """
 Hey_computer_STT_prompt = "
 1. possible words in the transcript which will form a sentence : [open start menu show windows search desktop minimize everything settings lock screen the take screenshot capture file explorer explore files run dialog command task manager restore all calculator notepad word excel powerpoint outlook paint console powershell edge chrome firefox sound control panel audio volume up increase down decrease play media music stop next track song skip previous replay device disk management network connections system properties date time ping google check internet connection flush dns reset cache restart voicemeeter set display fusion monitor profile negative invert]. 
@@ -981,7 +985,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
     data = {
         "model": groq_model,
         "response_format": "json",
-        "prompt": "",
+        "prompt": General_gorq_system_prompt,
         "language": "en",
         "temperature": 0.0,
     }
@@ -993,15 +997,10 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
                 groq_session = aiohttp.ClientSession()
 
             form_data = aiohttp.FormData()
-            form_data.add_field(
-                "file",
-                byte_io.getvalue(),
-                filename="pre_recording.wav",
-                content_type="audio/wav",
-            )
+            form_data.add_field("file", byte_io.getvalue(), filename="pre_recording.wav")
             form_data.add_field("model", groq_model)
             form_data.add_field("response_format", "json")
-            form_data.add_field("prompt", "")
+            form_data.add_field("prompt", General_gorq_system_prompt)
             form_data.add_field("language", "en")
             form_data.add_field("temperature", "0.0")
 

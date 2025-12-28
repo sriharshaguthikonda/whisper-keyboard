@@ -545,6 +545,27 @@ tools = [
     {
         "type": "function",
         "function": {
+            "name": "paste_transcript",
+            "description": "Paste provided text into the active window",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "transcript": {
+                        "type": "string",
+                        "description": "Content that should be pasted",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Alias for transcript content (legacy tool calls)",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "show_desktop",
             "description": "Minimize all open windows to show the desktop",
             "parameters": {"type": "object", "properties": {}, "required": []},
