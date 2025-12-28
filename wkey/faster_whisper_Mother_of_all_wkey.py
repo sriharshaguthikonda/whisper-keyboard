@@ -191,6 +191,7 @@ play_pause_pressed = False
 something_is_playing = False
 
 Hey_computer_STT_prompt = None
+General_gorq_system_prompt = "when outputting numbers, no spaces, no commas, no hyphens, just numbers like for example:84567945"
 
 api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
@@ -915,7 +916,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
     data = {
         "model": model_name,
         "response_format": "json",
-        "prompt": "",
+        "prompt": General_gorq_system_prompt,
         "language": "en",
         "temperature": 0.0,
     }
@@ -935,7 +936,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
             )
             form_data.add_field("model", model_name)
             form_data.add_field("response_format", "json")
-            form_data.add_field("prompt", "")
+            form_data.add_field("prompt", General_gorq_system_prompt)
             form_data.add_field("language", "en")
             form_data.add_field("temperature", "0.0")
 
