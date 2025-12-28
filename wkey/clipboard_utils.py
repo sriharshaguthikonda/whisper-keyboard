@@ -56,9 +56,13 @@ def send_input(text: str) -> None:
 
 
 def paste_transcript(transcript: str, beep_func=None) -> None:
-    """Paste ``transcript`` to the active window and optionally beep."""
+    """Paste ``transcript`` to the active window and optionally beep.
+
+    Leading whitespace is trimmed to avoid unwanted spaces when inserting.
+    """
     try:
-        set_clipboard_content(transcript)
+        cleaned = transcript.lstrip()
+        set_clipboard_content(cleaned)
         ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
         ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)
         ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)
