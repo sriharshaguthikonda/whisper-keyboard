@@ -60,6 +60,7 @@ import json
 from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 
 # Add global variables for pause functionality
+FLAG_PATH = os.path.join(os.path.dirname(__file__), "voice_pause_flag.txt")
 global_pause_active = False
 last_pause_check = 0
 
@@ -674,8 +675,8 @@ def check_pause_status():
     last_pause_check = current_time
     
     try:
-        if os.path.exists("voice_pause_flag.txt"):
-            with open("voice_pause_flag.txt", "r") as f:
+        if os.path.exists(FLAG_PATH):
+            with open(FLAG_PATH, "r") as f:
                 status = f.read().strip()
                 global_pause_active = (status == "PAUSED")
         else:
