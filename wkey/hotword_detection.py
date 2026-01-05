@@ -11,7 +11,7 @@ noise_sample_path = "baseline_recording_for_noise_reduction.wav"
 noise_sample, sr_noise_sample = librosa.load(noise_sample_path, sr=16000)
 
 # Vosk model path
-model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
+model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
 
 if not os.path.exists(model_path):
     print("Model path does not exist. Exiting.")
@@ -21,7 +21,7 @@ model = Model(model_path)
 rec = KaldiRecognizer(model, 16000)
 
 # Initialize Porcupine with custom wake word
-hey_llama_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+hey_llama_word_path = r"C:\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 porcupine = pvporcupine.create(
     access_key="*********",
     keyword_paths=[hey_llama_word_path],

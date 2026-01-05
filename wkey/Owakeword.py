@@ -8,7 +8,7 @@ from tkinter import Tk, filedialog
 import winsound
 
 # Load models (same as before)
-MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"
+MODEL_DIR = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"
 model_paths = [
     os.path.join(MODEL_DIR, f)
     for f in os.listdir(MODEL_DIR)

@@ -8,7 +8,7 @@ import signal
 import sys
 
 # Hardcoded model directory
-MODEL_DIR = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"  # Update this path
+MODEL_DIR = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx"  # Update this path
 
 # Parse input arguments
 parser = argparse.ArgumentParser()

@@ -163,7 +163,7 @@ def start_driver():
         time.sleep(5)  # Wait for the page to load
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
-        executor_url = driver.command_executor._url
+        executor_url = driver.command_executor.remote_url
         logging.info(f"{GREEN}WebDriver started successfully.{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error starting driver: {e}{RESET}", exc_info=True)
@@ -533,6 +533,10 @@ def set_volume(level):
 
 def get_volume_interface():
     try:
+        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
+        from comtypes import CLSCTX_ALL
+        from ctypes import cast, POINTER
+        
         devices = AudioUtilities.GetSpeakers()
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
         volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
@@ -694,7 +698,7 @@ def open_vscode():
 
 def start_whisper():
     try:
-        batch_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper_keyboard.bat"
+        batch_path = r"C:\Windows_software\openai whisper\whisper_keyboard.bat"
         # Use runas to run as administrator
         subprocess.run(["runas", "/user:Administrator", f'cmd /c "{batch_path}"'])
         logging.info(f"{GREEN}Starting Whisper with administrator privileges...{RESET}")
@@ -843,7 +847,7 @@ def set_alarm(minutes, message):
         time.sleep(minutes * 60)
         # Load and play the chime sound
         chime = AudioSegment.from_mp3(
-            r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\chime.mp3"
+            r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\chime.mp3"
         )  # Replace with the path to your chime file
         play(chime)
         for _ in range(5):  # Repeat the message 5 times

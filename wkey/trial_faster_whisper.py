@@ -10,7 +10,7 @@ import queue
 from faster_whisper import WhisperModel
 
 # Preload noise sample
-noise_sample_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\baseline_recording_for_noise_reduction.wav"
+noise_sample_path = r"C:\Windows_software\openai whisper\baseline_recording_for_noise_reduction.wav"
 noise_sample, sr_noise_sample = librosa.load(noise_sample_path, sr=16000)
 
 # Initialize PyAudio

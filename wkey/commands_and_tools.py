@@ -144,7 +144,7 @@ def previous_track():
 
 def start_whisper():
     try:
-        batch_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper_keyboard.bat"
+        batch_path = r"C:\Windows_software\openai whisper\whisper_keyboard.bat"
         # Use runas to run as administrator
         subprocess.run(["runas", "/user:Administrator", f'cmd /c "{batch_path}"'])
         logging.info(f"{GREEN}Starting Whisper with administrator privileges...{RESET}")

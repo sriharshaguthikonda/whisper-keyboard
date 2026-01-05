@@ -599,8 +599,8 @@ class VoicePauseController(QMainWindow):
         
     def run_faster_whisper(self):
         try:
-            python_path = "c:/Users/deletable/OneDrive/Windows_software/openai whisper/openai/Scripts/python.exe"
-            script_path = "c:/Users/deletable/OneDrive/Windows_software/openai whisper/whisper-keyboard/wkey/faster_whisper_Mother_of_all_wkey.py"
+            python_path = "c:/Windows_software/openai whisper/openai/Scripts/python.exe"
+            script_path = "c:/Windows_software/openai whisper/whisper-keyboard/wkey/faster_whisper_Mother_of_all_wkey.py"
             os.chdir(os.path.dirname(script_path))
             subprocess.Popen([python_path, script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
             self.error_label.setText("Faster Whisper started")

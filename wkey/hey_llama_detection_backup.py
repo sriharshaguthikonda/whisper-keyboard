@@ -5,7 +5,7 @@ import numpy as np
 import pvporcupine
 
 # Vosk model path
-model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
+model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
 
 if not os.path.exists(model_path):
     print("Model path does not exist. Exiting.")
@@ -16,7 +16,7 @@ rec = KaldiRecognizer(model, 16000)
 pico_access_key = os.getenv("PICO_ACCESS_KEY")
 
 # Initialize Porcupine with custom wake word
-hey_llama_word_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+hey_llama_word_path = r"C:\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 porcupine = pvporcupine.create(
     pico_access_key,
     keyword_paths=[hey_llama_word_path],
@@ -111,8 +111,8 @@ class WakeWordDetector:
 
 # Example usage
 if __name__ == "__main__":
-    vosk_model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
-    porcupine_model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+    vosk_model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
+    porcupine_model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
     access_key = 'YOUR_ACCESS_KEY'
     
     detector = WakeWordDetector(vosk_model_path, porcupine_model_path, access_key)
@@ -120,8 +120,8 @@ if __name__ == "__main__":
 
 from hey_llama_detection import WakeWordDetector
 
-vosk_model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
-porcupine_model_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
+vosk_model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\vosk-model-small-en-us-0.15"
+porcupine_model_path = r"C:\Windows_software\openai whisper\whisper-keyboard\porcupine\Hey-llama_en_windows_v3_0_0.ppn"
 access_key = 'YOUR_ACCESS_KEY'
 
 detector = WakeWordDetector(vosk_model_path, porcupine_model_path, access_key)

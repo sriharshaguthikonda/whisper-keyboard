@@ -4,16 +4,6 @@ use hardware detection integration into the main script
 
 get rid of global There_is_a_device if it is not being used
 
-cd whisper-keyboard
-git branch
-
-
-
-git add .
-git commit -m "Condensed functions and updated scripts"
-git push
-
-
 
 
 there audio-substract branch is combining previous commands into current commands

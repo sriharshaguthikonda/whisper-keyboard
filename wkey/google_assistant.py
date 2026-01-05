@@ -19,7 +19,7 @@ app = Flask(__name__)
 app.secret_key = "your_secret_key"  # Replace with your secret key
 
 # Load credentials
-credentials_path = r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\credentials.json"
+credentials_path = r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\credentials.json"
 scopes = ["https://www.googleapis.com/auth/assistant-sdk-prototype"]
 
 

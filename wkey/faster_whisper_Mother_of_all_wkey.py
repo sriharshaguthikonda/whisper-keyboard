@@ -23,13 +23,11 @@ import winsound
 import numpy as np
 import sounddevice as sd
 import pythoncom
-import io
 from scipy.io.wavfile import write as wav_write
 import groq
 from groq import Groq
 from model_rotation import next_audio_stt_model
 import torch
-import queue
 import logging
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
@@ -42,7 +40,8 @@ from voice_commands import (
     set_volume,
     driver,
 )
-from google_assistant import google_assistant
+# from google_assistant import google_assistant
+from google_assistant_stub import google_assistant
 from pause_all import is_sound_playing_windows_processing
 import pyaudio
 from openwakeword.model import Model
@@ -50,14 +49,18 @@ from concurrent.futures import ThreadPoolExecutor
 from clipboard_utils import paste_transcript
 import webrtcvad
 from voice_activity_detection import VoiceDetector
-import sys
 import traceback
 from queue import Empty as QueueEmpty
 from contextlib import contextmanager
-import aiohttp
-import asyncio
-import json
 from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
+from transcription_utils import (
+    create_wav_buffer as create_wav_buffer_util,
+    get_transcript_with_retries as get_transcript_with_retries_util,
+    transcribe_pre_recording_buffer as transcribe_pre_recording_buffer_util,
+    transcribe_with_groq_async as transcribe_with_groq_async_util,
+    transcribe_with_local_model as transcribe_with_local_model_util,
+    validate_audio_buffer as validate_audio_buffer_util,
+)
 
 # Add global variables for pause functionality
 FLAG_PATH = os.path.join(os.path.dirname(__file__), "voice_pause_flag.txt")
@@ -149,7 +152,7 @@ if SETTINGS.get("use_local_gpu", True):
                 cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3"
                 if os.path.exists(cuda_path):
                     os.environ['CUDA_HOME'] = cuda_path
-                    os.environ['PATH'] = f"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
+                    os.environ['PATH'] = fr"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
             
             logging.info(f"CUDA is available. Devices: {torch.cuda.device_count()}")
             logging.info(f"Current device: {torch.cuda.current_device()}")
@@ -199,7 +202,7 @@ global Groq_client
 Groq_client = Groq(api_key=api_key)
 
 # Reusable HTTP session for Groq API calls
-groq_session = None
+groq_session_holder = {"session": None}
 
 p = pyaudio.PyAudio()
 wake_stream = p.open(
@@ -748,10 +751,10 @@ def monitor_microphone_availability():
 
 # Hardcoded model paths
 MODEL_PATHS = [
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
-    r"C:\Users\deletable\OneDrive\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",
+    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
+    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
+    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
+    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",
 ]
 
 owwModel = Model(
@@ -851,7 +854,6 @@ def listen_for_wake_word():
 def cleanup():
     try:
         global wake_stream
-        global groq_session
         if wake_stream:
             try:
                 if wake_stream.is_active():
@@ -861,9 +863,11 @@ def cleanup():
                 logging.info(f"Error during cleanup: {e}")
             wake_stream = None
         p.terminate()
-        if groq_session is not None:
-            asyncio.get_event_loop().run_until_complete(groq_session.close())
-            groq_session = None
+        if groq_session_holder.get("session") is not None:
+            asyncio.get_event_loop().run_until_complete(
+                groq_session_holder["session"].close()
+            )
+            groq_session_holder["session"] = None
         logging.info("Cleanup completed.")
     except Exception as e:
         logging.error(f"Error in cleanup: {e}", exc_info=True)
@@ -878,126 +882,40 @@ def cleanup():
  ######   ##     ##  #######   ##### ## 
 """
 
-transcribe_pre_recording_buffer_prompt = "you are downstream to hotword detection algorithm. check if you are able to detect the wake word 'computer' or 'lama' in the audio"
+transcribe_pre_recording_buffer_prompt = (
+    "you are downstream to hotword detection algorithm. check if you are able to detect "
+    "the wake word 'computer' or 'lama' in the audio"
+)
+
 
 def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_delay=2):
-    try:
-        byte_io = io.BytesIO()
-        wav_write(byte_io, sample_rate, pre_recording_data)
-        byte_io.seek(0)
+    return transcribe_pre_recording_buffer_util(
+        pre_recording_data,
+        sample_rate,
+        Groq_client,
+        transcribe_pre_recording_buffer_prompt,
+        get_groq_audio_model,
+        max_retries=max_retries,
+        retry_delay=retry_delay,
+    )
 
-        try:
-            model_name = get_groq_audio_model()
-            transcription = Groq_client.audio.transcriptions.create(
-                file=("pre_recording.wav", byte_io.getvalue()),
-                model=model_name,
-                response_format="json",
-                prompt=transcribe_pre_recording_buffer_prompt,
-                language="en",
-                temperature=0.0,
-            )
-            return transcription.text.lower()
-        except Exception as e:
-            logging.error(
-                f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}",
-                exc_info=True,
-            )
-            return ""
-
-    except Exception as e:
-        logging.error(
-            f"{RED}Error in transcribe_pre_recording_buffer: {e}{RESET}", exc_info=True
-        )
-        return ""
 
 async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
-    url = "https://api.groq.com/openai/v1/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {api_key}"}
-    model_name = get_groq_audio_model()
-    data = {
-        "model": model_name,
-        "response_format": "json",
-        "prompt": General_gorq_system_prompt,
-        "language": "en",
-        "temperature": 0.0,
-    }
+    return await transcribe_with_groq_async_util(
+        byte_io,
+        keyword_index,
+        api_key,
+        get_groq_audio_model,
+        General_gorq_system_prompt,
+        groq_session_holder,
+        max_retries=max_retries,
+    )
 
-    global groq_session
-    for attempt in range(max_retries):
-        try:
-            if groq_session is None:
-                groq_session = aiohttp.ClientSession()
-
-            form_data = aiohttp.FormData()
-            form_data.add_field(
-                "file",
-                byte_io.getvalue(),
-                filename="pre_recording.wav",
-                content_type="audio/wav",
-            )
-            form_data.add_field("model", model_name)
-            form_data.add_field("response_format", "json")
-            form_data.add_field("prompt", General_gorq_system_prompt)
-            form_data.add_field("language", "en")
-            form_data.add_field("temperature", "0.0")
-
-            async with groq_session.post(url, data=form_data, headers=headers) as response:
-                response_text = await response.text()
-                if response.status == 404:
-                    logging.error(f"Groq API endpoint not found: {response.url}")
-                    raise aiohttp.ClientResponseError(
-                        response.request_info,
-                        response.history,
-                        status=response.status,
-                        message=response.reason,
-                        headers=response.headers,
-                    )
-                if response.status >= 400:
-                    logging.error(
-                        f"Groq API error {response.status} {response.reason}: {response_text}"
-                    )
-                response.raise_for_status()
-                transcription = await response.json()
-                return transcription["text"].lower()
-        except aiohttp.ClientResponseError as e:
-            logging.error(
-                f"Groq API client error: {e.status}, message='{e.message}', url='{e.request_info.url}'",
-                exc_info=True,
-            )
-            if e.status == 404:
-                raise
-        except Exception as e:
-            logging.error(
-                f"Unexpected error in transcribe_with_groq_async: {e}", exc_info=True
-            )
-        await asyncio.sleep(2)
-    logging.error(f"Failed to transcribe after {max_retries} attempts")
-    return None
 
 def transcribe_with_local_model(audio_buffer, keyword_index):
-    try:
-        if keyword_index == 1:
-            prompt = Hey_computer_STT_prompt
-        else:
-            prompt = None
-
-        try:
-            if model is None:
-                logging.info("Local model not initialized")
-                return ""
-            logging.info("using WhisperModel on CUDA")
-            byte_io = io.BytesIO()
-            wav_write(byte_io, sample_rate, audio_buffer)
-            byte_io.seek(0)
-            segments, _ = model.transcribe(byte_io, language="en")
-            transcription = " ".join(segment.text for segment in segments)
-            logging.info(transcription)
-            return transcription
-        except Exception as e:
-            logging.info(f"Faster Whisper error: {e}")
-            return "Transcription failed"
-    except Exception as e:
-        logging.error(f"Error in transcribe_with_local_model: {e}", exc_info=True)
+    return transcribe_with_local_model_util(
+        audio_buffer, keyword_index, model, sample_rate
+    )
 
 result_queue = queue.Queue()
 
@@ -1113,48 +1031,26 @@ async def process_audio_async():
             global_state["is_processing"] = False
 
 def validate_audio_buffer(audio_buffer):
-    try:
-        if audio_buffer is None or len(audio_buffer) == 0:
-            logging.warning(f"{YELLOW}Empty audio buffer received{RESET}")
-            return False
-        if not isinstance(audio_buffer, np.ndarray):
-            logging.error(
-                f"{RED}Invalid audio buffer type: {type(audio_buffer)}{RESET}"
-            )
-            return False
-        if len(audio_buffer) < sample_rate * 0.1:
-            logging.warning(f"{YELLOW}Audio buffer too short{RESET}")
-            return False
-        return True
-    except Exception as e:
-        logging.error(f"{RED}Error validating audio buffer: {e}{RESET}", exc_info=True)
-        return False
+    return validate_audio_buffer_util(audio_buffer, sample_rate)
+
 
 def create_wav_buffer(audio_buffer):
-    try:
-        byte_io = io.BytesIO()
-        wav_write(byte_io, sample_rate, audio_buffer)
-        byte_io.seek(0)
-        return byte_io
-    except Exception as e:
-        logging.error(f"{RED}Error creating WAV buffer: {e}{RESET}", exc_info=True)
-        return None
+    return create_wav_buffer_util(audio_buffer, sample_rate)
+
 
 async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            if SETTINGS.get("fallback_to_groq", True):
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-                if transcript:
-                    return transcript.lower()
-        except Exception as e:
-            logging.error(
-                f"{RED}Transcription attempt {attempt + 1} failed: {e}{RESET}"
-            )
-            if attempt == max_retries - 1:
-                return transcribe_with_local_model(byte_io, keyword_index)
-            await asyncio.sleep(1)
-    return None
+    merged_settings = {**SETTINGS, "max_retries": max_retries}
+    return await get_transcript_with_retries_util(
+        byte_io,
+        keyword_index,
+        merged_settings,
+        api_key,
+        get_groq_audio_model,
+        General_gorq_system_prompt,
+        groq_session_holder,
+        model,
+        sample_rate,
+    )
 
 async def process_transcript(transcript, keyword_index, audio_buffer):
     try:
