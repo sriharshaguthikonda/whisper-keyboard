@@ -187,6 +187,8 @@ LAUNCH_COMMANDS = {
     "network connections": "ncpa.cpl",
     "system properties": "sysdm.cpl",
     "date and time": "timedate.cpl",
+    "display fusion": '"C:\\Program Files (x86)\\DisplayFusion\\DisplayFusion.exe"',
+    "displayfusion": '"C:\\Program Files (x86)\\DisplayFusion\\DisplayFusion.exe"',
     "task scheduler": "taskschd.msc",
     "startup folder": "shell:startup",
     "services": "services.msc",
@@ -354,6 +356,11 @@ COMMAND_MAPPINGS = {
         "restart voice meter",
         "set voice meter",
     ],
+    "start display fusion": [
+        "start display fusion",
+        "launch display fusion",
+        "open display fusion",
+    ],
     "load display fusion profile": [
         "display fusion",
         "a computer start display fusion",
@@ -466,6 +473,7 @@ ACTIONS = {
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
     ),
     # DisplayFusion Commands
+    "start display fusion": lambda: launch_application("display fusion"),
     "load display fusion profile": lambda: subprocess.run(
         [
             "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
@@ -820,7 +828,7 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "load_display_fusion_profile",
+            "name": "start_display_fusion",
             "description": "Load a DisplayFusion monitor load profile",
             "parameters": {
                 "type": "object",

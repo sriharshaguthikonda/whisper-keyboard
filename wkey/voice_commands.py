@@ -624,7 +624,7 @@ def restart_voicemeeter():
 
 
 # DisplayFusion commands
-def load_display_fusion_profile(profile_name):
+def start_display_fusion(profile_name):
     try:
         subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
         subprocess.run(
@@ -636,7 +636,7 @@ def load_display_fusion_profile(profile_name):
         )
     except Exception as e:
         logging.error(
-            f"Error executing load_display_fusion_profile: {e}", exc_info=True
+            f"Error executing start_display_fusion: {e}", exc_info=True
         )
 
 
