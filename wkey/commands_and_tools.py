@@ -7,6 +7,36 @@ import asyncio
 from fuzzywuzzy import process
 import threading
 import time
+from selenium.webdriver.common.by import By
+
+# Global variable to hold driver reference
+_driver_ref = None
+
+def set_driver_reference(driver):
+    """Set the global driver reference"""
+    global _driver_ref
+    _driver_ref = driver
+
+def get_driver():
+    """Get the driver reference, importing if necessary"""
+    global _driver_ref
+    if _driver_ref is None:
+        try:
+            # Late import to avoid circular dependency
+            import voice_commands
+            _driver_ref = voice_commands.driver
+        except (ImportError, AttributeError):
+            _driver_ref = None
+    return _driver_ref
+
+def _set_alarm_wrapper(minutes, message):
+    """Wrapper function for set_alarm to avoid circular import"""
+    try:
+        import voice_commands
+        return voice_commands.set_alarm(minutes, message)
+    except (ImportError, AttributeError):
+        print("set_alarm function not available")
+        return False
 
 # ANSI Color codes
 BLUE = "\033[94m"
@@ -39,107 +69,164 @@ BRIGHT_WHITE = "\033[97m"
 # Control playback
 def play_music():
     try:
+        driver = get_driver()
+        if driver is None:
+            print("Driver not available - cannot play music")
+            return False
+            
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
-        change_device()
+        
+        # Late import to avoid circular dependency
+        try:
+            import voice_commands
+            voice_commands.change_device()
+        except (ImportError, AttributeError):
+            print("change_device function not available")
+            
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected" in error_message:
             print("Attempting to reconnect due to DevTools disconnection...")
-            reconnect_driver()
             try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
-                )
-                play_button.click()
-                print("Playback started after reconnection.")
+                import voice_commands
+                voice_commands.reconnect_driver()
+                driver = get_driver()
+                if driver is not None:
+                    play_button = driver.find_element(
+                        By.XPATH, "//button[@aria-label='Play']"
+                    )
+                    play_button.click()
+                    print("Playback started after reconnection.")
+                    return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
         elif "target window already closed" in error_message:
-            driver.quit()
-            start_driver()
+            driver = get_driver()
+            if driver is not None:
+                driver.quit()
             try:
-                play_button = driver.find_element(
-                    By.XPATH, "//button[@aria-label='Play']"
-                )
-                play_button.click()
-                print("Playback started after reconnection.")
+                import voice_commands
+                voice_commands.start_driver()
+                driver = get_driver()
+                if driver is not None:
+                    play_button = driver.find_element(
+                        By.XPATH, "//button[@aria-label='Play']"
+                    )
+                    play_button.click()
+                    print("Playback started after reconnection.")
+                    return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
         else:
             print(f"Error while trying to play: {e}")
+        return False
 
 
 def pause_song():
     try:
+        driver = get_driver()
+        if driver is None:
+            print("Driver not available - cannot pause song")
+            return False
+            
         pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
         pause_button.click()
         print("Playback paused.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
             print("Attempting to reconnect due to DevTools disconnection...")
-            reconnect_driver()
             try:
-                pause_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Pause']"
-                )
-                pause_button.click()
-                print("Playback paused after reconnection.")
+                import voice_commands
+                voice_commands.reconnect_driver()
+                driver = get_driver()
+                if driver is not None:
+                    pause_button = driver.find_element(
+                        "xpath", "//button[@aria-label='Pause']"
+                    )
+                    pause_button.click()
+                    print("Playback paused after reconnection.")
+                    return True
             except Exception as e:
                 print(f"Error while trying to pause after reconnection: {e}")
         else:
             print(f"Error while trying to pause: {e}")
+        return False
 
 
 def next_track():
     try:
+        driver = get_driver()
+        if driver is None:
+            print("Driver not available - cannot skip track")
+            return False
+            
         next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
         next_button.click()
         print("Next track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
             print("Attempting to reconnect due to DevTools disconnection...")
-            reconnect_driver()
             try:
-                next_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Next']"
-                )
-                next_button.click()
-                print("Next track after reconnection.")
+                import voice_commands
+                voice_commands.reconnect_driver()
+                driver = get_driver()
+                if driver is not None:
+                    next_button = driver.find_element(
+                        "xpath", "//button[@aria-label='Next']"
+                    )
+                    next_button.click()
+                    print("Next track after reconnection.")
+                    return True
             except Exception as e:
                 print(
                     f"Error while trying to skip to next track after reconnection: {e}"
                 )
         else:
             print(f"Error while trying to skip to next track: {e}")
+        return False
 
 
 def previous_track():
     try:
+        driver = get_driver()
+        if driver is None:
+            print("Driver not available - cannot go to previous track")
+            return False
+            
         prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
         prev_button.click()
         print("Previous track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
             print("Attempting to reconnect due to DevTools disconnection...")
-            reconnect_driver()
             try:
-                prev_button = driver.find_element(
-                    "xpath", "//button[@aria-label='Previous']"
-                )
-                prev_button.click()
-                print("Previous track after reconnection.")
+                import voice_commands
+                voice_commands.reconnect_driver()
+                driver = get_driver()
+                if driver is not None:
+                    prev_button = driver.find_element(
+                        "xpath", "//button[@aria-label='Previous']"
+                    )
+                    prev_button.click()
+                    print("Previous track after reconnection.")
+                    return True
             except Exception as e:
                 print(
                     f"Error while trying to go to previous track after reconnection: {e}"
                 )
         else:
             print(f"Error while trying to go to previous track: {e}")
+        return False
 
 
 def start_whisper():
@@ -490,7 +577,7 @@ ACTIONS = {
     "manage_services": lambda: launch_application("services"),
     "start_whisper": start_whisper,
     "start_grok": start_grok,
-    "set alarm": lambda minutes, message: set_alarm(minutes, message),
+    "set alarm": lambda minutes, message: _set_alarm_wrapper(minutes, message),
 }
 
 

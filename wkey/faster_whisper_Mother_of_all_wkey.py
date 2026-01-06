@@ -62,6 +62,13 @@ from transcription_utils import (
     validate_audio_buffer as validate_audio_buffer_util,
 )
 
+# Set up driver reference for commands_and_tools
+try:
+    from commands_and_tools import set_driver_reference
+    set_driver_reference(driver)
+except ImportError:
+    pass
+
 # Add global variables for pause functionality
 FLAG_PATH = os.path.join(os.path.dirname(__file__), "voice_pause_flag.txt")
 global_pause_active = False

@@ -165,6 +165,14 @@ def start_driver():
         session_id = driver.session_id
         executor_url = driver.command_executor.remote_url
         logging.info(f"{GREEN}WebDriver started successfully.{RESET}")
+        
+        # Update driver reference in commands_and_tools
+        try:
+            from commands_and_tools import set_driver_reference
+            set_driver_reference(driver)
+        except ImportError:
+            pass
+            
     except Exception as e:
         logging.error(f"{RED}Error starting driver: {e}{RESET}", exc_info=True)
 
@@ -183,6 +191,14 @@ def reconnect_driver():
             driver = webdriver.Remote(command_executor=executor_url, options=options)
             driver.session_id = session_id
             logging.info(f"{GREEN}Reconnected to the existing session.{RESET}")
+            
+            # Update driver reference in commands_and_tools
+            try:
+                from commands_and_tools import set_driver_reference
+                set_driver_reference(driver)
+            except ImportError:
+                pass
+                
     except (SessionNotCreatedException, WebDriverException) as e:
         logging.error(
             f"{RED}Failed to reconnect to the session: {str(e)}{RESET}", exc_info=True
@@ -202,6 +218,14 @@ def reconnect_driver():
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
             logging.info(f"{GREEN}Started a new session.{RESET}")
+            
+            # Update driver reference in commands_and_tools
+            try:
+                from commands_and_tools import set_driver_reference
+                set_driver_reference(driver)
+            except ImportError:
+                pass
+                
         except Exception as new_session_error:
             logging.error(
                 f"{RED}Failed to start a new session: {new_session_error}{RESET}",
@@ -715,7 +739,6 @@ def start_grok():
         logging.error(f"{RED}Error executing start_grok: {e}{RESET}", exc_info=True)
 
 
-"""
 # Function to run the general model and stream text chunks to TTS immediately
 def run_general(query):
     "Stream response chunks to TTS immediately as they arrive"
@@ -772,14 +795,14 @@ def run_general(query):
             print(current_sentence)  # Print the sentence with colors
             # Reset the current sentence after sending to TTS
             current_sentence = ""
-"""
+    except Exception as e:
+        logging.error(f"Error in run_general: {e}", exc_info=True)
 
 
 # Function to run Ollama's model and stream text chunks to TTS immediately
 def run_ollama(query):
+    """Stream response chunks to TTS immediately as they arrive"""
     try:
-        """Stream response chunks to TTS immediately as they arrive"""
-
         # Initialize Ollama client for local server
 
         ollama_client = ollama.Client(host="http://localhost:11434")
