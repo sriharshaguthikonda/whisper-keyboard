@@ -56,18 +56,24 @@ async def transcribe_with_groq_async(
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
     model_name = get_groq_audio_model()
+    logging.info("transcribe_with_groq_async: Starting with model %s", model_name)
 
-    for _ in range(max_retries):
+    for attempt in range(max_retries):
         try:
+            logging.info("transcribe_with_groq_async: Attempt %d of %d", attempt + 1, max_retries)
             session = groq_session_holder.get("session")
-            if session is None:
+            if session is None or session.closed:
+                logging.info("transcribe_with_groq_async: Creating new aiohttp session")
                 session = aiohttp.ClientSession()
                 groq_session_holder["session"] = session
 
+            logging.info("transcribe_with_groq_async: Building form data")
             form_data = aiohttp.FormData()
+            audio_bytes = byte_io.getvalue()
+            logging.info("transcribe_with_groq_async: Audio size = %d bytes", len(audio_bytes))
             form_data.add_field(
                 "file",
-                byte_io.getvalue(),
+                audio_bytes,
                 filename="pre_recording.wav",
                 content_type="audio/wav",
             )
@@ -77,6 +83,7 @@ async def transcribe_with_groq_async(
             form_data.add_field("language", "en")
             form_data.add_field("temperature", "0.0")
 
+            logging.info("transcribe_with_groq_async: Sending POST request to Groq")
             async with session.post(url, data=form_data, headers=headers) as response:
                 response_text = await response.text()
                 if response.status == 404:
@@ -91,6 +98,7 @@ async def transcribe_with_groq_async(
                     )
                 response.raise_for_status()
                 transcription = await response.json()
+                logging.info("transcribe_with_groq_async: Got transcription response")
                 return transcription["text"].lower()
         except aiohttp.ClientResponseError as e:
             logging.error(
@@ -104,6 +112,7 @@ async def transcribe_with_groq_async(
                 raise
         except Exception as e:
             logging.error("Unexpected error in transcribe_with_groq_async: %s", e, exc_info=True)
+        logging.info("transcribe_with_groq_async: Sleeping before retry")
         await asyncio.sleep(2)
 
     logging.error("Failed to transcribe after %s attempts", max_retries)

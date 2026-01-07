@@ -513,11 +513,15 @@ def kill_process_by_name(process_name):
 def get_volume():
     try:
         volume_interface = get_volume_interface()
+        if volume_interface is None:
+            logging.warning("get_volume: volume_interface is None")
+            return 0.5  # Default fallback
         current_volume = volume_interface.GetMasterVolumeLevelScalar()
         logging.info(f"{BLUE}Getting volume...{RESET}")
         return round(current_volume, 2)
     except Exception as e:
         logging.error(f"{RED}Error executing get_volume: {e}{RESET}", exc_info=True)
+        return 0.5  # Default fallback
 
 
 def volume_up(steps=1):
@@ -546,6 +550,9 @@ def set_volume(level):
     try:
         if 0.0 <= level <= 1.0:
             volume_interface = get_volume_interface()
+            if volume_interface is None:
+                logging.warning("set_volume: volume_interface is None, skipping")
+                return
             volume_interface.SetMasterVolumeLevelScalar(level, None)
             logging.info(f"{BLUE}Setting volume to {level * 100}%{RESET}")
             print(f"Volume set to {level * 100:.0f}%")
@@ -557,9 +564,13 @@ def set_volume(level):
 
 def get_volume_interface():
     try:
+        import pythoncom
         from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
         from comtypes import CLSCTX_ALL
         from ctypes import cast, POINTER
+        
+        # Initialize COM for this thread (required for cross-thread COM access)
+        pythoncom.CoInitialize()
         
         devices = AudioUtilities.GetSpeakers()
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
@@ -741,60 +752,61 @@ def start_grok():
 
 # Function to run the general model and stream text chunks to TTS immediately
 def run_general(query):
-    "Stream response chunks to TTS immediately as they arrive"
-    stream = client.chat.completions.create(
-        model=GENERAL_MODEL,
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant."},
-            {"role": "user", "content": query},
-        ],
-        stream=True,
-    )
+    """Stream response chunks to TTS immediately as they arrive"""
+    try:
+        stream = client.chat.completions.create(
+            model=GENERAL_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": query},
+            ],
+            stream=True,
+        )
 
-    current_sentence = ""
-    sentence_endings = [".", "!", "?"]  # Sentence-ending punctuation
-    word_buffer = ""  # To accumulate small chunks of words
+        current_sentence = ""
+        sentence_endings = [".", "!", "?"]  # Sentence-ending punctuation
+        word_buffer = ""  # To accumulate small chunks of words
 
-    for chunk in stream:
-        # Safeguard for chunk choices
-        if not chunk.choices or not chunk.choices[0].delta:
-            print("Invalid chunk received, skipping...")
-            continue
+        for chunk in stream:
+            # Safeguard for chunk choices
+            if not chunk.choices or not chunk.choices[0].delta:
+                print("Invalid chunk received, skipping...")
+                continue
 
-        chunk_text = chunk.choices[0].delta.content
+            chunk_text = chunk.choices[0].delta.content
 
-        # Ensure that the chunk text is not None
-        if chunk_text is None:
-            print("Received NoneType chunk, skipping...")
-            continue
+            # Ensure that the chunk text is not None
+            if chunk_text is None:
+                print("Received NoneType chunk, skipping...")
+                continue
 
-        # Accumulate the chunk text
-        word_buffer += chunk_text
+            # Accumulate the chunk text
+            word_buffer += chunk_text
 
-        # Only process the buffer when it forms a coherent word (ends with a space or punctuation)
-        if word_buffer and (
-            word_buffer.endswith(" ") or word_buffer[-1] in sentence_endings
-        ):
-            current_sentence += word_buffer
-            word_buffer = ""  # Reset buffer after processing
+            # Only process the buffer when it forms a coherent word (ends with a space or punctuation)
+            if word_buffer and (
+                word_buffer.endswith(" ") or word_buffer[-1] in sentence_endings
+            ):
+                current_sentence += word_buffer
+                word_buffer = ""  # Reset buffer after processing
 
-        # Print colored text when a sentence forms
-        if (
-            any(current_sentence.endswith(end) for end in sentence_endings)
-            and len(current_sentence.split()) > 5
-        ):
-            # Strip markdown-like symbols for TTS
-            stripped_text = re.sub(r"[\*_]", "", current_sentence)
+            # Print colored text when a sentence forms
+            if (
+                any(current_sentence.endswith(end) for end in sentence_endings)
+                and len(current_sentence.split()) > 5
+            ):
+                # Strip markdown-like symbols for TTS
+                stripped_text = re.sub(r"[\*_]", "", current_sentence)
 
-            # Ensure we don't send empty or None to TTS
-            if stripped_text:
-                TTS_queue.put(stripped_text)  # Send to TTS
-            else:
-                print("Stripped text is empty, skipping TTS...")
+                # Ensure we don't send empty or None to TTS
+                if stripped_text:
+                    TTS_queue.put(stripped_text)  # Send to TTS
+                else:
+                    print("Stripped text is empty, skipping TTS...")
 
-            print(current_sentence)  # Print the sentence with colors
-            # Reset the current sentence after sending to TTS
-            current_sentence = ""
+                print(current_sentence)  # Print the sentence with colors
+                # Reset the current sentence after sending to TTS
+                current_sentence = ""
     except Exception as e:
         logging.error(f"Error in run_general: {e}", exc_info=True)
 
@@ -1214,7 +1226,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 logging.info(
                     f"{CYAN}Received response from Groq client: {response_message}{RESET}"
                 )
-                tool_calls = response_message["tool_calls"]
+                tool_calls = response_message.get("tool_calls")
 
                 overall_success = True
                 if tool_calls:

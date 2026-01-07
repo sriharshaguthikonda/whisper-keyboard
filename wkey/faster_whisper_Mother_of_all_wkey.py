@@ -948,9 +948,11 @@ async def process_audio_async():
                 global_state["consecutive_failures"] += 1
                 continue
 
+            logging.info("process_audio_async: Creating WAV buffer")
             byte_io = io.BytesIO()
             wav_write(byte_io, sample_rate, audio_buffer_for_processing)
             byte_io.seek(0)
+            logging.info(f"process_audio_async: WAV buffer created, size={byte_io.getbuffer().nbytes} bytes")
 
             # Track transcription attempts and timing
             transcript = None
@@ -959,8 +961,10 @@ async def process_audio_async():
             
             # First try Groq API
             try:
+                logging.info("process_audio_async: Starting Groq transcription")
                 groq_start_time = time.time()
                 transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                logging.info(f"process_audio_async: Groq returned transcript={transcript!r}")
                 if transcript is not None:
                     groq_success = True
                     groq_duration = time.time() - groq_start_time
@@ -989,10 +993,16 @@ async def process_audio_async():
                 continue
 
             transcript_lower = transcript.lower()
+            transcript_stripped = transcript.strip()
+
+            # Skip very short transcripts (noise like just '.' or empty)
+            if len(transcript_stripped) < 2:
+                logging.warning(f"Skipping too-short transcript: '{transcript_stripped}'")
+                continue
 
             if keyword_index == 0:
                 logging.info("Routing F24 transcript directly to execute_command_run_with_tool")
-                transcript_queue.put((transcript.strip(), 0))
+                transcript_queue.put((transcript_stripped, 0))
                 continue
             if keyword_index is None:
                 logging.info("pasing ctrl_r transcription")
