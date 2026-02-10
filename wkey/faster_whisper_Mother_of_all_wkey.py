@@ -63,7 +63,6 @@ try:
 except ModuleNotFoundError:
     from wkey.pause_all import is_sound_playing_windows_processing
 import pyaudio
-from openwakeword.model import Model
 from concurrent.futures import ThreadPoolExecutor
 try:
     from clipboard_utils import paste_transcript
@@ -97,6 +96,10 @@ try:
     from keyboard_shortcuts import KeyboardShortcutHandler
 except ModuleNotFoundError:
     from wkey.keyboard_shortcuts import KeyboardShortcutHandler
+try:
+    from wakeword import WakeWordListener
+except ModuleNotFoundError:
+    from wkey.wakeword import WakeWordListener
 try:
     from pause_control import (
         check_pause_status as pause_check_impl,
@@ -334,6 +337,7 @@ groq_session_holder = {"session": None}
 
 p = pyaudio.PyAudio()
 wake_stream = None
+wakeword_listener = None
 
 # Define beep sounds
 START_BEEP = (2080, 100)
@@ -915,27 +919,15 @@ def monitor_microphone_availability():
     except Exception as e:
         logging.error(f"Error in monitor_microphone_availability: {e}", exc_info=True)
 
-# Hardcoded model paths
-MODEL_PATHS = [
-    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
-    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_computer10.onnx",
-    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_lama.onnx",
-    r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_google.onnx",
-]
+def set_wake_stream(value):
+    global wake_stream
+    wake_stream = value
 
-owwModel = Model(
-    wakeword_models=MODEL_PATHS, inference_framework="onnx", vad_threshold=0.3
-)
-
-CHUNK = 5120
-THRESHOLDS = {
-    0: 0.9,
-    1: 0.1,
-    2: 0.1,
-    3: 0.1,
-}
-COOLDOWN_TIME = 6
-last_detection_time = 0
+def init_wakeword_listener():
+    global wakeword_listener
+    if wakeword_listener is None:
+        wakeword_listener = WakeWordListener()
+    return wakeword_listener
 
 """
 ##       ####  ######  ######## ######## ##    ## 
@@ -948,74 +940,19 @@ last_detection_time = 0
 """
 
 def listen_for_wake_word():
-    """Modified version of listen_for_wake_word that respects pause status"""
-    global wake_stream, last_detection_time, recording
-    print("Listening for wake words...")
-
-    while True:
-        try:
-            if check_pause_status():
-                time.sleep(1)
-                continue
-                
-            if wake_stream:
-                data = wake_stream.read(CHUNK, exception_on_overflow=False)
-                pcm = np.frombuffer(data, dtype=np.int16)
-
-                prediction = owwModel.predict(pcm)
-                keyword_index = -1
-                max_score = 0.0
-
-                recent_predictions = list(owwModel.prediction_buffer.values())[-8:]
-
-                for idx, scores in enumerate(recent_predictions):
-                    if scores[-1] > max_score:
-                        max_score = scores[-1]
-                        keyword_index = idx
-
-                current_time = time.time()
-                if (
-                    keyword_index >= 0
-                    and max_score > THRESHOLDS.get(keyword_index, 0.4)
-                    and (current_time - last_detection_time) > COOLDOWN_TIME
-                    and not recording
-                    and not check_pause_status()
-                ):
-                    last_detection_time = current_time
-
-                    if keyword_index == 0:
-                        print("Custom wake word 'hey_jarvis' detected!")
-                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
-                        time.sleep(3)
-                        threading.Thread(target=stop_recording, args=(keyword_index,)).start()
-                    elif keyword_index == 1:
-                        print("Custom wake word 'hey_computer10' detected!")
-                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
-                        threading.Thread(target=stop_recording, args=(1,)).start()
-                    elif keyword_index == 2:
-                        print("Custom wake word 'hey_lama' detected!")
-                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
-                        threading.Thread(target=stop_recording, args=(2,)).start()
-                    elif keyword_index == 3:
-                        print("Custom wake word 'hey_google' detected!")
-                        decrease_volume_all()
-                        time.sleep(3)
-                        restore_volume_all()
-            else:
-                print("Waiting for microphone...")
-                time.sleep(5)
-
-        except OSError as e:
-            print(f"Audio stream error: {e}")
-            if wake_stream:
-                try:
-                    if wake_stream.is_active():
-                        wake_stream.stop_stream()
-                    wake_stream.close()
-                except OSError:
-                    print("Stream already closed or failed to close.")
-            wake_stream = None
-            time.sleep(10)
+    """Wake-word loop delegated to wakeword module."""
+    listener = init_wakeword_listener()
+    listener.listen(
+        get_wake_stream=lambda: wake_stream,
+        set_wake_stream=set_wake_stream,
+        check_pause_status=check_pause_status,
+        is_recording=lambda: recording,
+        start_recording_async=_start_recording_async,
+        stop_recording_async=_stop_recording_async,
+        decrease_volume_all=decrease_volume_all,
+        restore_volume_all=restore_volume_all,
+        log=print,
+    )
 
 def cleanup():
     try:
@@ -1550,6 +1487,7 @@ def main():
     try:
         init_keyboard_handler()
         start_settings_watch()
+        init_wakeword_listener()
         start_thread(listen_for_wake_word, "WakeWordListener")
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()
