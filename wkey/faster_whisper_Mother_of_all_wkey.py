@@ -130,6 +130,10 @@ except ModuleNotFoundError:
         transcribe_with_local_model as transcribe_with_local_model_util,
         validate_audio_buffer as validate_audio_buffer_util,
     )
+try:
+    from transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
+except ModuleNotFoundError:
+    from wkey.transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
 
 # Set up driver reference for commands_and_tools
 try:
@@ -338,6 +342,7 @@ groq_session_holder = {"session": None}
 p = pyaudio.PyAudio()
 wake_stream = None
 wakeword_listener = None
+transcription_pipeline = None
 
 # Define beep sounds
 START_BEEP = (2080, 100)
@@ -1022,169 +1027,32 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
 
 result_queue = queue.Queue()
 
-GROQ_FAILURES_BEFORE_CPU = 3
-groq_failure_streak = 0
-
-def run_asyncio_in_thread(loop, coro):
-    asyncio.set_event_loop(loop)
-    loop.run_until_complete(coro)
+def init_transcription_pipeline():
+    global transcription_pipeline
+    if transcription_pipeline is None:
+        transcription_pipeline = TranscriptionPipeline(
+            audio_buffer_queue=audio_buffer_queue,
+            transcript_queue=transcript_queue,
+            settings_getter=lambda: SETTINGS,
+            sample_rate=sample_rate,
+            validate_audio_buffer=validate_audio_buffer,
+            transcribe_with_groq_async=transcribe_with_groq_async,
+            transcribe_with_local_model=transcribe_with_local_model,
+            model_getter=lambda: model,
+            gpu_available_getter=lambda: gpu_available,
+            initialize_local_model_cpu=initialize_local_model_cpu,
+            paste_transcript=paste_transcript,
+            beep=beep,
+            global_state=global_state,
+            log=logging,
+            error_color_prefix=RED,
+            error_color_suffix=RESET,
+        )
+    return transcription_pipeline
 
 async def process_audio_async():
-    while True:
-        try:
-            global_state["is_processing"] = True
-            global groq_failure_streak
-
-            try:
-                audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
-                    timeout=1
-                )
-            except QueueEmpty:
-                global_state["is_processing"] = False
-                await asyncio.sleep(0.1)
-                continue
-
-            if not validate_audio_buffer(audio_buffer_for_processing):
-                global_state["consecutive_failures"] += 1
-                continue
-
-            logging.info("process_audio_async: Creating WAV buffer")
-            byte_io = io.BytesIO()
-            wav_write(byte_io, sample_rate, audio_buffer_for_processing)
-            byte_io.seek(0)
-            logging.info(f"process_audio_async: WAV buffer created, size={byte_io.getbuffer().nbytes} bytes")
-
-            # Track transcription attempts and timing
-            transcript = None
-            groq_success = False
-            groq_error = None
-            current_settings = SETTINGS
-            use_groq = current_settings.get("fallback_to_groq", True)
-            max_retries = current_settings.get("max_retries", 3)
-            
-            if use_groq:
-                # First try Groq API
-                try:
-                    logging.info("process_audio_async: Starting Groq transcription")
-                    groq_start_time = time.time()
-                    transcript = await transcribe_with_groq_async(
-                        byte_io, keyword_index, max_retries=max_retries
-                    )
-                    logging.info(f"process_audio_async: Groq returned transcript={transcript!r}")
-                    if transcript is not None:
-                        groq_success = True
-                        groq_duration = time.time() - groq_start_time
-                        logging.info(f"Groq transcription successful in {groq_duration:.2f}s")
-                        
-                except (groq.RateLimitError, Exception) as e:
-                    groq_error = str(e)
-                    logging.warning(f"Groq API error, will try local model: {groq_error}")
-                    
-                if groq_success:
-                    groq_failure_streak = 0
-                else:
-                    groq_failure_streak += 1
-
-                # If Groq keeps failing and no GPU is available, initialize CPU model on-demand
-                if (
-                    not groq_success
-                    and model is None
-                    and (not gpu_available)
-                    and SETTINGS.get("use_local_cpu", True)
-                    and groq_failure_streak >= GROQ_FAILURES_BEFORE_CPU
-                ):
-                    initialize_local_model_cpu()
-
-                # If Groq failed, try local model (GPU or CPU) when available
-                if not groq_success and model is not None:
-                    try:
-                        local_start_time = time.time()
-                        local_transcript = transcribe_with_local_model(
-                            audio_buffer_for_processing, keyword_index
-                        )
-                        if local_transcript and local_transcript != "Transcription failed":
-                            local_duration = time.time() - local_start_time
-                            logging.info(f"Local transcription successful in {local_duration:.2f}s")
-                            transcript = local_transcript
-                    except Exception as e:
-                        logging.error(f"Local transcription failed: {e}")
-            else:
-                groq_failure_streak = 0
-                if model is None and SETTINGS.get("use_local_cpu", True):
-                    initialize_local_model_cpu()
-                if model is None:
-                    logging.error("Local transcription disabled or unavailable and Groq is disabled in settings")
-                    continue
-                try:
-                    local_start_time = time.time()
-                    local_transcript = transcribe_with_local_model(
-                        audio_buffer_for_processing, keyword_index
-                    )
-                    if local_transcript and local_transcript != "Transcription failed":
-                        local_duration = time.time() - local_start_time
-                        logging.info(f"Local transcription successful in {local_duration:.2f}s")
-                        transcript = local_transcript
-                except Exception as e:
-                    logging.error(f"Local transcription failed: {e}")
-            
-            if not transcript:
-                logging.error("All transcription attempts failed")
-                continue
-
-            transcript_lower = transcript.lower()
-            transcript_stripped = transcript.strip()
-
-            # Skip very short transcripts (noise like just '.' or empty)
-            if len(transcript_stripped) < 2:
-                logging.warning(f"Skipping too-short transcript: '{transcript_stripped}'")
-                continue
-
-            if keyword_index == 0:
-                logging.info("Routing F24 transcript directly to execute_command_run_with_tool")
-                transcript_queue.put((transcript_stripped, 0))
-                continue
-            if keyword_index is None:
-                logging.info("pasing ctrl_r transcription")
-                paste_transcript(transcript, beep)
-                continue
-            elif keyword_index == 1:
-                if "computer" in transcript_lower:
-                    keyword_position = transcript_lower.index("computer")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("computer") :
-                    ]
-                    logging.info(f"Processing computer command: {stripped_transcript}")
-                    transcript_queue.put((stripped_transcript.strip(), keyword_index))
-                    continue
-            elif keyword_index == 2:
-                if "lama" in transcript_lower:
-                    keyword_position = transcript_lower.index("lama")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("lama") :
-                    ]
-                    logging.info(f"Processing lama command: {stripped_transcript}")
-                    paste_transcript(stripped_transcript, beep)
-                    continue
-            elif keyword_index == 3:
-                if "google" in transcript_lower:
-                    keyword_position = transcript_lower.index("google")
-                    stripped_transcript = transcript_lower[
-                        keyword_position + len("google") :
-                    ]
-                    logging.info(f"Processing google command: {stripped_transcript}")
-                    continue
-
-            global_state["last_successful_operation"] = time.time()
-            global_state["consecutive_failures"] = 0
-
-        except Exception as e:
-            logging.error(f"{RED}Process audio error: {e}{RESET}", exc_info=True)
-            global_state["consecutive_failures"] += 1
-            if global_state["consecutive_failures"] > 3:
-                await asyncio.sleep(1)
-
-        finally:
-            global_state["is_processing"] = False
+    pipeline = init_transcription_pipeline()
+    await pipeline.process_audio_async()
 
 def validate_audio_buffer(audio_buffer):
     return validate_audio_buffer_util(audio_buffer, sample_rate)
