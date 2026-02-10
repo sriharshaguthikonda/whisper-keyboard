@@ -557,7 +557,7 @@ ACTIONS = {
     "flush dns": lambda: execute_system_command("ipconfig /flushdns"),
     # Voicemeeter Commands
     "restart voicemeeter": lambda: subprocess.run(
-        ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
+        ["C:\\Program Files (x86)\\VB\\Voicemeeter\\VBAudioMatrix_x64.exe", "-r"]
     ),
     # DisplayFusion Commands
     "start display fusion": lambda: launch_application("display fusion"),

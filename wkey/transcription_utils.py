@@ -61,45 +61,43 @@ async def transcribe_with_groq_async(
     for attempt in range(max_retries):
         try:
             logging.info("transcribe_with_groq_async: Attempt %d of %d", attempt + 1, max_retries)
-            session = groq_session_holder.get("session")
-            if session is None or session.closed:
-                logging.info("transcribe_with_groq_async: Creating new aiohttp session")
-                session = aiohttp.ClientSession()
-                groq_session_holder["session"] = session
+            
+            # Create a fresh session for each request to avoid cross-event-loop issues
+            logging.info("transcribe_with_groq_async: Creating new aiohttp session")
+            async with aiohttp.ClientSession() as session:
+                logging.info("transcribe_with_groq_async: Building form data")
+                form_data = aiohttp.FormData()
+                audio_bytes = byte_io.getvalue()
+                logging.info("transcribe_with_groq_async: Audio size = %d bytes", len(audio_bytes))
+                form_data.add_field(
+                    "file",
+                    audio_bytes,
+                    filename="pre_recording.wav",
+                    content_type="audio/wav",
+                )
+                form_data.add_field("model", model_name)
+                form_data.add_field("response_format", "json")
+                form_data.add_field("prompt", prompt)
+                form_data.add_field("language", "en")
+                form_data.add_field("temperature", "0.0")
 
-            logging.info("transcribe_with_groq_async: Building form data")
-            form_data = aiohttp.FormData()
-            audio_bytes = byte_io.getvalue()
-            logging.info("transcribe_with_groq_async: Audio size = %d bytes", len(audio_bytes))
-            form_data.add_field(
-                "file",
-                audio_bytes,
-                filename="pre_recording.wav",
-                content_type="audio/wav",
-            )
-            form_data.add_field("model", model_name)
-            form_data.add_field("response_format", "json")
-            form_data.add_field("prompt", prompt)
-            form_data.add_field("language", "en")
-            form_data.add_field("temperature", "0.0")
-
-            logging.info("transcribe_with_groq_async: Sending POST request to Groq")
-            async with session.post(url, data=form_data, headers=headers) as response:
-                response_text = await response.text()
-                if response.status == 404:
-                    logging.error("Groq API endpoint not found: %s", response.url)
+                logging.info("transcribe_with_groq_async: Sending POST request to Groq")
+                async with session.post(url, data=form_data, headers=headers) as response:
+                    response_text = await response.text()
+                    if response.status == 404:
+                        logging.error("Groq API endpoint not found: %s", response.url)
+                        response.raise_for_status()
+                    if response.status >= 400:
+                        logging.error(
+                            "Groq API error %s %s: %s",
+                            response.status,
+                            response.reason,
+                            response_text,
+                        )
                     response.raise_for_status()
-                if response.status >= 400:
-                    logging.error(
-                        "Groq API error %s %s: %s",
-                        response.status,
-                        response.reason,
-                        response_text,
-                    )
-                response.raise_for_status()
-                transcription = await response.json()
-                logging.info("transcribe_with_groq_async: Got transcription response")
-                return transcription["text"].lower()
+                    transcription = await response.json()
+                    logging.info("transcribe_with_groq_async: Got transcription response")
+                    return transcription["text"].lower()
         except aiohttp.ClientResponseError as e:
             logging.error(
                 "Groq API client error: %s, message='%s', url='%s'",

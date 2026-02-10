@@ -27,9 +27,12 @@ class ModelRotator:
 # Tool-use models (as configured in voice_commands)
 TOOL_USE_MODELS = [
     "llama-3.3-70b-versatile",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "qwen/qwen3-32b",
+    #"meta-llama/llama-4-scout-17b-16e-instruct",
+    #"qwen/qwen3-32b",
     "openai/gpt-oss-20b",
+    "openai/gpt-oss-120b",
+    "moonshotai/kimi-k2-instruct-0905",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
 ]
 
 # Audio/STT models for Groq whisper endpoint
