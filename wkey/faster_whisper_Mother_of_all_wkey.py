@@ -278,7 +278,8 @@ def audio_callback(indata, frames, time, status):
             with recording_lock:
                 if recording:
                     if isinstance(indata, np.ndarray):
-                        audio_buffer = np.append(audio_buffer, indata.flatten())
+                        with audio_data_lock:
+                            audio_buffer = np.append(audio_buffer, indata.flatten())
                     else:
                         logging.error(
                             f"{RED}Invalid indata type: {type(indata)}{RESET}"
@@ -571,12 +572,15 @@ def stop_recording(keyword_index):
 
         while silent_time <= stop_delay_threshold:
             if stream and stream.active:
-                if isinstance(audio_buffer, list):
-                    audio_buffer = np.array(audio_buffer)
+                with audio_data_lock:
+                    if isinstance(audio_buffer, list):
+                        local_audio_buffer = np.array(audio_buffer)
+                    else:
+                        local_audio_buffer = audio_buffer.copy()
 
                 frame_duration = 30
                 frame_size = int(sample_rate * frame_duration / 1000)
-                audio_frame = audio_buffer[-frame_size:]
+                audio_frame = local_audio_buffer[-frame_size:]
                 audio_int16 = (audio_frame * 32767).astype(np.int16)
                 audio_bytes = audio_int16.tobytes()
 
@@ -605,7 +609,12 @@ def stop_recording(keyword_index):
             else:
                 logging.info(f"{YELLOW}Input stream inactive. Stopping recording.{RESET}")
                 break
-        audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+        with audio_data_lock:
+            if isinstance(audio_buffer, list):
+                local_audio_buffer = np.array(audio_buffer)
+            else:
+                local_audio_buffer = audio_buffer.copy()
+        audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")
 
