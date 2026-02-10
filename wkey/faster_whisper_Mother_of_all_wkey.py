@@ -32,6 +32,7 @@ except ModuleNotFoundError:
     from wkey.model_rotation import next_audio_stt_model
 import torch
 import logging
+import io
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
@@ -166,13 +167,25 @@ last_pause_check = 0
 # Set up ThreadPoolExecutor
 executor = ThreadPoolExecutor(max_workers=6)
 
+def _safe_console_stream():
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+        return sys.stdout
+    except Exception:
+        try:
+            return io.TextIOWrapper(
+                sys.stdout.buffer, encoding="utf-8", errors="backslashreplace"
+            )
+        except Exception:
+            return sys.stdout
+
 # Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
-        logging.FileHandler("whisper_keyboard.log"),
-        logging.StreamHandler(),
+        logging.FileHandler("whisper_keyboard.log", encoding="utf-8"),
+        logging.StreamHandler(_safe_console_stream()),
     ],
 )
 
