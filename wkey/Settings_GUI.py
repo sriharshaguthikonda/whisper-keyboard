@@ -1,5 +1,9 @@
 import os
-import json
+from settings_manager import (
+    load_settings as settings_load,
+    save_settings as settings_save,
+    DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+)
 from qtpy.QtWidgets import (
     QApplication,
     QWidget,
@@ -13,7 +17,6 @@ from qtpy.QtWidgets import (
 from qtpy.QtCore import Qt
 
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
-DEFAULT_SETTINGS = {"use_local_gpu": True, "fallback_to_groq": True}
 
 class SettingsWindow(QWidget):
     def __init__(self):
@@ -22,12 +25,18 @@ class SettingsWindow(QWidget):
         self.layout = QVBoxLayout(self)
 
         self.use_local_cb = QCheckBox("Use local GPU model when available")
+        self.use_cpu_cb = QCheckBox("Use local CPU fallback")
         self.use_api_cb = QCheckBox("Fallback to Groq API")
+        self.max_retries_edit = QLineEdit()
+        self.max_retries_edit.setPlaceholderText("Max retries (Groq)")
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setPlaceholderText("GROQ_API_KEY")
 
         self.layout.addWidget(self.use_local_cb)
+        self.layout.addWidget(self.use_cpu_cb)
         self.layout.addWidget(self.use_api_cb)
+        self.layout.addWidget(QLabel("Max Retries:"))
+        self.layout.addWidget(self.max_retries_edit)
         self.layout.addWidget(QLabel("Groq API Key:"))
         self.layout.addWidget(self.api_key_edit)
 
@@ -43,27 +52,24 @@ class SettingsWindow(QWidget):
         self.load_settings()
 
     def load_settings(self):
-        config = DEFAULT_SETTINGS.copy()
-        if os.path.exists(SETTINGS_PATH):
-            try:
-                with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-                    config.update(json.load(f))
-            except Exception:
-                pass
+        config = settings_load(SETTINGS_PATH, SETTINGS_DEFAULTS)
         self.use_local_cb.setChecked(config.get("use_local_gpu", True))
+        self.use_cpu_cb.setChecked(config.get("use_local_cpu", True))
         self.use_api_cb.setChecked(config.get("fallback_to_groq", True))
+        self.max_retries_edit.setText(str(config.get("max_retries", 3)))
         self.api_key_edit.setText(os.environ.get("GROQ_API_KEY", ""))
 
     def save_settings(self):
-        config = {
-            "use_local_gpu": self.use_local_cb.isChecked(),
-            "fallback_to_groq": self.use_api_cb.isChecked(),
-        }
+        config = settings_load(SETTINGS_PATH, SETTINGS_DEFAULTS)
+        config["use_local_gpu"] = self.use_local_cb.isChecked()
+        config["use_local_cpu"] = self.use_cpu_cb.isChecked()
+        config["fallback_to_groq"] = self.use_api_cb.isChecked()
         try:
-            with open(SETTINGS_PATH, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=2)
+            max_retries = int(self.max_retries_edit.text().strip())
+            config["max_retries"] = max(1, max_retries)
         except Exception:
             pass
+        settings_save(SETTINGS_PATH, config)
         if self.api_key_edit.text().strip():
             os.environ["GROQ_API_KEY"] = self.api_key_edit.text().strip()
         self.close()

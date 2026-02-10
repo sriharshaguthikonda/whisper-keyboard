@@ -5,9 +5,15 @@ import threading
 from datetime import datetime, timedelta
 import json
 import subprocess
+from settings_manager import (
+    load_settings as settings_load,
+    save_settings as settings_save,
+    DEFAULT_SETTINGS as TRANSCRIPTION_DEFAULTS,
+)
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
-    QLabel, QCheckBox, QSystemTrayIcon, QMenu, QFrame, QGridLayout, QSizePolicy
+    QLabel, QCheckBox, QSystemTrayIcon, QMenu, QFrame, QGridLayout, QSizePolicy,
+    QLineEdit
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon, QFont, QAction
@@ -46,9 +52,12 @@ class VoicePauseController(QMainWindow):
         self.time_jump_threshold = timedelta(seconds=120)
 
         self.config_file = "voice_pause_config.json"
+        self.transcription_config_file = "transcription_config.json"
+        self._loading_transcription_settings = False
         
         self.setup_gui()
         self.load_config()
+        self.load_transcription_settings()
         self.setup_tray()
         self.setup_hotkeys()
         self.load_theme()
@@ -272,6 +281,35 @@ class VoicePauseController(QMainWindow):
         settings_label.setToolTip("Application settings")
         controls_layout.addWidget(settings_label)
 
+        self.use_groq_cb = QCheckBox("Use Groq API (fallback)")
+        self.use_groq_cb.setObjectName("settingsCheckbox")
+        self.use_groq_cb.setFont(QFont("Segoe UI", 10))
+        self.use_groq_cb.setToolTip("Use Groq API for transcription when enabled")
+        self.use_groq_cb.stateChanged.connect(self.save_transcription_settings)
+        controls_layout.addWidget(self.use_groq_cb)
+
+        self.use_gpu_cb = QCheckBox("Use local GPU model")
+        self.use_gpu_cb.setObjectName("settingsCheckbox")
+        self.use_gpu_cb.setFont(QFont("Segoe UI", 10))
+        self.use_gpu_cb.setToolTip("Use local GPU model when available")
+        self.use_gpu_cb.stateChanged.connect(self.save_transcription_settings)
+        controls_layout.addWidget(self.use_gpu_cb)
+
+        self.use_cpu_cb = QCheckBox("Use local CPU fallback")
+        self.use_cpu_cb.setObjectName("settingsCheckbox")
+        self.use_cpu_cb.setFont(QFont("Segoe UI", 10))
+        self.use_cpu_cb.setToolTip("Allow CPU fallback when GPU is unavailable")
+        self.use_cpu_cb.stateChanged.connect(self.save_transcription_settings)
+        controls_layout.addWidget(self.use_cpu_cb)
+
+        self.max_retries_input = QLineEdit()
+        self.max_retries_input.setObjectName("settingsInput")
+        self.max_retries_input.setPlaceholderText("Groq max retries")
+        self.max_retries_input.setFont(QFont("Segoe UI", 10))
+        self.max_retries_input.setToolTip("Number of retries for Groq transcription")
+        self.max_retries_input.editingFinished.connect(self.save_transcription_settings)
+        controls_layout.addWidget(self.max_retries_input)
+
         self.run_faster_whisper_btn = QPushButton("Run Faster Whisper")
         self.run_faster_whisper_btn.setObjectName("fasterWhisperButton")
         self.run_faster_whisper_btn.setAccessibleName("runFasterWhisperBtn")
@@ -452,6 +490,42 @@ class VoicePauseController(QMainWindow):
             print("Config saved successfully")
         except Exception as e:
             print(f"Error saving config: {e}")
+
+    def load_transcription_settings(self):
+        try:
+            self._loading_transcription_settings = True
+            config = settings_load(
+                self.transcription_config_file, TRANSCRIPTION_DEFAULTS
+            )
+            self.use_gpu_cb.setChecked(config.get("use_local_gpu", True))
+            self.use_cpu_cb.setChecked(config.get("use_local_cpu", True))
+            self.use_groq_cb.setChecked(config.get("fallback_to_groq", True))
+            self.max_retries_input.setText(str(config.get("max_retries", 3)))
+        except Exception as e:
+            print(f"Error loading transcription settings: {e}")
+        finally:
+            self._loading_transcription_settings = False
+
+    def save_transcription_settings(self):
+        if self._loading_transcription_settings:
+            return
+        try:
+            max_retries_text = self.max_retries_input.text().strip()
+            try:
+                max_retries = max(1, int(max_retries_text)) if max_retries_text else 3
+            except Exception:
+                max_retries = 3
+                self.max_retries_input.setText(str(max_retries))
+
+            config = {
+                "use_local_gpu": self.use_gpu_cb.isChecked(),
+                "use_local_cpu": self.use_cpu_cb.isChecked(),
+                "fallback_to_groq": self.use_groq_cb.isChecked(),
+                "max_retries": max_retries,
+            }
+            settings_save(self.transcription_config_file, config)
+        except Exception as e:
+            print(f"Error saving transcription settings: {e}")
 
     def toggle_pause(self):
         if self.is_paused:

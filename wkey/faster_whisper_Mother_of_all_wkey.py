@@ -53,6 +53,11 @@ import traceback
 from queue import Empty as QueueEmpty
 from contextlib import contextmanager
 from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
+from settings_manager import (
+    load_settings,
+    watch_settings,
+    DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+)
 from transcription_utils import (
     create_wav_buffer as create_wav_buffer_util,
     get_transcript_with_retries as get_transcript_with_retries_util,
@@ -117,17 +122,7 @@ load_dotenv()
 
 # Load transcription settings
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
-DEFAULT_SETTINGS = {
-    "use_local_gpu": True,
-    "use_local_cpu": True,
-    "fallback_to_groq": True,
-    "max_retries": 3,
-}
-try:
-    with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
-        SETTINGS = json.load(f)
-except Exception:
-    SETTINGS = DEFAULT_SETTINGS
+SETTINGS = load_settings(SETTINGS_PATH, SETTINGS_DEFAULTS)
 
 # Get the key labels from environment variables, default to 'f24' if not set
 key_label = os.environ.get("WKEY", "f24").lower()
@@ -156,24 +151,32 @@ sample_rate = 16000
 
 # Initialize local model based on settings and GPU availability
 model = None
+model_device = None
 cpu_model_initialized = False
 gpu_available = SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available()
 
 def initialize_local_model_cpu():
-    global model, cpu_model_initialized
+    global model, model_device, cpu_model_initialized
+    if not SETTINGS.get("use_local_cpu", True):
+        return False
     if cpu_model_initialized:
         return model is not None
     cpu_model_initialized = True
     try:
         model = WhisperModel("small.en", device="cpu", compute_type="int8")
+        model_device = "cpu"
         logging.info(f"{YELLOW}Initialized WhisperModel on CPU{RESET}")
         return True
     except Exception as e:
         logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(e)}{RESET}")
         model = None
+        model_device = None
         return False
 
-if gpu_available:
+def initialize_local_model_gpu():
+    global model, model_device, gpu_available
+    if not gpu_available:
+        return False
     try:
         # Set CUDA to use version 12.3 explicitly
         if os.name == 'nt':  # Windows
@@ -197,12 +200,19 @@ if gpu_available:
         # Test the model with a small tensor to verify it's working
         test_tensor = torch.zeros(1).cuda()
         logging.info(f"{GREEN}Successfully initialized WhisperModel on CUDA device: {torch.cuda.get_device_name(0)}{RESET}")
+        model_device = "cuda"
+        return True
         
     except Exception as e:
         logging.error(f"{RED}Failed to initialize WhisperModel on CUDA: {str(e)}{RESET}")
         gpu_available = False
         model = None
+        model_device = None
         logging.info(f"{YELLOW}GPU init failed. CPU model will be initialized only after repeated Groq failures.{RESET}")
+        return False
+
+if gpu_available:
+    initialize_local_model_gpu()
 else:
     if SETTINGS.get("use_local_gpu", True):
         logging.info(f"{YELLOW}CUDA is not available. CPU model will be initialized only after repeated Groq failures.{RESET}")
@@ -211,6 +221,42 @@ else:
 
 def get_groq_audio_model():
     return next_audio_stt_model()
+
+settings_watch_handle = None
+
+def apply_settings(new_settings):
+    global SETTINGS, gpu_available, model, model_device, cpu_model_initialized
+    SETTINGS = new_settings
+
+    want_gpu = SETTINGS.get("use_local_gpu", True)
+    want_cpu = SETTINGS.get("use_local_cpu", True)
+
+    if not want_gpu and model_device == "cuda":
+        model = None
+        model_device = None
+
+    if not want_cpu and model_device == "cpu":
+        model = None
+        model_device = None
+        cpu_model_initialized = False
+
+    if not want_cpu:
+        cpu_model_initialized = False
+
+    gpu_available = want_gpu and torch.cuda.is_available()
+    if gpu_available and model_device != "cuda":
+        initialize_local_model_gpu()
+
+def start_settings_watch():
+    global settings_watch_handle
+
+    def _on_change(updated_settings):
+        logging.info("Settings updated: %s", updated_settings)
+        apply_settings(updated_settings)
+
+    settings_watch_handle = watch_settings(
+        SETTINGS_PATH, SETTINGS_DEFAULTS, _on_change
+    )
 
 play_pause_pressed = False
 something_is_playing = False
@@ -1009,8 +1055,9 @@ async def process_audio_async():
             transcript = None
             groq_success = False
             groq_error = None
-            use_groq = SETTINGS.get("fallback_to_groq", True)
-            max_retries = SETTINGS.get("max_retries", 3)
+            current_settings = SETTINGS
+            use_groq = current_settings.get("fallback_to_groq", True)
+            max_retries = current_settings.get("max_retries", 3)
             
             if use_groq:
                 # First try Groq API
@@ -1432,6 +1479,7 @@ def main():
     sys.excepthook = exception_handler
 
     try:
+        start_settings_watch()
         start_thread(listen_for_wake_word, "WakeWordListener")
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()
