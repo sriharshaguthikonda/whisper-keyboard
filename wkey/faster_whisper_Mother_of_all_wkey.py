@@ -287,9 +287,10 @@ def audio_callback(indata, frames, time, status):
                     end_index = buffer_index + frames
                     if end_index > BUFFER_SIZE:
                         end_index = BUFFER_SIZE
-                    pre_recording_buffer[buffer_index:end_index] = indata[
-                        : end_index - buffer_index
-                    ]
+                    chunk = indata[: end_index - buffer_index]
+                    pre_recording_buffer[buffer_index:end_index] = chunk
+                    if pre_recording_buffer_f24 is not None:
+                        pre_recording_buffer_f24[buffer_index:end_index] = chunk
                     buffer_index = (buffer_index + frames) % BUFFER_SIZE
 
     except Exception as e:
