@@ -117,7 +117,11 @@ load_dotenv()
 
 # Load transcription settings
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
-DEFAULT_SETTINGS = {"use_local_gpu": True, "fallback_to_groq": True}
+DEFAULT_SETTINGS = {
+    "use_local_gpu": True,
+    "use_local_cpu": True,
+    "fallback_to_groq": True,
+}
 try:
     with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
         SETTINGS = json.load(f)
@@ -151,49 +155,58 @@ sample_rate = 16000
 
 # Initialize local model based on settings and GPU availability
 model = None
-if SETTINGS.get("use_local_gpu", True):
-    if torch.cuda.is_available():
-        try:
-            # Set CUDA to use version 12.3 explicitly
-            if os.name == 'nt':  # Windows
-                cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3"
-                if os.path.exists(cuda_path):
-                    os.environ['CUDA_HOME'] = cuda_path
-                    os.environ['PATH'] = fr"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
-            
-            logging.info(f"CUDA is available. Devices: {torch.cuda.device_count()}")
-            logging.info(f"Current device: {torch.cuda.current_device()}")
-            logging.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'No CUDA devices'}")
-            
-            # Initialize model with explicit CUDA device
-            model = WhisperModel(
-                "small.en",
-                device="cuda",
-                compute_type="float16",  # Use float16 for better performance
-                num_workers=4            # Reduce workers to prevent OOM
-            )
-            
-            # Test the model with a small tensor to verify it's working
-            test_tensor = torch.zeros(1).cuda()
-            logging.info(f"{GREEN}Successfully initialized WhisperModel on CUDA device: {torch.cuda.get_device_name(0)}{RESET}")
-            
-        except Exception as e:
-            logging.error(f"{RED}Failed to initialize WhisperModel on CUDA: {str(e)}{RESET}")
-            logging.info(f"{YELLOW}Falling back to CPU mode{RESET}")
-            try:
-                model = WhisperModel("small.en", device="cpu", compute_type="int8")
-                logging.info(f"{YELLOW}Initialized WhisperModel on CPU as fallback{RESET}")
-            except Exception as cpu_e:
-                logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(cpu_e)}{RESET}")
-    else:
-        logging.info(f"{YELLOW}CUDA is not available. Checking CPU fallback...{RESET}")
-        try:
-            model = WhisperModel("small.en", device="cpu", compute_type="int8")
-            logging.info(f"{YELLOW}Initialized WhisperModel on CPU{RESET}")
-        except Exception as e:
-            logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(e)}{RESET}")
+cpu_model_initialized = False
+gpu_available = SETTINGS.get("use_local_gpu", True) and torch.cuda.is_available()
+
+def initialize_local_model_cpu():
+    global model, cpu_model_initialized
+    if cpu_model_initialized:
+        return model is not None
+    cpu_model_initialized = True
+    try:
+        model = WhisperModel("small.en", device="cpu", compute_type="int8")
+        logging.info(f"{YELLOW}Initialized WhisperModel on CPU{RESET}")
+        return True
+    except Exception as e:
+        logging.error(f"{RED}Failed to initialize WhisperModel on CPU: {str(e)}{RESET}")
+        model = None
+        return False
+
+if gpu_available:
+    try:
+        # Set CUDA to use version 12.3 explicitly
+        if os.name == 'nt':  # Windows
+            cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3"
+            if os.path.exists(cuda_path):
+                os.environ['CUDA_HOME'] = cuda_path
+                os.environ['PATH'] = fr"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
+        
+        logging.info(f"CUDA is available. Devices: {torch.cuda.device_count()}")
+        logging.info(f"Current device: {torch.cuda.current_device()}")
+        logging.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'No CUDA devices'}")
+        
+        # Initialize model with explicit CUDA device
+        model = WhisperModel(
+            "small.en",
+            device="cuda",
+            compute_type="float16",  # Use float16 for better performance
+            num_workers=4            # Reduce workers to prevent OOM
+        )
+        
+        # Test the model with a small tensor to verify it's working
+        test_tensor = torch.zeros(1).cuda()
+        logging.info(f"{GREEN}Successfully initialized WhisperModel on CUDA device: {torch.cuda.get_device_name(0)}{RESET}")
+        
+    except Exception as e:
+        logging.error(f"{RED}Failed to initialize WhisperModel on CUDA: {str(e)}{RESET}")
+        gpu_available = False
+        model = None
+        logging.info(f"{YELLOW}GPU init failed. CPU model will be initialized only after repeated Groq failures.{RESET}")
 else:
-    logging.info(f"{YELLOW}Local GPU model is disabled in settings{RESET}")
+    if SETTINGS.get("use_local_gpu", True):
+        logging.info(f"{YELLOW}CUDA is not available. CPU model will be initialized only after repeated Groq failures.{RESET}")
+    else:
+        logging.info(f"{YELLOW}Local GPU model is disabled in settings. CPU model will be initialized only after repeated Groq failures.{RESET}")
 
 def get_groq_audio_model():
     return next_audio_stt_model()
@@ -212,10 +225,7 @@ Groq_client = Groq(api_key=api_key)
 groq_session_holder = {"session": None}
 
 p = pyaudio.PyAudio()
-wake_stream = p.open(
-    format=pyaudio.paInt16, channels=1, rate=16000, input=True, frames_per_buffer=16000
-)
-wake_stream.start_stream()
+wake_stream = None
 
 # Define beep sounds
 START_BEEP = (2080, 100)
@@ -285,13 +295,7 @@ def audio_callback(indata, frames, time, status):
     except Exception as e:
         logging.error(f"{RED}Error in audio_callback: {e}{RESET}", exc_info=True)
 
-stream = sd.InputStream(
-    callback=audio_callback,
-    device=None,
-    channels=1,
-    samplerate=sample_rate,
-    blocksize=int(sample_rate * 0.1),
-)
+stream = None
 
 """
 ##     ##  #######  ##       ##     ## ##     ## ######## 
@@ -300,8 +304,62 @@ stream = sd.InputStream(
 ##     ## ##     ## ##       ##     ## ## ### ## ######   
  ##   ##  ##     ## ##       ##     ## ##     ## ##       
   ## ##   ##     ## ##       ##     ## ##     ## ##       
-   ###     #######  ########  #######  ##     ## ######## 
+    ###     #######  ########  #######  ##     ## ######## 
 """
+
+def initialize_input_stream():
+    global stream
+    try:
+        if stream:
+            if not stream.active:
+                stream.start()
+            return True
+    except Exception:
+        try:
+            stream.close()
+        except Exception:
+            pass
+        stream = None
+
+    try:
+        stream = sd.InputStream(
+            callback=audio_callback,
+            device=None,
+            channels=1,
+            samplerate=sample_rate,
+            blocksize=int(sample_rate * 0.1),
+        )
+        stream.start()
+        logging.info(f"{GREEN}Microphone input stream initialized{RESET}")
+        return True
+    except Exception as e:
+        logging.info(
+            f"{RED}No microphone detected for input stream: {e}{RESET}"
+        )
+        stream = None
+        return False
+
+def initialize_wake_stream():
+    global wake_stream, p
+    try:
+        if p is None:
+            p = pyaudio.PyAudio()
+        wake_stream = p.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            frames_per_buffer=16000,
+        )
+        wake_stream.start_stream()
+        logging.info(f"{GREEN}Wake-word stream initialized{RESET}")
+        return True
+    except Exception as e:
+        logging.info(
+            f"{RED}No microphone detected for wake-word stream: {e}{RESET}"
+        )
+        wake_stream = None
+        return False
 
 def decrease_volume_all():
     global initial_volume
@@ -411,28 +469,11 @@ def start_recording(keyword_index=None):
         logging.info(f"{GREEN}Starting recording...{RESET}")
         decrease_volume_all()
 
-        try:
-            if stream and stream.active:
-                logging.info(f"{YELLOW}Stream is already active.{RESET}")
-            else:
-                try:
-                    device_info = sd.default.device
-                    logging.info(f"{CYAN}Using device: {device_info}{RESET}")
-                    stream = sd.InputStream(
-                        callback=audio_callback,
-                        device=None,
-                        channels=1,
-                        samplerate=sample_rate,
-                        blocksize=int(sample_rate * 0.1),
-                    )
-                    stream.start()
-                except Exception as e:
-                    logging.error(
-                        f"{RED}Failed to start stream: {e}{RESET}", exc_info=True
-                    )
-                    time.sleep(2)
-        except NameError:
-            pass
+        if not initialize_input_stream():
+            logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
+            with recording_lock:
+                recording = False
+            return
 
         if something_is_playing:
             logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
@@ -528,7 +569,7 @@ def stop_recording(keyword_index):
             stop_delay_threshold = 2
 
         while silent_time <= stop_delay_threshold:
-            if stream.active:
+            if stream and stream.active:
                 if isinstance(audio_buffer, list):
                     audio_buffer = np.array(audio_buffer)
 
@@ -560,6 +601,9 @@ def stop_recording(keyword_index):
                     break
 
                 time.sleep(0.1)
+            else:
+                logging.info(f"{YELLOW}Input stream inactive. Stopping recording.{RESET}")
+                break
         audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")
@@ -707,6 +751,11 @@ def check_microphone():
     except Exception as e:
         logging.error(f"Error in check_microphone: {e}", exc_info=True)
 
+def wait_for_microphone(poll_interval=5):
+    while not check_microphone():
+        logging.info(f"{RED}No microphone detected. Waiting for microphone...{RESET}")
+        time.sleep(poll_interval)
+
 def reinitialize_pyaudio():
     try:
         global p
@@ -736,21 +785,8 @@ def monitor_microphone_availability():
                     logging.info(
                         f"{GREEN}Microphone detected. Resuming wake word detection...{RESET}"
                     )
-                    try:
-                        wake_stream = p.open(
-                            format=pyaudio.paInt16,
-                            channels=1,
-                            rate=16000,
-                            input=True,
-                            frames_per_buffer=16000,
-                        )
-                        wake_stream.start_stream()
-                    except OSError as e:
-                        logging.info(f"Failed to restart wake stream: {e}")
+                    if not initialize_wake_stream():
                         reinitialize_pyaudio()
-                        wake_stream = None
-                    except Exception as e:
-                        logging.info(f"Unexpected error: {e}")
 
             time.sleep(10)
     except Exception as e:
@@ -926,6 +962,9 @@ def transcribe_with_local_model(audio_buffer, keyword_index):
 
 result_queue = queue.Queue()
 
+GROQ_FAILURES_BEFORE_CPU = 3
+groq_failure_streak = 0
+
 def run_asyncio_in_thread(loop, coro):
     asyncio.set_event_loop(loop)
     loop.run_until_complete(coro)
@@ -934,6 +973,7 @@ async def process_audio_async():
     while True:
         try:
             global_state["is_processing"] = True
+            global groq_failure_streak
 
             try:
                 audio_buffer_for_processing, keyword_index = audio_buffer_queue.get(
@@ -974,8 +1014,23 @@ async def process_audio_async():
                 groq_error = str(e)
                 logging.warning(f"Groq API error, will try local model: {groq_error}")
                 
-            # If Groq failed or was too slow, try local model
-            if not groq_success and torch.cuda.is_available():
+            if groq_success:
+                groq_failure_streak = 0
+            else:
+                groq_failure_streak += 1
+
+            # If Groq keeps failing and no GPU is available, initialize CPU model on-demand
+            if (
+                not groq_success
+                and model is None
+                and (not gpu_available)
+                and SETTINGS.get("use_local_cpu", True)
+                and groq_failure_streak >= GROQ_FAILURES_BEFORE_CPU
+            ):
+                initialize_local_model_cpu()
+
+            # If Groq failed, try local model (GPU or CPU) when available
+            if not groq_success and model is not None:
                 try:
                     local_start_time = time.time()
                     local_transcript = transcribe_with_local_model(
@@ -1303,14 +1358,8 @@ def reset_all_states():
             except:
                 pass
 
-        stream = sd.InputStream(
-            callback=audio_callback,
-            device=None,
-            channels=1,
-            samplerate=sample_rate,
-            blocksize=int(sample_rate * 0.1),
-        )
-        stream.start()
+        if not initialize_input_stream():
+            stream = None
 
         if wake_stream:
             try:
@@ -1318,14 +1367,9 @@ def reset_all_states():
                 wake_stream.close()
             except:
                 pass
-            wake_stream = p.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
-                input=True,
-                frames_per_buffer=16000,
-            )
-            wake_stream.start_stream()
+            wake_stream = None
+
+        initialize_wake_stream()
 
         global_state["consecutive_failures"] = 0
         global_state["last_successful_operation"] = time.time()
@@ -1367,11 +1411,28 @@ def main():
         threading.Thread(target=start_driver, daemon=True).start()
         threading.Thread(target=display_pause_status, daemon=True).start()
 
-        with stream:
-            start_listener()
-
         while True:
-            time.sleep(1)
+            wait_for_microphone()
+            if not initialize_input_stream():
+                time.sleep(5)
+                continue
+
+            try:
+                start_listener()
+            except Exception as e:
+                logging.error(
+                    f"{RED}Input stream error: {str(e)}{RESET}", exc_info=True
+                )
+            finally:
+                if stream:
+                    try:
+                        if stream.active:
+                            stream.stop()
+                        stream.close()
+                    except Exception:
+                        pass
+                    stream = None
+            time.sleep(2)
 
     except Exception as e:
         logging.error(
