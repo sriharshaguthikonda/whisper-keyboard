@@ -863,16 +863,16 @@ def listen_for_wake_word():
 
                     if keyword_index == 0:
                         print("Custom wake word 'hey_jarvis' detected!")
-                        threading.Thread(target=start_recording).start()
+                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
                         time.sleep(3)
                         threading.Thread(target=stop_recording, args=(keyword_index,)).start()
                     elif keyword_index == 1:
                         print("Custom wake word 'hey_computer10' detected!")
-                        threading.Thread(target=start_recording).start()
+                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
                         threading.Thread(target=stop_recording, args=(1,)).start()
                     elif keyword_index == 2:
                         print("Custom wake word 'hey_lama' detected!")
-                        threading.Thread(target=start_recording).start()
+                        threading.Thread(target=start_recording, args=(keyword_index,)).start()
                         threading.Thread(target=stop_recording, args=(2,)).start()
                     elif keyword_index == 3:
                         print("Custom wake word 'hey_google' detected!")
