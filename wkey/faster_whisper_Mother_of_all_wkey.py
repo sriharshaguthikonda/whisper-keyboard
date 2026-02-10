@@ -121,6 +121,7 @@ DEFAULT_SETTINGS = {
     "use_local_gpu": True,
     "use_local_cpu": True,
     "fallback_to_groq": True,
+    "max_retries": 3,
 }
 try:
     with open(SETTINGS_PATH, "r", encoding="utf-8") as f:
@@ -1008,39 +1009,62 @@ async def process_audio_async():
             transcript = None
             groq_success = False
             groq_error = None
+            use_groq = SETTINGS.get("fallback_to_groq", True)
+            max_retries = SETTINGS.get("max_retries", 3)
             
-            # First try Groq API
-            try:
-                logging.info("process_audio_async: Starting Groq transcription")
-                groq_start_time = time.time()
-                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
-                logging.info(f"process_audio_async: Groq returned transcript={transcript!r}")
-                if transcript is not None:
-                    groq_success = True
-                    groq_duration = time.time() - groq_start_time
-                    logging.info(f"Groq transcription successful in {groq_duration:.2f}s")
+            if use_groq:
+                # First try Groq API
+                try:
+                    logging.info("process_audio_async: Starting Groq transcription")
+                    groq_start_time = time.time()
+                    transcript = await transcribe_with_groq_async(
+                        byte_io, keyword_index, max_retries=max_retries
+                    )
+                    logging.info(f"process_audio_async: Groq returned transcript={transcript!r}")
+                    if transcript is not None:
+                        groq_success = True
+                        groq_duration = time.time() - groq_start_time
+                        logging.info(f"Groq transcription successful in {groq_duration:.2f}s")
+                        
+                except (groq.RateLimitError, Exception) as e:
+                    groq_error = str(e)
+                    logging.warning(f"Groq API error, will try local model: {groq_error}")
                     
-            except (groq.RateLimitError, Exception) as e:
-                groq_error = str(e)
-                logging.warning(f"Groq API error, will try local model: {groq_error}")
-                
-            if groq_success:
-                groq_failure_streak = 0
+                if groq_success:
+                    groq_failure_streak = 0
+                else:
+                    groq_failure_streak += 1
+
+                # If Groq keeps failing and no GPU is available, initialize CPU model on-demand
+                if (
+                    not groq_success
+                    and model is None
+                    and (not gpu_available)
+                    and SETTINGS.get("use_local_cpu", True)
+                    and groq_failure_streak >= GROQ_FAILURES_BEFORE_CPU
+                ):
+                    initialize_local_model_cpu()
+
+                # If Groq failed, try local model (GPU or CPU) when available
+                if not groq_success and model is not None:
+                    try:
+                        local_start_time = time.time()
+                        local_transcript = transcribe_with_local_model(
+                            audio_buffer_for_processing, keyword_index
+                        )
+                        if local_transcript and local_transcript != "Transcription failed":
+                            local_duration = time.time() - local_start_time
+                            logging.info(f"Local transcription successful in {local_duration:.2f}s")
+                            transcript = local_transcript
+                    except Exception as e:
+                        logging.error(f"Local transcription failed: {e}")
             else:
-                groq_failure_streak += 1
-
-            # If Groq keeps failing and no GPU is available, initialize CPU model on-demand
-            if (
-                not groq_success
-                and model is None
-                and (not gpu_available)
-                and SETTINGS.get("use_local_cpu", True)
-                and groq_failure_streak >= GROQ_FAILURES_BEFORE_CPU
-            ):
-                initialize_local_model_cpu()
-
-            # If Groq failed, try local model (GPU or CPU) when available
-            if not groq_success and model is not None:
+                groq_failure_streak = 0
+                if model is None and SETTINGS.get("use_local_cpu", True):
+                    initialize_local_model_cpu()
+                if model is None:
+                    logging.error("Local transcription disabled or unavailable and Groq is disabled in settings")
+                    continue
                 try:
                     local_start_time = time.time()
                     local_transcript = transcribe_with_local_model(
