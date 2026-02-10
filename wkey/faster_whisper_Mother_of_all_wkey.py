@@ -58,6 +58,7 @@ from settings_manager import (
     watch_settings,
     DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
 )
+from keyboard_shortcuts import KeyboardShortcutHandler
 from transcription_utils import (
     create_wav_buffer as create_wav_buffer_util,
     get_transcript_with_retries as get_transcript_with_retries_util,
@@ -277,6 +278,8 @@ wake_stream = None
 # Define beep sounds
 START_BEEP = (2080, 100)
 STOP_BEEP = (440, 100)
+PAUSE_BEEP_SEQUENCE = [(900, 80), (600, 80), (400, 120)]
+RESUME_BEEP_SEQUENCE = [(1200, 60), (1500, 60), (1800, 80)]
 
 # Locks for synchronization
 recording_lock = threading.Lock()
@@ -680,44 +683,42 @@ def stop_recording(keyword_index):
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
         reset_state()
 
-DEBOUNCE_TIME = 0.5
-last_key_press_time = 0
-recording_thread = None
+keyboard_handler = None
+
+def _start_recording_async(keyword_index):
+    threading.Thread(target=start_recording, args=(keyword_index,)).start()
+
+def _stop_recording_async(keyword_index):
+    threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+
+def init_keyboard_handler():
+    global keyboard_handler
+    keyboard_handler = KeyboardShortcutHandler(
+        record_keys=RECORD_KEYS.values(),
+        map_key_to_keyword_index=map_key_to_keyword_index,
+        start_recording=_start_recording_async,
+        stop_recording=_stop_recording_async,
+        toggle_pause=toggle_pause_state,
+        debounce_time=0.5,
+    )
 
 def on_press(key):
-    """Key press handler for voice activation keys (bypasses pause status)"""
+    """Key press handler for voice activation keys and pause shortcut."""
     try:
-        global last_key_press_time, recording_thread, recording
-            
-        current_time = time.time()
-        # Check if the pressed key is any of our record keys and we're not already recording
-        if key in RECORD_KEYS.values() and not recording:
-            if current_time - last_key_press_time > DEBOUNCE_TIME:
-                last_key_press_time = current_time
-                if recording is False:
-                    logging.info(f"Voice activation key pressed: {key}")
-                    keyword_index = map_key_to_keyword_index(key)
-                    threading.Thread(
-                        target=start_recording, args=(keyword_index,)
-                    ).start()
+        global recording
+        if keyboard_handler is None:
+            return
+        keyboard_handler.on_press(key, recording)
     except Exception as e:
         logging.error(f"Error in on_press: {e}", exc_info=True)
 
 def on_release(key):
-    """Key release handler for voice activation keys (bypasses pause status)"""
+    """Key release handler for voice activation keys and pause shortcut."""
     try:
-        global last_key_press_time, recording_thread, recording
-            
-        current_time = time.time()
-        # Check if the released key is any of our record keys and we're currently recording
-        if key in RECORD_KEYS.values() and recording:
-            if current_time - last_key_press_time > DEBOUNCE_TIME:
-                last_key_press_time = current_time
-                logging.info(f"Voice activation key released: {key}")
-                keyword_index = map_key_to_keyword_index(key)
-                threading.Thread(
-                    target=stop_recording, args=(keyword_index,)
-                ).start()
+        global recording
+        if keyboard_handler is None:
+            return
+        keyboard_handler.on_release(key, recording)
     except Exception as e:
         logging.error(f"Error in on_release: {e}", exc_info=True)
 
@@ -797,6 +798,26 @@ def check_pause_status():
         global_pause_active = False
     
     return global_pause_active
+
+def set_pause_state(paused: bool):
+    global global_pause_active, last_pause_check
+    try:
+        with open(FLAG_PATH, "w") as f:
+            f.write("PAUSED" if paused else "ACTIVE")
+        global_pause_active = paused
+        last_pause_check = time.time()
+    except Exception as e:
+        logging.error(f"Error setting pause state: {e}")
+
+def toggle_pause_state():
+    paused = check_pause_status()
+    set_pause_state(not paused)
+    if paused:
+        play_beep_sequence(RESUME_BEEP_SEQUENCE)
+        logging.info(f"{GREEN}Voice recognition resumed via shortcut{RESET}")
+    else:
+        play_beep_sequence(PAUSE_BEEP_SEQUENCE)
+        logging.info(f"{RED}Voice recognition paused via shortcut{RESET}")
 
 def check_microphone():
     try:
@@ -1241,6 +1262,13 @@ def beep(sound):
     except Exception as e:
         logging.error(f"Error in beep: {e}", exc_info=True)
 
+def play_beep_sequence(sequence):
+    try:
+        for frequency, duration in sequence:
+            winsound.Beep(frequency, duration)
+    except Exception as e:
+        logging.error(f"Error in play_beep_sequence: {e}", exc_info=True)
+
 """
 ########  ########  ######  ######## ######## ##    ## 
 ##     ## ##       ##    ## ##          ##    
@@ -1469,6 +1497,9 @@ def main():
     logging.info(
         f"{CYAN}wkey is active. Hold down {BOLD}{key_label.upper()}{RESET}{CYAN} to start dictating.{RESET}"
     )
+    logging.info(
+        f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
+    )
 
     def exception_handler(exc_type, exc_value, exc_traceback):
         logging.error(
@@ -1479,6 +1510,7 @@ def main():
     sys.excepthook = exception_handler
 
     try:
+        init_keyboard_handler()
         start_settings_watch()
         start_thread(listen_for_wake_word, "WakeWordListener")
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")

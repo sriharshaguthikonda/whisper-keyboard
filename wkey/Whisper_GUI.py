@@ -47,6 +47,7 @@ class VoicePauseController(QMainWindow):
         self.is_dark_theme = True
         self.timed_pause_end = None
         self.last_action = None
+
         
         self.last_time_check = datetime.now()
         self.time_jump_threshold = timedelta(seconds=120)
