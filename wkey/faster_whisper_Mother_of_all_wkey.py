@@ -26,47 +26,107 @@ import pythoncom
 from scipy.io.wavfile import write as wav_write
 import groq
 from groq import Groq
-from model_rotation import next_audio_stt_model
+try:
+    from model_rotation import next_audio_stt_model
+except ModuleNotFoundError:
+    from wkey.model_rotation import next_audio_stt_model
 import torch
 import logging
 from pynput.keyboard import Controller as KeyboardController, Key, Listener
 from dotenv import load_dotenv
 from faster_whisper import WhisperModel
-from voice_commands import (
-    execute_command_fuzzy,
-    execute_command_run_with_tool,
-    start_driver,
-    get_volume,
-    set_volume,
-    driver,
-)
+try:
+    from voice_commands import (
+        execute_command_fuzzy,
+        execute_command_run_with_tool,
+        start_driver,
+        get_volume,
+        set_volume,
+        driver,
+    )
+except ModuleNotFoundError:
+    from wkey.voice_commands import (
+        execute_command_fuzzy,
+        execute_command_run_with_tool,
+        start_driver,
+        get_volume,
+        set_volume,
+        driver,
+    )
 # from google_assistant import google_assistant
-from google_assistant_stub import google_assistant
-from pause_all import is_sound_playing_windows_processing
+try:
+    from google_assistant_stub import google_assistant
+except ModuleNotFoundError:
+    from wkey.google_assistant_stub import google_assistant
+try:
+    from pause_all import is_sound_playing_windows_processing
+except ModuleNotFoundError:
+    from wkey.pause_all import is_sound_playing_windows_processing
 import pyaudio
 from openwakeword.model import Model
 from concurrent.futures import ThreadPoolExecutor
-from clipboard_utils import paste_transcript
+try:
+    from clipboard_utils import paste_transcript
+except ModuleNotFoundError:
+    from wkey.clipboard_utils import paste_transcript
 import webrtcvad
-from voice_activity_detection import VoiceDetector
+try:
+    from voice_activity_detection import VoiceDetector
+except ModuleNotFoundError:
+    from wkey.voice_activity_detection import VoiceDetector
 import traceback
 from queue import Empty as QueueEmpty
 from contextlib import contextmanager
-from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
-from settings_manager import (
-    load_settings,
-    watch_settings,
-    DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
-)
-from keyboard_shortcuts import KeyboardShortcutHandler
-from transcription_utils import (
-    create_wav_buffer as create_wav_buffer_util,
-    get_transcript_with_retries as get_transcript_with_retries_util,
-    transcribe_pre_recording_buffer as transcribe_pre_recording_buffer_util,
-    transcribe_with_groq_async as transcribe_with_groq_async_util,
-    transcribe_with_local_model as transcribe_with_local_model_util,
-    validate_audio_buffer as validate_audio_buffer_util,
-)
+try:
+    from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
+except ModuleNotFoundError:
+    from wkey.faster_whisper_Mother_of_all_wkey_status_display import make_status_display
+try:
+    from settings_manager import (
+        load_settings,
+        watch_settings,
+        DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+    )
+except ModuleNotFoundError:
+    from wkey.settings_manager import (
+        load_settings,
+        watch_settings,
+        DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+    )
+try:
+    from keyboard_shortcuts import KeyboardShortcutHandler
+except ModuleNotFoundError:
+    from wkey.keyboard_shortcuts import KeyboardShortcutHandler
+try:
+    from pause_control import (
+        check_pause_status as pause_check_impl,
+        set_pause_state as pause_set_impl,
+        toggle_pause_state as pause_toggle_impl,
+    )
+except ModuleNotFoundError:
+    from wkey.pause_control import (
+        check_pause_status as pause_check_impl,
+        set_pause_state as pause_set_impl,
+        toggle_pause_state as pause_toggle_impl,
+    )
+try:
+    from transcription_utils import (
+        create_wav_buffer as create_wav_buffer_util,
+        get_transcript_with_retries as get_transcript_with_retries_util,
+        transcribe_pre_recording_buffer as transcribe_pre_recording_buffer_util,
+        transcribe_with_groq_async as transcribe_with_groq_async_util,
+        transcribe_with_local_model as transcribe_with_local_model_util,
+        validate_audio_buffer as validate_audio_buffer_util,
+    )
+except ModuleNotFoundError:
+    from wkey.transcription_utils import (
+        create_wav_buffer as create_wav_buffer_util,
+        get_transcript_with_retries as get_transcript_with_retries_util,
+        transcribe_pre_recording_buffer as transcribe_pre_recording_buffer_util,
+        transcribe_with_groq_async as transcribe_with_groq_async_util,
+        transcribe_with_local_model as transcribe_with_local_model_util,
+        validate_audio_buffer as validate_audio_buffer_util,
+    )
 
 # Set up driver reference for commands_and_tools
 try:
@@ -278,8 +338,6 @@ wake_stream = None
 # Define beep sounds
 START_BEEP = (2080, 100)
 STOP_BEEP = (440, 100)
-PAUSE_BEEP_SEQUENCE = [(900, 80), (600, 80), (400, 120)]
-RESUME_BEEP_SEQUENCE = [(1200, 60), (1500, 60), (1800, 80)]
 
 # Locks for synchronization
 recording_lock = threading.Lock()
@@ -420,7 +478,7 @@ def decrease_volume_all():
         if initial_volume is None or current_volume != initial_volume:
             initial_volume = current_volume
         print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-        set_volume(0.05)
+        set_volume(0.1)
     except Exception as e:
         logging.error(f"Error in decrease_volume_all: {e}", exc_info=True)
 
@@ -776,48 +834,35 @@ def save_audio(
  #######   ###  ###   ###  ###  
 """
 
+def _get_pause_flag_path():
+    cwd_flag = os.path.join(os.getcwd(), os.path.basename(FLAG_PATH))
+    if os.path.abspath(cwd_flag) != os.path.abspath(FLAG_PATH):
+        return cwd_flag
+    return FLAG_PATH
+
 def check_pause_status():
     """Check if voice recognition should be paused"""
     global global_pause_active, last_pause_check
-    
-    current_time = time.time()
-    if current_time - last_pause_check < 0.5:
-        return global_pause_active
-    
-    last_pause_check = current_time
-    
-    try:
-        if os.path.exists(FLAG_PATH):
-            with open(FLAG_PATH, "r") as f:
-                status = f.read().strip()
-                global_pause_active = (status == "PAUSED")
-        else:
-            global_pause_active = False
-    except Exception as e:
-        logging.error(f"Error checking pause status: {e}")
-        global_pause_active = False
-    
-    return global_pause_active
+    flag_path = _get_pause_flag_path()
+    global_pause_active, last_pause_check, paused = pause_check_impl(
+        flag_path, last_pause_check, global_pause_active
+    )
+    return paused
 
 def set_pause_state(paused: bool):
     global global_pause_active, last_pause_check
-    try:
-        with open(FLAG_PATH, "w") as f:
-            f.write("PAUSED" if paused else "ACTIVE")
-        global_pause_active = paused
-        last_pause_check = time.time()
-    except Exception as e:
-        logging.error(f"Error setting pause state: {e}")
+    pause_set_impl(_get_pause_flag_path(), paused)
+    global_pause_active = paused
+    last_pause_check = time.time()
 
 def toggle_pause_state():
-    paused = check_pause_status()
-    set_pause_state(not paused)
-    if paused:
-        play_beep_sequence(RESUME_BEEP_SEQUENCE)
-        logging.info(f"{GREEN}Voice recognition resumed via shortcut{RESET}")
-    else:
-        play_beep_sequence(PAUSE_BEEP_SEQUENCE)
+    global global_pause_active, last_pause_check
+    global_pause_active = pause_toggle_impl(_get_pause_flag_path(), global_pause_active)
+    last_pause_check = time.time()
+    if global_pause_active:
         logging.info(f"{RED}Voice recognition paused via shortcut{RESET}")
+    else:
+        logging.info(f"{GREEN}Voice recognition resumed via shortcut{RESET}")
 
 def check_microphone():
     try:
@@ -1213,18 +1258,18 @@ def create_wav_buffer(audio_buffer):
 
 
 async def get_transcript_with_retries(byte_io, keyword_index, max_retries=3):
-    merged_settings = {**SETTINGS, "max_retries": max_retries}
-    return await get_transcript_with_retries_util(
-        byte_io,
-        keyword_index,
-        merged_settings,
-        api_key,
-        get_groq_audio_model,
-        General_gorq_system_prompt,
-        groq_session_holder,
-        model,
-        sample_rate,
-    )
+    for attempt in range(max_retries):
+        try:
+            if SETTINGS.get("fallback_to_groq", True):
+                transcript = await transcribe_with_groq_async(byte_io, keyword_index)
+                if transcript:
+                    return transcript
+        except Exception as e:
+            logging.error("Transcription attempt %s failed: %s", attempt + 1, e)
+            if attempt == max_retries - 1:
+                return transcribe_with_local_model(byte_io, keyword_index)
+        await asyncio.sleep(1)
+    return None
 
 async def process_transcript(transcript, keyword_index, audio_buffer):
     try:
@@ -1261,13 +1306,6 @@ def beep(sound):
         winsound.Beep(frequency, duration)
     except Exception as e:
         logging.error(f"Error in beep: {e}", exc_info=True)
-
-def play_beep_sequence(sequence):
-    try:
-        for frequency, duration in sequence:
-            winsound.Beep(frequency, duration)
-    except Exception as e:
-        logging.error(f"Error in play_beep_sequence: {e}", exc_info=True)
 
 """
 ########  ########  ######  ######## ######## ##    ## 
