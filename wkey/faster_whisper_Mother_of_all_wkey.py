@@ -1141,12 +1141,12 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
                 paste_transcript(transcript, beep)
         elif keyword_index == 1 and "computer" in transcript:
             keyword_pos = transcript.index("computer")
-            stripped = transcript[key_pos + len("computer") :].strip()
+            stripped = transcript[keyword_pos + len("computer") :].strip()
             if stripped:
                 transcript_queue.put((stripped, keyword_index))
         elif keyword_index == 2 and "lama" in transcript:
             keyword_pos = transcript.index("lama")
-            stripped = transcript[key_pos + len("lama") :].strip()
+            stripped = transcript[keyword_pos + len("lama") :].strip()
             if stripped:
                 paste_transcript(stripped, beep)
         else:
