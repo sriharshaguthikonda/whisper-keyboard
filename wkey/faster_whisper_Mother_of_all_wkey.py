@@ -432,7 +432,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             with recording_lock:
                 recording = False
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
-        elif keyword_index == 3 and "jarvis" not in pre_recording_transcript.lower():
+        elif keyword_index == 3 and "google" not in pre_recording_transcript.lower():
             True_positve_audio = False
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
