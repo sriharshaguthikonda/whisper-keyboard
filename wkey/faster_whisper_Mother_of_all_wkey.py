@@ -548,7 +548,6 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
-            beep(STOP_BEEP)
             with recording_lock:
                 recording = False
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
@@ -557,7 +556,6 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
-            beep(STOP_BEEP)
             with recording_lock:
                 recording = False
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
@@ -566,7 +564,6 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
-            beep(STOP_BEEP)
             with recording_lock:
                 recording = False
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()

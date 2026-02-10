@@ -38,7 +38,7 @@ TOOL_USE_MODELS = [
 # Audio/STT models for Groq whisper endpoint
 AUDIO_STT_MODELS = [
     "whisper-large-v3",
-    "whisper-large-v3-turbo",
+    #"whisper-large-v3-turbo",
 ]
 
 tool_use_rotator = ModelRotator("tool_use", TOOL_USE_MODELS)
