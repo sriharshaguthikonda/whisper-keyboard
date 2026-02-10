@@ -134,6 +134,22 @@ try:
     from transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
 except ModuleNotFoundError:
     from wkey.transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
+try:
+    from audio_io import (
+        create_audio_buffers,
+        audio_callback as audio_callback_impl,
+        initialize_input_stream as initialize_input_stream_impl,
+        snapshot_audio_buffer as snapshot_audio_buffer_impl,
+        wait_for_silence as wait_for_silence_impl,
+    )
+except ModuleNotFoundError:
+    from wkey.audio_io import (
+        create_audio_buffers,
+        audio_callback as audio_callback_impl,
+        initialize_input_stream as initialize_input_stream_impl,
+        snapshot_audio_buffer as snapshot_audio_buffer_impl,
+        wait_for_silence as wait_for_silence_impl,
+    )
 
 # Set up driver reference for commands_and_tools
 try:
@@ -366,12 +382,16 @@ PRE_RECORDING_DURATION = 3
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
-pre_recording_buffer = np.zeros((BUFFER_SIZE, channels), dtype=np.float32)
-pre_recording_buffer_f24 = np.zeros(
-    (sample_rate * 3, channels), dtype=np.float32
+(
+    pre_recording_buffer,
+    pre_recording_buffer_f24,
+    buffer_index,
+    audio_buffer,
+) = create_audio_buffers(
+    buffer_size=BUFFER_SIZE,
+    sample_rate=sample_rate,
+    channels=channels,
 )
-buffer_index = 0
-audio_buffer = []
 
 # Add a context manager for audio operations
 @contextmanager
@@ -387,29 +407,25 @@ def audio_callback(indata, frames, time, status):
     try:
         with audio_operation_guard():
             global buffer_index, audio_buffer
-
-            if status:
-                logging.warning(f"{YELLOW}Audio callback status: {status}{RESET}")
-                return
-
-            with recording_lock:
-                if recording:
-                    if isinstance(indata, np.ndarray):
-                        with audio_data_lock:
-                            audio_buffer = np.append(audio_buffer, indata.flatten())
-                    else:
-                        logging.error(
-                            f"{RED}Invalid indata type: {type(indata)}{RESET}"
-                        )
-                else:
-                    end_index = buffer_index + frames
-                    if end_index > BUFFER_SIZE:
-                        end_index = BUFFER_SIZE
-                    chunk = indata[: end_index - buffer_index]
-                    pre_recording_buffer[buffer_index:end_index] = chunk
-                    if pre_recording_buffer_f24 is not None:
-                        pre_recording_buffer_f24[buffer_index:end_index] = chunk
-                    buffer_index = (buffer_index + frames) % BUFFER_SIZE
+            buffer_index, audio_buffer = audio_callback_impl(
+                indata=indata,
+                frames=frames,
+                time_info=time,
+                status=status,
+                is_recording=lambda: recording,
+                buffer_index=buffer_index,
+                audio_buffer=audio_buffer,
+                pre_recording_buffer=pre_recording_buffer,
+                pre_recording_buffer_f24=pre_recording_buffer_f24,
+                buffer_size=BUFFER_SIZE,
+                recording_lock=recording_lock,
+                audio_data_lock=audio_data_lock,
+                log=logging,
+                warning_color_prefix=YELLOW,
+                warning_color_suffix=RESET,
+                error_color_prefix=RED,
+                error_color_suffix=RESET,
+            )
 
     except Exception as e:
         logging.error(f"{RED}Error in audio_callback: {e}{RESET}", exc_info=True)
@@ -428,35 +444,17 @@ stream = None
 
 def initialize_input_stream():
     global stream
-    try:
-        if stream:
-            if not stream.active:
-                stream.start()
-            return True
-    except Exception:
-        try:
-            stream.close()
-        except Exception:
-            pass
-        stream = None
-
-    try:
-        stream = sd.InputStream(
-            callback=audio_callback,
-            device=None,
-            channels=1,
-            samplerate=sample_rate,
-            blocksize=int(sample_rate * 0.1),
-        )
-        stream.start()
-        logging.info(f"{GREEN}Microphone input stream initialized{RESET}")
-        return True
-    except Exception as e:
-        logging.info(
-            f"{RED}No microphone detected for input stream: {e}{RESET}"
-        )
-        stream = None
-        return False
+    success, stream = initialize_input_stream_impl(
+        stream=stream,
+        audio_callback=audio_callback,
+        sample_rate=sample_rate,
+        log=logging,
+        success_color_prefix=GREEN,
+        success_color_suffix=RESET,
+        error_color_prefix=RED,
+        error_color_suffix=RESET,
+    )
+    return success
 
 def initialize_wake_stream():
     global wake_stream, p
@@ -652,7 +650,6 @@ def stop_recording(keyword_index):
 
         logging.info(f"{GREEN}Stopping recording...{RESET}")
         hard_stop_limit = 5
-        silent_time = 0
         recording_start_time = time.time()
 
         pre_recording_data = np.roll(
@@ -687,50 +684,27 @@ def stop_recording(keyword_index):
         else:
             stop_delay_threshold = 2
 
-        while silent_time <= stop_delay_threshold:
-            if stream and stream.active:
-                with audio_data_lock:
-                    if isinstance(audio_buffer, list):
-                        local_audio_buffer = np.array(audio_buffer)
-                    else:
-                        local_audio_buffer = audio_buffer.copy()
-
-                frame_duration = 30
-                frame_size = int(sample_rate * frame_duration / 1000)
-                audio_frame = local_audio_buffer[-frame_size:]
-                audio_int16 = (audio_frame * 32767).astype(np.int16)
-                audio_bytes = audio_int16.tobytes()
-
-                try:
-                    is_speech = vad_detector.vad.is_speech(
-                        audio_bytes, vad_detector.sample_rate
-                    )
-                    if is_speech:
-                        silent_time = 0
-                        logging.info(
-                            f"{PINK}Voice detected, continuing recording...{RESET}"
-                        )
-                    else:
-                        silent_time += 0.1
-                except Exception as e:
-                    logging.error(f"{RED}VAD error: {e}{RESET}", exc_info=True)
-                    silent_time += 0.1
-
-                if time.time() - recording_start_time > hard_stop_limit:
-                    logging.info(
-                        f"{ORANGE}Hard stop limit reached, stopping recording.{RESET}"
-                    )
-                    break
-
-                time.sleep(0.1)
-            else:
-                logging.info(f"{YELLOW}Input stream inactive. Stopping recording.{RESET}")
-                break
-        with audio_data_lock:
-            if isinstance(audio_buffer, list):
-                local_audio_buffer = np.array(audio_buffer)
-            else:
-                local_audio_buffer = audio_buffer.copy()
+        wait_for_silence_impl(
+            stream=stream,
+            audio_buffer=audio_buffer,
+            audio_data_lock=audio_data_lock,
+            vad_detector=vad_detector,
+            sample_rate=sample_rate,
+            hard_stop_limit=hard_stop_limit,
+            stop_delay_threshold=stop_delay_threshold,
+            log=logging,
+            voice_detected_prefix=PINK,
+            voice_detected_suffix=RESET,
+            vad_error_prefix=RED,
+            vad_error_suffix=RESET,
+            hard_stop_prefix=ORANGE,
+            hard_stop_suffix=RESET,
+            stream_inactive_prefix=YELLOW,
+            stream_inactive_suffix=RESET,
+        )
+        local_audio_buffer = snapshot_audio_buffer_impl(
+            audio_buffer, audio_data_lock
+        )
         audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
         audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")
