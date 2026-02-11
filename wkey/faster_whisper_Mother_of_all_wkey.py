@@ -1189,8 +1189,8 @@ def display_pause_status(start: bool = True):
 
         _spinner = make_status_display(
             check_pause_status=check_pause_status,
-            active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word...{RESET}",
-            paused_message=f"{RED}VOICE RECOGNITION PAUSED{RESET}",
+            active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word... (Ctrl+Alt+Shift+ScrollLock to pause){RESET}",
+            paused_message=f"{RED}VOICE RECOGNITION PAUSED - Press Ctrl+Alt+Shift+ScrollLock to resume{RESET}",
             spinner_frames=(
                 f"{RED}█{RESET}",
                 f"{BLUE}▄{RESET}",

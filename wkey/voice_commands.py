@@ -20,6 +20,7 @@ from selenium.webdriver.common.by import By
 
 
 import time
+import re
 import subprocess
 import psutil
 
@@ -402,7 +403,9 @@ def search_everything(query: str = ""):
         everything_path = r"C:\Program Files\Everything 1.5a\Everything64.exe"
         cmd = [everything_path]
         if query:
-            cmd.extend(["-search", query])
+            cleaned = re.sub(r"[^\w\s]", " ", query)
+            cleaned = " ".join(cleaned.split())
+            cmd.extend(["-search", cleaned])
         subprocess.run(cmd)
     except Exception as e:
         logging.error(f"Error executing search_everything: {e}", exc_info=True)
