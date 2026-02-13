@@ -442,6 +442,8 @@ COMMAND_MAPPINGS = {
     "restart voicemeeter": [
         "restart voice meter",
         "set voice meter",
+        "restart vb matrix",
+        "restart vb audio matrix",
     ],
     "start display fusion": [
         "start display fusion",
@@ -555,7 +557,7 @@ ACTIONS = {
     # System Commands
     "ping google": lambda: execute_system_command("ping www.google.com"),
     "flush dns": lambda: execute_system_command("ipconfig /flushdns"),
-    # Voicemeeter Commands
+    # VB Matrix Commands
     "restart voicemeeter": lambda: subprocess.run(
         ["C:\\Program Files (x86)\\VB\\Voicemeeter\\VBAudioMatrix_x64.exe", "-r"]
     ),
@@ -908,7 +910,7 @@ tools = [
         "type": "function",
         "function": {
             "name": "restart_voicemeeter",
-            "description": "Restart Voicemeeter",
+            "description": "Restart VB Matrix (VB-Audio Matrix)",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },

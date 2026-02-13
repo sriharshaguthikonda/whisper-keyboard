@@ -644,13 +644,13 @@ def flush_dns():
         logging.error(f"Error executing flush_dns: {e}", exc_info=True)
 
 
-# Voicemeeter commands
+# VB Matrix commands
 def restart_voicemeeter():
     try:
         initial_volume = get_volume()
         print(initial_volume)
         subprocess.run(
-            ["C:\\Program Files (x86)\\VB\\Voicemeeter\\voicemeeter8x64.exe", "-r"]
+            ["C:\\Program Files (x86)\\VB\\Voicemeeter\\VBAudioMatrix_x64.exe", "-r"]
         )
         time.sleep(2)
         set_volume(initial_volume)

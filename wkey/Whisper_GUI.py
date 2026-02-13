@@ -321,13 +321,13 @@ class VoicePauseController(QMainWindow):
         self.run_faster_whisper_btn.setToolTip("Launch Faster Whisper script")
         controls_layout.addWidget(self.run_faster_whisper_btn)
 
-        # Add test Voicemeeter button
-        self.test_voicemeeter_button = QPushButton("Test Voicemeeter Restart")
+        # Add test VB Matrix button
+        self.test_voicemeeter_button = QPushButton("Test VB Matrix Restart")
         self.test_voicemeeter_button.setObjectName("testButton")
         self.test_voicemeeter_button.clicked.connect(self.restart_voicemeeter)
         self.test_voicemeeter_button.setFont(QFont("Segoe UI", 10))
         self.test_voicemeeter_button.setMinimumHeight(40)
-        self.test_voicemeeter_button.setToolTip("Manually test Voicemeeter restart")
+        self.test_voicemeeter_button.setToolTip("Manually test VB Matrix restart")
         controls_layout.addWidget(self.test_voicemeeter_button)
 
         self.auto_unpause_check = QCheckBox("Auto-unpause after timed pause")
@@ -595,14 +595,14 @@ class VoicePauseController(QMainWindow):
         try:
             # Get current volume before restarting
             
-            # Restart Voicemeeter
-            voicemeeter_path = r"C:\Program Files (x86)\VB\Voicemeeter\voicemeeter8x64.exe"
-            subprocess.Popen([voicemeeter_path, "-r"], 
+            # Restart VB Matrix
+            vb_matrix_path = r"C:\Program Files (x86)\VB\Voicemeeter\VBAudioMatrix_x64.exe"
+            subprocess.Popen([vb_matrix_path, "-r"], 
                             shell=True,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL)
             
-            # Wait for Voicemeeter to restart
+            # Wait for VB Matrix to restart
             time.sleep(3)
             
             # Restore volume
@@ -633,7 +633,7 @@ class VoicePauseController(QMainWindow):
                     if time_difference > self.time_jump_threshold:
                         print(f"Detected time jump of {time_difference}. Processing wake-up actions...")
                         
-                        # Restart Voicemeeter when time jump is detected
+                        # Restart VB Matrix when time jump is detected
                         voicemeeter_success = self.restart_voicemeeter()
                         
                         # Resume voice recognition if it was paused
@@ -646,7 +646,7 @@ class VoicePauseController(QMainWindow):
                         if voicemeeter_success:
                             status_msg = f"Wake detected - All systems restarted at {datetime.now().strftime('%H:%M:%S')}"
                         else:
-                            status_msg = f"Wake detected - Voice resumed (Voicemeeter issue) at {datetime.now().strftime('%H:%M:%S')}"
+                            status_msg = f"Wake detected - Voice resumed (VB Matrix issue) at {datetime.now().strftime('%H:%M:%S')}"
                         
                         self.last_action = status_msg
                         self.last_action_label.setText(status_msg)
@@ -663,12 +663,12 @@ class VoicePauseController(QMainWindow):
     # Optional: Add a manual test button to your GUI setup
     def add_test_button_to_gui(self):
         """Add this to your setup_gui method if you want a manual test button"""
-        self.test_voicemeeter_button = QPushButton("Test Voicemeeter Restart")
+        self.test_voicemeeter_button = QPushButton("Test VB Matrix Restart")
         self.test_voicemeeter_button.setObjectName("testButton")
         self.test_voicemeeter_button.clicked.connect(self.restart_voicemeeter)
         self.test_voicemeeter_button.setFont(QFont("Segoe UI", 10))
         self.test_voicemeeter_button.setMinimumHeight(40)
-        self.test_voicemeeter_button.setToolTip("Manually test Voicemeeter restart")
+        self.test_voicemeeter_button.setToolTip("Manually test VB Matrix restart")
         # Add this to your controls_layout where appropriate
         # controls_layout.addWidget(self.test_voicemeeter_button)
         
