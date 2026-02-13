@@ -650,14 +650,13 @@ def restart_voicemeeter():
         initial_volume = get_volume()
         print(initial_volume)
         subprocess.run(
-            ["C:\\Program Files (x86)\\VB\\Voicemeeter\\VBAudioMatrix_x64.exe", "-r"]
+            '"C:\\Program Files (x86)\\VB\\VBAudioMatrix\\VBAudioMatrix_x64.exe" -r',
+            shell=True
         )
         time.sleep(2)
         set_volume(initial_volume)
     except Exception as e:
         logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
-
-
 
 
 

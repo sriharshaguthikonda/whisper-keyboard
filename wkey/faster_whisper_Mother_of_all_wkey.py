@@ -382,6 +382,20 @@ STOP_BEEP = (440, 100)
 recording_lock = threading.Lock()
 audio_data_lock = threading.Lock()
 
+# Resource throttling state
+RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
+resource_relax_until = 0.0
+
+def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
+    """Extend relax window when the audio callback reports overload."""
+    global resource_relax_until
+    relax_until = time.time() + seconds
+    if relax_until > resource_relax_until:
+        resource_relax_until = relax_until
+
+def should_relax_resources():
+    return time.time() < resource_relax_until
+
 """
  ######  ######## ########  ########    ###    ##     ## 
 ##    ##    ##    ##     ## ##         ## ##   ###   ### 
@@ -421,6 +435,8 @@ def audio_callback(indata, frames, time, status):
     try:
         with audio_operation_guard():
             global buffer_index, audio_buffer
+            if status:
+                bump_resource_relax()
             buffer_index, audio_buffer = audio_callback_impl(
                 indata=indata,
                 frames=frames,
@@ -978,6 +994,7 @@ def listen_for_wake_word():
         stop_recording_async=_stop_recording_async,
         decrease_volume_all=decrease_volume_all,
         restore_volume_all=restore_volume_all,
+        should_relax=should_relax_resources,
         log=print,
     )
 

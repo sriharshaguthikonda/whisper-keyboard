@@ -2,6 +2,11 @@ import time
 import numpy as np
 from openwakeword.model import Model
 
+try:
+    import psutil
+except ImportError:
+    psutil = None
+
 
 DEFAULT_MODEL_PATHS = [
     r"C:\Windows_software\openai whisper\whisper-keyboard\wkey\openwakeword_models\onnx\hey_jarvis_v0.1.onnx",
@@ -19,6 +24,9 @@ DEFAULT_THRESHOLDS = {
 
 DEFAULT_CHUNK = 5120
 DEFAULT_COOLDOWN = 6
+DEFAULT_RELAX_SLEEP = 0.25
+DEFAULT_CPU_THRESHOLD = 80.0
+DEFAULT_CPU_CHECK_INTERVAL = 1.0
 
 
 class WakeWordListener:
@@ -29,6 +37,9 @@ class WakeWordListener:
         chunk=DEFAULT_CHUNK,
         cooldown=DEFAULT_COOLDOWN,
         vad_threshold=0.3,
+        relax_sleep=DEFAULT_RELAX_SLEEP,
+        cpu_threshold=DEFAULT_CPU_THRESHOLD,
+        cpu_check_interval=DEFAULT_CPU_CHECK_INTERVAL,
     ):
         if model_paths is None:
             model_paths = DEFAULT_MODEL_PATHS
@@ -44,6 +55,20 @@ class WakeWordListener:
         self.chunk = chunk
         self.cooldown = cooldown
         self.last_detection_time = 0
+        self.relax_sleep = relax_sleep
+        self.cpu_threshold = cpu_threshold
+        self.cpu_check_interval = cpu_check_interval
+        self._last_cpu_check = 0.0
+        self._last_cpu_percent = 0.0
+
+    def _cpu_overloaded(self):
+        if psutil is None or self.cpu_threshold is None:
+            return False
+        now = time.time()
+        if now - self._last_cpu_check >= self.cpu_check_interval:
+            self._last_cpu_percent = psutil.cpu_percent(interval=None)
+            self._last_cpu_check = now
+        return self._last_cpu_percent >= self.cpu_threshold
 
     def listen(
         self,
@@ -55,6 +80,7 @@ class WakeWordListener:
         stop_recording_async,
         decrease_volume_all,
         restore_volume_all,
+        should_relax=None,
         log=print,
     ):
         log("Listening for wake words...")
@@ -68,6 +94,11 @@ class WakeWordListener:
                 wake_stream = get_wake_stream()
                 if wake_stream:
                     data = wake_stream.read(self.chunk, exception_on_overflow=False)
+
+                    if (should_relax and should_relax()) or self._cpu_overloaded():
+                        time.sleep(self.relax_sleep)
+                        continue
+
                     pcm = np.frombuffer(data, dtype=np.int16)
 
                     _ = self.model.predict(pcm)
