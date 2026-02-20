@@ -280,12 +280,31 @@ LAUNCH_COMMANDS = {
     "startup folder": "shell:startup",
     "services": "services.msc",
     "sound control panel": "mmsys.cpl",
+    "spotify": "spotify",
 }
+
+def _launch_spotify():
+    candidates = [
+        os.path.expandvars(r"%APPDATA%\\Spotify\\Spotify.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\\Spotify\\Spotify.exe"),
+        r"C:\\Program Files\\Spotify\\Spotify.exe",
+        r"C:\\Program Files (x86)\\Spotify\\Spotify.exe",
+    ]
+    for path in candidates:
+        if path and os.path.exists(path):
+            os.startfile(path)
+            return True
+
+    execute_system_command("start spotify:")
+    return False
 
 
 def launch_application(app: str):
     try:
         normalized = app.strip().lower()
+        if normalized == "spotify":
+            _launch_spotify()
+            return
         if normalized not in LAUNCH_COMMANDS:
             # fallback to closest known app if confidence is good
             match, score = process.extractOne(normalized, list(LAUNCH_COMMANDS.keys()))

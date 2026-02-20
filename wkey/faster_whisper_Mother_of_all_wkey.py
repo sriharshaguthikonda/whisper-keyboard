@@ -382,6 +382,11 @@ STOP_BEEP = (440, 100)
 recording_lock = threading.Lock()
 audio_data_lock = threading.Lock()
 
+# Wake-word validation synchronization
+keyword_validation_event = threading.Event()
+keyword_validation_result = None
+KEYWORD_VALIDATION_TIMEOUT = 1.5
+
 # Resource throttling state
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
 resource_relax_until = 0.0
@@ -552,8 +557,9 @@ global True_positve_audio
 True_positve_audio = True
 
 def check_keywords_in_transcription(pre_recording_data, keyword_index):
-    global True_positve_audio, recording
+    global True_positve_audio, recording, keyword_validation_result
     try:
+        keyword_validation_result = None
         pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
 
         logging.error(
@@ -562,6 +568,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
 
         if keyword_index == 1 and "computer" not in pre_recording_transcript.lower():
             True_positve_audio = False
+            keyword_validation_result = False
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
@@ -570,6 +577,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
             True_positve_audio = False
+            keyword_validation_result = False
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
@@ -578,15 +586,21 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         elif keyword_index == 3 and "google" not in pre_recording_transcript.lower():
             True_positve_audio = False
+            keyword_validation_result = False
             logging.info(
                 f"{RED}No relevant keyword found in pre-recording. Stopping recording.{RESET}"
             )
             with recording_lock:
                 recording = False
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+        else:
+            keyword_validation_result = True
 
     except Exception as e:
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
+        keyword_validation_result = None
+    finally:
+        keyword_validation_event.set()
 
 def start_recording(keyword_index=None):
     """Start recording audio.
@@ -600,7 +614,7 @@ def start_recording(keyword_index=None):
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
             return
             
-        global stream, recording, play_pause_pressed, something_is_playing, True_positve_audio
+        global stream, recording, play_pause_pressed, something_is_playing, True_positve_audio, keyword_validation_result
 
         with recording_lock:
             if recording:
@@ -608,6 +622,8 @@ def start_recording(keyword_index=None):
                 return
 
             True_positve_audio = True
+            keyword_validation_event.clear()
+            keyword_validation_result = None
             recording = True
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
@@ -653,19 +669,35 @@ def start_recording(keyword_index=None):
 
 def stop_recording(keyword_index):
     try:
-        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector
+        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result
 
         if not recording:
-            if play_pause_pressed:
+            if initial_volume is not None:
                 threading.Thread(target=restore_volume_all).start()
-                play_pause_pressed = False
+            play_pause_pressed = False
             beep(STOP_BEEP)
             return
 
-        if not True_positve_audio:
-            if play_pause_pressed:
+        if keyword_index in (1, 2, 3) and not keyword_validation_event.is_set():
+            keyword_validation_event.wait(timeout=KEYWORD_VALIDATION_TIMEOUT)
+
+        if keyword_index in (1, 2, 3) and keyword_validation_result is False:
+            if initial_volume is not None:
                 threading.Thread(target=restore_volume_all).start()
-                play_pause_pressed = False
+            play_pause_pressed = False
+            beep(STOP_BEEP)
+            with recording_lock:
+                recording = False
+            logging.info(
+                f"{MAGENTA}Wake-word validation failed. Dropping recording.{RESET}"
+            )
+            True_positve_audio = True
+            return
+
+        if not True_positve_audio:
+            if initial_volume is not None:
+                threading.Thread(target=restore_volume_all).start()
+            play_pause_pressed = False
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
