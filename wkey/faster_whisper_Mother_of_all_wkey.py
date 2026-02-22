@@ -411,7 +411,8 @@ def should_relax_resources():
  ######     ##    ##     ## ######## ##     ## ##     ## 
 """
 
-PRE_RECORDING_DURATION = 3
+PRE_RECORDING_DURATION = 2
+PRE_RECORDING_F24_SECONDS = 1
 BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
 channels = 1
 
@@ -424,6 +425,7 @@ channels = 1
     buffer_size=BUFFER_SIZE,
     sample_rate=sample_rate,
     channels=channels,
+    pre_recording_f24_seconds=PRE_RECORDING_F24_SECONDS,
 )
 
 # Add a context manager for audio operations

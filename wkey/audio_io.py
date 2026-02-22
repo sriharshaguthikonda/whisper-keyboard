@@ -59,13 +59,31 @@ def audio_callback(
                         f"{error_color_prefix}Invalid indata type: {type(indata)}{error_color_suffix}"
                     )
             else:
+                def _write_circular(buffer, start_idx, data):
+                    buf_len = len(buffer)
+                    if buf_len == 0:
+                        return
+                    data_len = len(data)
+                    first_len = min(data_len, buf_len - start_idx)
+                    if first_len > 0:
+                        buffer[start_idx : start_idx + first_len] = data[:first_len]
+                    remaining = data_len - first_len
+                    if remaining > 0:
+                        buffer[0:remaining] = data[first_len:first_len + remaining]
+
                 end_index = buffer_index + frames
                 if end_index > buffer_size:
                     end_index = buffer_size
                 chunk = indata[: end_index - buffer_index]
-                pre_recording_buffer[buffer_index:end_index] = chunk
+                _write_circular(pre_recording_buffer, buffer_index, chunk)
                 if pre_recording_buffer_f24 is not None:
-                    pre_recording_buffer_f24[buffer_index:end_index] = chunk
+                    f24_len = len(pre_recording_buffer_f24)
+                    if f24_len:
+                        _write_circular(
+                            pre_recording_buffer_f24,
+                            buffer_index % f24_len,
+                            chunk,
+                        )
                 buffer_index = (buffer_index + frames) % buffer_size
     except Exception as e:
         log.error(

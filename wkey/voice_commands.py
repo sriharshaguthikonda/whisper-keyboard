@@ -54,6 +54,7 @@ from commands_and_tools import (
     tools,
     extra_tools,
     launch_application,
+    stop_spotify,
 )
 from model_rotation import next_tool_use_model
 

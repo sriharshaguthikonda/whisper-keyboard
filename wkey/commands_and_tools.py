@@ -298,6 +298,12 @@ def _launch_spotify():
     execute_system_command("start spotify:")
     return False
 
+def stop_spotify():
+    try:
+        subprocess.run(["taskkill", "/F", "/IM", "Spotify.exe"])
+    except Exception as e:
+        logging.error(f"Error stopping Spotify: {e}", exc_info=True)
+
 
 def launch_application(app: str):
     try:
@@ -451,6 +457,12 @@ COMMAND_MAPPINGS = {
         "open date and time",
         "date and time",
     ],
+    "stop spotify": [
+        "stop spotify",
+        "close spotify",
+        "exit spotify",
+        "quit spotify",
+    ],
     # System Commands
     "ping google": [
         "ping google",
@@ -567,6 +579,7 @@ ACTIONS = {
     "stop media": pause_song,
     "next track": next_track,
     "previous track": previous_track,
+    "stop spotify": stop_spotify,
     # Custom or Complex Operations
     "open device manager": lambda: launch_application("device manager"),
     "open disk management": lambda: launch_application("disk management"),
@@ -855,6 +868,14 @@ tools = [
         "function": {
             "name": "restart_media",
             "description": "Restart media playback",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stop_spotify",
+            "description": "Close Spotify application",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
