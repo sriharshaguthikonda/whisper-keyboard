@@ -391,6 +391,10 @@ KEYWORD_VALIDATION_TIMEOUT = 1.5
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
 resource_relax_until = 0.0
 
+# Post-resume cooldown to avoid spurious short transcripts
+RESUME_COOLDOWN_SECONDS = 5.0
+resume_cooldown_until = 0.0
+
 def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
     """Extend relax window when the audio callback reports overload."""
     global resource_relax_until
@@ -400,6 +404,27 @@ def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
 
 def should_relax_resources():
     return time.time() < resource_relax_until
+
+def _drain_queue(q):
+    try:
+        while not q.empty():
+            q.get_nowait()
+    except Exception:
+        pass
+
+def handle_resume_event(reason="resume"):
+    """Reset buffers/queues and add a short cooldown after sleep/hibernation."""
+    global resume_cooldown_until, pre_recording_buffer, pre_recording_buffer_f24
+    resume_cooldown_until = time.time() + RESUME_COOLDOWN_SECONDS
+    _drain_queue(audio_buffer_queue)
+    _drain_queue(transcript_queue)
+    try:
+        pre_recording_buffer.fill(0)
+        if pre_recording_buffer_f24 is not None:
+            pre_recording_buffer_f24.fill(0)
+    except Exception:
+        pass
+    logging.info(f"{YELLOW}Resume cooldown active ({reason}){RESET}")
 
 """
  ######  ######## ########  ########    ###    ##     ## 
@@ -481,6 +506,7 @@ stream = None
 
 def initialize_input_stream():
     global stream
+    was_inactive = stream is None or (hasattr(stream, "active") and not stream.active)
     success, stream = initialize_input_stream_impl(
         stream=stream,
         audio_callback=audio_callback,
@@ -491,6 +517,8 @@ def initialize_input_stream():
         error_color_prefix=RED,
         error_color_suffix=RESET,
     )
+    if success and was_inactive:
+        handle_resume_event("input stream init")
     return success
 
 def initialize_wake_stream():
@@ -611,9 +639,13 @@ def start_recording(keyword_index=None):
         keyword_index: Index of the wake word that triggered recording, or None if triggered by F24 key
     """
     try:
-        # Only check pause status if this was triggered by a wake word (not manual keys)
+        # Only block wake-word triggers while paused; manual keys still work
         if keyword_index not in (None, 0) and check_pause_status():
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
+            return
+
+        if keyword_index not in (None, 0) and time.time() < resume_cooldown_until:
+            logging.info(f"{YELLOW}Resume cooldown active. Ignoring wake word recording request.{RESET}")
             return
             
         global stream, recording, play_pause_pressed, something_is_playing, True_positve_audio, keyword_validation_result
@@ -770,7 +802,12 @@ def stop_recording(keyword_index):
             audio_buffer, audio_data_lock
         )
         audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
-        audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
+        if keyword_index in (1, 2, 3) and time.time() < resume_cooldown_until:
+            logging.info(
+                f"{YELLOW}Resume cooldown active. Dropping wake-word recording.{RESET}"
+            )
+        else:
+            audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")
 
         threading.Thread(target=restore_volume_all).start()
@@ -971,6 +1008,7 @@ def reinitialize_pyaudio():
 def monitor_microphone_availability():
     try:
         global wake_stream, p
+        was_missing = False
         while True:
             if not check_microphone():
                 logging.info(
@@ -984,6 +1022,7 @@ def monitor_microphone_availability():
                         logging.info(f"Error stopping stream: {e}")
                     finally:
                         wake_stream = None
+                was_missing = True
             else:
                 if (wake_stream is None) or (not wake_stream.is_active()):
                     logging.info(
@@ -991,6 +1030,9 @@ def monitor_microphone_availability():
                     )
                     if not initialize_wake_stream():
                         reinitialize_pyaudio()
+                    if was_missing:
+                        handle_resume_event("microphone restore")
+                        was_missing = False
 
             time.sleep(10)
     except Exception as e:

@@ -118,8 +118,8 @@ GENERAL_MODEL = "llama3-70b-8192"
 ollama_model = "llama3.2:latest"
 
 
-# Path to your Edge WebDriver
-webdriver_path = r"C:\Users\deletable\Downloads\edgedriver_win64\msedgedriver.exe"
+# Path to your Edge WebDriver (optional override; default uses Selenium Manager)
+# webdriver_path = os.path.join(os.path.dirname(__file__), "drivers", "msedgedriver.exe")
 
 # Set up Edge options (use dedicated profile to avoid collisions/crashes)
 EDGE_PROFILE_DIR = r"C:\Users\deletable\AppData\Local\Microsoft\Edge\User Data\Profile_wkey_selenium"
@@ -144,8 +144,8 @@ options.add_argument("--remote-debugging-port=0")  # allow dynamic debug port
 # options.add_argument("--disable-gpu")
 
 
-# Initialize the WebDriver
-service = Service(webdriver_path)
+# Initialize the WebDriver (use Selenium Manager by default)
+service = Service()
 
 driver = None
 driver_pid = None
@@ -212,10 +212,7 @@ def reconnect_driver():
             # options = webdriver.EdgeOptions()
             # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
 
-            driver = webdriver.Edge(
-                options=options,
-                service_log_path="C:/Users/deletable/Downloads/edgedriver_win64/msedgedriver.log",
-            )
+            driver = webdriver.Edge(service=Service(), options=options)
             time.sleep(3)
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
