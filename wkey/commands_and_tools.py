@@ -403,6 +403,13 @@ COMMAND_MAPPINGS = {
     "open edge": ["open edge", "start edge"],
     "open chrome": ["open chrome", "start chrome"],
     "open firefox": ["open firefox", "start firefox"],
+    "open spotify": [
+        "open spotify",
+        "launch spotify",
+        "start spotify",
+        "play spotify",
+        "spotify",
+    ],
     # Volume Controls
     "open sound control panel": [
         "open sound control panel",
@@ -462,6 +469,7 @@ COMMAND_MAPPINGS = {
         "close spotify",
         "exit spotify",
         "quit spotify",
+        "kill spotify",
     ],
     # System Commands
     "ping google": [
@@ -569,6 +577,7 @@ ACTIONS = {
     "open edge": lambda: launch_application("edge"),
     "open chrome": lambda: launch_application("chrome"),
     "open firefox": lambda: launch_application("firefox"),
+    "open spotify": lambda: launch_application("spotify"),
     # Volume Controls
     "open sound control panel": lambda: launch_application("sound control panel"),
     "volume up": lambda: execute_pyautogui_press("volumeup"),

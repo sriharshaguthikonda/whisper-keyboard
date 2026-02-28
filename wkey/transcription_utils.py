@@ -11,33 +11,85 @@ from scipy.io.wavfile import write as wav_write
 def transcribe_pre_recording_buffer(
     pre_recording_data,
     sample_rate: int,
-    groq_client,
+    api_key: str,
     prompt: str,
     get_groq_audio_model: Callable[[], str],
     max_retries: int = 3,
     retry_delay: int = 2,
+    timeout_total: float = 10.0,
 ):
     """Transcribe a short pre-recording buffer using Groq."""
+    if not api_key:
+        logging.error("Groq API key missing for pre-recording transcription")
+        return ""
+
     try:
         byte_io = io.BytesIO()
         wav_write(byte_io, sample_rate, pre_recording_data)
         byte_io.seek(0)
+    except Exception as e:
+        logging.error("Error preparing pre-recording buffer: %s", e, exc_info=True)
+        return ""
 
+    async def _run():
+        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+        model_name = get_groq_audio_model()
+        timeout = aiohttp.ClientTimeout(
+            total=timeout_total,
+            connect=min(5.0, timeout_total),
+            sock_read=max(1.0, timeout_total - 5.0),
+        )
+
+        for attempt in range(max_retries):
+            try:
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    form_data = aiohttp.FormData()
+                    audio_bytes = byte_io.getvalue()
+                    form_data.add_field(
+                        "file",
+                        audio_bytes,
+                        filename="pre_recording.wav",
+                        content_type="audio/wav",
+                    )
+                    form_data.add_field("model", model_name)
+                    form_data.add_field("response_format", "json")
+                    form_data.add_field("prompt", prompt)
+                    form_data.add_field("language", "en")
+                    form_data.add_field("temperature", "0.0")
+
+                    async with session.post(url, data=form_data, headers=headers) as response:
+                        response_text = await response.text()
+                        if response.status >= 400:
+                            logging.error(
+                                "Groq API error %s %s: %s",
+                                response.status,
+                                response.reason,
+                                response_text,
+                            )
+                        response.raise_for_status()
+                        transcription = await response.json()
+                        return transcription.get("text", "").lower()
+            except Exception as e:
+                logging.error(
+                    "Error in transcribe_pre_recording_buffer (attempt %s): %s",
+                    attempt + 1,
+                    e,
+                    exc_info=True,
+                )
+                if attempt + 1 < max_retries:
+                    await asyncio.sleep(retry_delay)
+
+        return ""
+
+    try:
+        return asyncio.run(_run())
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
         try:
-            model_name = get_groq_audio_model()
-            transcription = groq_client.audio.transcriptions.create(
-                file=("pre_recording.wav", byte_io.getvalue()),
-                model=model_name,
-                response_format="json",
-                prompt=prompt,
-                language="en",
-                temperature=0.0,
-            )
-            return transcription.text.lower()
-        except Exception as e:
-            logging.error("Error in transcribe_pre_recording_buffer: %s", e, exc_info=True)
-            return ""
-
+            return loop.run_until_complete(_run())
+        finally:
+            loop.close()
     except Exception as e:
         logging.error("Error in transcribe_pre_recording_buffer: %s", e, exc_info=True)
         return ""
@@ -63,8 +115,9 @@ async def transcribe_with_groq_async(
             logging.info("transcribe_with_groq_async: Attempt %d of %d", attempt + 1, max_retries)
             
             # Create a fresh session for each request to avoid cross-event-loop issues
+            timeout = aiohttp.ClientTimeout(total=15, connect=5, sock_read=10)
             logging.info("transcribe_with_groq_async: Creating new aiohttp session")
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 logging.info("transcribe_with_groq_async: Building form data")
                 form_data = aiohttp.FormData()
                 audio_bytes = byte_io.getvalue()

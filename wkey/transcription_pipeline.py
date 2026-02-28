@@ -55,6 +55,8 @@ class TranscriptionPipeline:
         self.error_color_suffix = error_color_suffix
         self.groq_failure_streak = 0
         self.groq_failures_before_cpu = groq_failures_before_cpu
+        self.global_state.setdefault("transcribe_inflight", False)
+        self.global_state.setdefault("last_transcribe_activity", time.time())
 
     async def process_audio_async(self):
         while True:
@@ -93,9 +95,15 @@ class TranscriptionPipeline:
                     try:
                         self.log.info("process_audio_async: Starting Groq transcription")
                         groq_start_time = time.time()
-                        transcript = await self.transcribe_with_groq_async(
-                            byte_io, keyword_index, max_retries=max_retries
-                        )
+                        self.global_state["transcribe_inflight"] = True
+                        self.global_state["last_transcribe_activity"] = time.time()
+                        try:
+                            transcript = await self.transcribe_with_groq_async(
+                                byte_io, keyword_index, max_retries=max_retries
+                            )
+                        finally:
+                            self.global_state["transcribe_inflight"] = False
+                            self.global_state["last_transcribe_activity"] = time.time()
                         self.log.info(
                             "process_audio_async: Groq returned transcript=%r", transcript
                         )

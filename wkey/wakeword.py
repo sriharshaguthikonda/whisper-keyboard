@@ -80,6 +80,7 @@ class WakeWordListener:
         stop_recording_async,
         decrease_volume_all,
         restore_volume_all,
+        heartbeat=None,
         should_relax=None,
         log=print,
     ):
@@ -87,6 +88,8 @@ class WakeWordListener:
 
         while True:
             try:
+                if heartbeat:
+                    heartbeat()
                 if check_pause_status():
                     time.sleep(1)
                     continue

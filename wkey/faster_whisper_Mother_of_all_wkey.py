@@ -78,6 +78,7 @@ except ModuleNotFoundError:
 import traceback
 from queue import Empty as QueueEmpty
 from contextlib import contextmanager
+import faulthandler
 try:
     from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 except ModuleNotFoundError:
@@ -395,6 +396,9 @@ resource_relax_until = 0.0
 RESUME_COOLDOWN_SECONDS = 5.0
 resume_cooldown_until = 0.0
 
+FAULT_LOG_PATH = os.path.join(os.path.dirname(__file__), "faulthandler.log")
+_fault_log_handle = None
+
 def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
     """Extend relax window when the audio callback reports overload."""
     global resource_relax_until
@@ -589,6 +593,10 @@ True_positve_audio = True
 def check_keywords_in_transcription(pre_recording_data, keyword_index):
     global True_positve_audio, recording, keyword_validation_result
     try:
+        try:
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
         keyword_validation_result = None
         pre_recording_transcript = transcribe_pre_recording_buffer(pre_recording_data)
 
@@ -630,6 +638,10 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
         logging.error(f"Error in check_keywords_in_transcription: {e}", exc_info=True)
         keyword_validation_result = None
     finally:
+        try:
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
         keyword_validation_event.set()
 
 def start_recording(keyword_index=None):
@@ -1010,6 +1022,7 @@ def monitor_microphone_availability():
         global wake_stream, p
         was_missing = False
         while True:
+            touch_heartbeat()
             if not check_microphone():
                 logging.info(
                     f"{RED}No microphone detected. Pausing wake word detection...{RESET}"
@@ -1071,6 +1084,7 @@ def listen_for_wake_word():
         decrease_volume_all=decrease_volume_all,
         restore_volume_all=restore_volume_all,
         should_relax=should_relax_resources,
+        heartbeat=touch_heartbeat,
         log=print,
     )
 
@@ -1115,7 +1129,7 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
     return transcribe_pre_recording_buffer_util(
         pre_recording_data,
         sample_rate,
-        Groq_client,
+        api_key,
         transcribe_pre_recording_buffer_prompt,
         get_groq_audio_model,
         max_retries=max_retries,
@@ -1167,6 +1181,7 @@ def init_transcription_pipeline():
 
 async def process_audio_async():
     pipeline = init_transcription_pipeline()
+    global_state["last_heartbeat"] = time.time()
     await pipeline.process_audio_async()
 
 def validate_audio_buffer(audio_buffer):
@@ -1273,6 +1288,7 @@ async def clean_transcript():
     try:
         while True:
             try:
+                global_state["last_heartbeat"] = time.time()
                 transcript, keyword_index = transcript_queue.get()
                 logging.error(f"Transcript received in clean_transcript: {transcript}")
                 if keyword_index in (0, 1):
@@ -1356,6 +1372,7 @@ def start_thread(target, name):
             while True:
                 try:
                     target()
+                    global_state["last_heartbeat"] = time.time()
                 except Exception as e:
                     logging.error(
                         f"Thread {name} crashed with exception: {e}", exc_info=True
@@ -1372,7 +1389,51 @@ global_state = {
     "last_successful_operation": time.time(),
     "consecutive_failures": 0,
     "is_processing": False,
+    "last_heartbeat": time.time(),
+    "transcribe_inflight": False,
+    "last_transcribe_activity": time.time(),
 }
+
+WATCHDOG_INTERVAL_SECONDS = 30
+WATCHDOG_STALE_SECONDS = 120
+
+def start_watchdog():
+    """Dump thread stacks if no heartbeat for a while (helps catch silent hangs)."""
+    global _fault_log_handle
+    if _fault_log_handle is None:
+        try:
+            _fault_log_handle = open(FAULT_LOG_PATH, "a", buffering=1)
+            faulthandler.enable(_fault_log_handle, all_threads=True)
+        except Exception as e:
+            logging.error(f"{RED}Failed to init faulthandler: {e}{RESET}", exc_info=True)
+
+    def _watch():
+        while True:
+            try:
+                now = time.time()
+                if now - global_state.get("last_heartbeat", now) > WATCHDOG_STALE_SECONDS:
+                    logging.error(
+                        f"{RED}Watchdog: no heartbeat for {WATCHDOG_STALE_SECONDS}s. Dumping stacks...{RESET}"
+                    )
+                    faulthandler.dump_traceback(all_threads=True)
+                    # reset heartbeat so it doesn't spam
+                    global_state["last_heartbeat"] = now
+                if global_state.get("transcribe_inflight"):
+                    last_transcribe = global_state.get("last_transcribe_activity", now)
+                    if now - last_transcribe > (WATCHDOG_STALE_SECONDS + 30):
+                        logging.error(
+                            f"{RED}Watchdog: transcription stuck for {int(now - last_transcribe)}s. Dumping stacks...{RESET}"
+                        )
+                        faulthandler.dump_traceback(all_threads=True)
+                        global_state["last_transcribe_activity"] = now
+            except Exception as e:
+                logging.error(f"{RED}Watchdog error: {e}{RESET}", exc_info=True)
+            time.sleep(WATCHDOG_INTERVAL_SECONDS)
+
+    threading.Thread(target=_watch, name="Watchdog", daemon=True).start()
+
+def touch_heartbeat():
+    global_state["last_heartbeat"] = time.time()
 
 def monitor_program_health():
     try:
@@ -1471,6 +1532,7 @@ def main():
         init_keyboard_handler()
         start_settings_watch()
         init_wakeword_listener()
+        start_watchdog()
         start_thread(listen_for_wake_word, "WakeWordListener")
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()

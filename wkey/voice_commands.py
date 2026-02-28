@@ -1,5 +1,6 @@
 # voice_commands.py
 import os
+import gc
 import pyautogui
 from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
 from comtypes import CLSCTX_ALL
@@ -57,6 +58,29 @@ from commands_and_tools import (
     stop_spotify,
 )
 from model_rotation import next_tool_use_model
+
+# Temporarily disable browser/media tools from LLM tool selection
+DISABLED_TOOL_NAMES = {
+    "play_music",
+    "pause_song",
+    "stop_media",
+    "next_track",
+    "previous_track",
+    "restart_media",
+    "open_browser",
+    "open_website",
+    "search_google",
+}
+
+def _filtered_tools_for_llm():
+    filtered = []
+    for tool in tools:
+        if tool.get("type") == "function":
+            name = tool.get("function", {}).get("name")
+            if name in DISABLED_TOOL_NAMES:
+                continue
+        filtered.append(tool)
+    return filtered
 
 
 # ANSI Color codes
@@ -152,6 +176,17 @@ driver_pid = None
 session_id = None
 executor_url = None
 
+def _get_executor_url(driver_instance):
+    try:
+        executor = driver_instance.command_executor
+    except Exception:
+        return None
+    for attr in ("remote_url", "remote_server_addr", "_url", "url"):
+        value = getattr(executor, attr, None)
+        if value:
+            return value
+    return None
+
 
 def start_driver():
     try:
@@ -165,7 +200,9 @@ def start_driver():
         time.sleep(5)  # Wait for the page to load
         driver_pid = driver.service.process.pid
         session_id = driver.session_id
-        executor_url = driver.command_executor.remote_url
+        executor_url = _get_executor_url(driver)
+        if not executor_url:
+            logging.warning(f"{YELLOW}Could not determine executor_url for WebDriver session.{RESET}")
         logging.info(f"{GREEN}WebDriver started successfully.{RESET}")
         
         # Update driver reference in commands_and_tools
@@ -217,6 +254,9 @@ def reconnect_driver():
             driver.get("https://open.spotify.com/collection/tracks")
             time.sleep(3)
             logging.info(f"{GREEN}Started a new session.{RESET}")
+            executor_url = _get_executor_url(driver)
+            if not executor_url:
+                logging.warning(f"{YELLOW}Could not determine executor_url for WebDriver session.{RESET}")
             
             # Update driver reference in commands_and_tools
             try:
@@ -511,38 +551,92 @@ def kill_process_by_name(process_name):
         logging.error(f"Error executing kill_process_by_name: {e}", exc_info=True)
 
 
+VOLUME_REQUEST_TIMEOUT = 2.0
+
+class VolumeController:
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread.start()
+
+    def _worker(self):
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception as e:
+            logging.error(f"{RED}VolumeController COM init failed: {e}{RESET}", exc_info=True)
+        while True:
+            action, default, result_container, done_event = self._queue.get()
+            result = default
+            try:
+                devices = AudioUtilities.GetSpeakers()
+                interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+                volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
+                result = action(volume_interface)
+            except Exception as e:
+                logging.error(f"{RED}VolumeController action failed: {e}{RESET}", exc_info=True)
+            finally:
+                try:
+                    volume_interface = None
+                    interface = None
+                    devices = None
+                except Exception:
+                    pass
+                try:
+                    gc.collect()
+                except Exception:
+                    pass
+                result_container["value"] = result
+                done_event.set()
+
+    def run(self, action, default=None):
+        result_container = {"value": default}
+        done_event = threading.Event()
+        self._queue.put((action, default, result_container, done_event))
+        if not done_event.wait(timeout=VOLUME_REQUEST_TIMEOUT):
+            logging.error(f"{RED}VolumeController timeout after {VOLUME_REQUEST_TIMEOUT}s{RESET}")
+            return default
+        return result_container["value"]
+
+volume_controller = VolumeController()
+
+def _with_volume_interface(action, default=None):
+    return volume_controller.run(action, default=default)
+
+
 def get_volume():
-    try:
-        volume_interface = get_volume_interface()
-        if volume_interface is None:
-            logging.warning("get_volume: volume_interface is None")
-            return 0.5  # Default fallback
-        current_volume = volume_interface.GetMasterVolumeLevelScalar()
-        logging.info(f"{BLUE}Getting volume...{RESET}")
-        return round(current_volume, 2)
-    except Exception as e:
-        logging.error(f"{RED}Error executing get_volume: {e}{RESET}", exc_info=True)
-        return 0.5  # Default fallback
+    current_volume = _with_volume_interface(
+        lambda volume_interface: volume_interface.GetMasterVolumeLevelScalar(),
+        default=0.5,
+    )
+    logging.info(f"{BLUE}Getting volume...{RESET}")
+    return round(current_volume, 2)
 
 
 def volume_up(steps=1):
     try:
-        volume_interface = get_volume_interface()
-        current_volume = volume_interface.GetMasterVolumeLevelScalar()
-        new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
-        volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-        print(f"Volume increased to {new_volume * 100:.0f}%")
+        def _raise(volume_interface):
+            current_volume = volume_interface.GetMasterVolumeLevelScalar()
+            new_volume = min(current_volume + steps * 0.05, 1.0)  # Increase by 5% per step
+            volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+            return new_volume
+        new_volume = _with_volume_interface(_raise, default=None)
+        if new_volume is not None:
+            print(f"Volume increased to {new_volume * 100:.0f}%")
     except Exception as e:
         logging.error(f"Error executing volume_up: {e}", exc_info=True)
 
 
 def volume_down(steps=1):
     try:
-        volume_interface = get_volume_interface()
-        current_volume = volume_interface.GetMasterVolumeLevelScalar()
-        new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
-        volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
-        print(f"Volume decreased to {new_volume * 100:.0f}%")
+        def _lower(volume_interface):
+            current_volume = volume_interface.GetMasterVolumeLevelScalar()
+            new_volume = max(current_volume - steps * 0.05, 0.0)  # Decrease by 5% per step
+            volume_interface.SetMasterVolumeLevelScalar(new_volume, None)
+            return new_volume
+        new_volume = _with_volume_interface(_lower, default=None)
+        if new_volume is not None:
+            print(f"Volume decreased to {new_volume * 100:.0f}%")
     except Exception as e:
         logging.error(f"Error executing volume_down: {e}", exc_info=True)
 
@@ -550,11 +644,12 @@ def volume_down(steps=1):
 def set_volume(level):
     try:
         if 0.0 <= level <= 1.0:
-            volume_interface = get_volume_interface()
-            if volume_interface is None:
-                logging.warning("set_volume: volume_interface is None, skipping")
+            def _set(volume_interface):
+                volume_interface.SetMasterVolumeLevelScalar(level, None)
+            result = _with_volume_interface(_set, default=False)
+            if result is False:
+                logging.warning("set_volume: volume_interface unavailable, skipping")
                 return
-            volume_interface.SetMasterVolumeLevelScalar(level, None)
             logging.info(f"{BLUE}Setting volume to {level * 100}%{RESET}")
             print(f"Volume set to {level * 100:.0f}%")
         else:
@@ -564,26 +659,8 @@ def set_volume(level):
 
 
 def get_volume_interface():
-    try:
-        import pythoncom
-        from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-        from comtypes import CLSCTX_ALL
-        from ctypes import cast, POINTER
-        
-        # Initialize COM for this thread (required for cross-thread COM access)
-        pythoncom.CoInitialize()
-        
-        devices = AudioUtilities.GetSpeakers()
-        interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-        volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
-        return volume_interface
-    except ValueError as e:
-        logging.error(
-            f"{RED}ValueError in get_volume_interface: {e}{RESET}", exc_info=True
-        )
-    except Exception as e:
-        logging.error(f"Error executing get_volume_interface: {e}", exc_info=True)
-
+    logging.warning("get_volume_interface is deprecated; use _with_volume_interface")
+    return None
 
 def mute_volume():
     try:
@@ -910,6 +987,11 @@ TTS_queue = queue.Queue()
 # Function to process the queue
 def process_TTS_queue():
     try:
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
         while True:
             sentence = TTS_queue.get()
             if sentence is None:  # Sentinel value to stop the worker
@@ -918,6 +1000,12 @@ def process_TTS_queue():
             TTS_queue.task_done()
     except Exception as e:
         logging.error(f"Error processing TTS queue: {e}", exc_info=True)
+    finally:
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 threading.Thread(target=process_TTS_queue, daemon=True).start()
@@ -991,6 +1079,11 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
 # Offline TTS fallback using pyttsx4
 def fallback_offline_tts(text, speed=1.2, volume=1):
     try:
+        try:
+            import pythoncom
+            pythoncom.CoInitialize()
+        except Exception:
+            pass
         # Initialize pyttsx4 engine
         engine = pyttsx4.init()
 
@@ -1003,10 +1096,22 @@ def fallback_offline_tts(text, speed=1.2, volume=1):
         # Speak the text
         engine.say(text)
         engine.runAndWait()
+        try:
+            engine.stop()
+        except Exception:
+            pass
+        engine = None
+        gc.collect()
 
     except Exception as e:
         logging.error(f"Error executing fallback_offline_tts: {e}", exc_info=True)
         print(f"Offline TTS failed: {e}")
+    finally:
+        try:
+            import pythoncom
+            pythoncom.CoUninitialize()
+        except Exception:
+            pass
 
 
 # Define the function to split sentences with the condition
@@ -1160,6 +1265,15 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
         global Groq_client
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
+        normalized_query = normalize_transcript(query)
+        if "spotify" in normalized_query:
+            if any(token in normalized_query for token in ("kill", "stop", "close", "quit", "exit")):
+                stop_spotify()
+                return True
+            if any(token in normalized_query for token in ("open", "play", "start", "launch", "spotify")):
+                launch_application("spotify")
+                return True
+
         tools_messages = [
             {
                 "role": "system",
@@ -1169,7 +1283,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 3. Only use tools that exactly match the user's intent
                 4. For system controls (volume, media, windows), be very precise in tool selection
                 5. If no exact tool matches the query, do not force a tool selection
-                6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).
+                6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).
 
                 Examples:
                 - "play music" → use play_song()
@@ -1202,7 +1316,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                             "model": tool_model,
                             "messages": tools_messages,
                             "stream": False,
-                            "tools": tools,
+                            "tools": _filtered_tools_for_llm(),
                             "tool_choice": "auto",
                             "max_tokens": 4096,
                         },
@@ -1233,6 +1347,13 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                     for tool_call in tool_calls:
                         function_args = json.loads(tool_call["function"]["arguments"])
                         function_name = tool_call["function"]["name"]
+
+                        if function_name in DISABLED_TOOL_NAMES:
+                            logging.info(
+                                f"{YELLOW}Ignoring disabled tool call: {function_name}{RESET}"
+                            )
+                            overall_success = False
+                            continue
 
                         if function_name in globals():
                             try:

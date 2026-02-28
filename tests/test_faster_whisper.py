@@ -75,7 +75,7 @@ def test_save_audio(tmp_path, fw_module):
 
 
 def test_transcribe_pre_recording_buffer(fw_module, monkeypatch):
-    monkeypatch.setattr(fw_module.Groq_client.audio.transcriptions, 'create', lambda **kw: types.SimpleNamespace(text='Hello'))
+    monkeypatch.setattr(fw_module, 'transcribe_pre_recording_buffer_util', lambda *args, **kwargs: 'hello')
     data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
     text = fw_module.transcribe_pre_recording_buffer(data)
     assert text == 'hello'
@@ -147,4 +147,3 @@ def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
     assert idx is None
     assert len(queued_audio) == fw_module.BUFFER_SIZE + 3
     assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
-
