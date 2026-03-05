@@ -31,6 +31,8 @@ from dotenv import load_dotenv
 import json
 
 import io
+import math
+import tempfile
 import edge_tts
 import pyttsx4
 from clipboard_utils import (
@@ -1015,12 +1017,30 @@ threading.Thread(target=process_TTS_queue, daemon=True).start()
 def process_TTS_Audio_play_queue():
     try:
         while True:
-            audio_fp = TTS_Audio_play_queue.get()
-            if audio_fp is None:  # Add sentinel check
+            item = TTS_Audio_play_queue.get()
+            if item is None:  # Add sentinel check
                 break
+            fallback_text = None
+            fallback_speed = 1.2
+            fallback_volume = 1.0
+            if isinstance(item, tuple):
+                if len(item) >= 5:
+                    audio_fp, audio_format, fallback_text, fallback_speed, fallback_volume = item
+                elif len(item) == 2:
+                    audio_fp, audio_format = item
+                else:
+                    audio_fp, audio_format = item[0], "mp3"
+            else:
+                audio_fp, audio_format = item, "mp3"
             audio_fp.seek(0)
-            sound = AudioSegment.from_file(audio_fp, format="mp3")
-            play(sound)
+            try:
+                sound = AudioSegment.from_file(audio_fp, format=audio_format)
+                play(sound)
+            except Exception as e:
+                logging.error(f"Error playing TTS audio: {e}", exc_info=True)
+                if fallback_text:
+                    if not fallback_kokoro_tts(fallback_text, fallback_speed, fallback_volume):
+                        fallback_offline_tts(fallback_text, fallback_speed, fallback_volume)
             TTS_Audio_play_queue.task_done()
     except Exception as e:
         logging.error(f"Error processing TTS audio play queue: {e}", exc_info=True)
@@ -1049,12 +1069,107 @@ def cleanup():
         logging.error(f"Error during cleanup: {e}", exc_info=True)
 
 
+# Local Kokoro fallback
+_kokoro_pipeline = None
+
+
+def _get_kokoro_pipeline():
+    global _kokoro_pipeline
+    if _kokoro_pipeline is not None:
+        return _kokoro_pipeline
+    try:
+        from kokoro import KPipeline
+    except Exception as e:
+        logging.warning(f"Kokoro not available: {e}")
+        return None
+    try:
+        _kokoro_pipeline = KPipeline(lang_code="a")
+        return _kokoro_pipeline
+    except Exception as e:
+        logging.error(f"Failed to initialize Kokoro pipeline: {e}", exc_info=True)
+        return None
+
+
+def _time_stretch_audio(audio, speed: float):
+    if not speed or speed == 1.0:
+        return audio
+    try:
+        import librosa
+    except Exception as e:
+        logging.warning(f"librosa not available for speed change: {e}")
+        return audio
+    try:
+        return librosa.effects.time_stretch(audio, rate=speed)
+    except Exception as e:
+        logging.warning(f"Speed change failed: {e}")
+        return audio
+
+
+def _kokoro_speak(text: str, voice_id: str, speed: float = 1.2, volume: float = 1.0) -> bool:
+    pipeline = _get_kokoro_pipeline()
+    if pipeline is None:
+        return False
+    try:
+        import numpy as np
+        import soundfile as sf
+    except Exception as e:
+        logging.warning(f"Kokoro deps missing: {e}")
+        return False
+
+    try:
+        audio_chunks = []
+        for _, _, audio in pipeline(text, voice=voice_id):
+            if audio is None:
+                continue
+            audio_chunks.append(audio)
+        if not audio_chunks:
+            return False
+        audio = np.concatenate(audio_chunks)
+        audio = _time_stretch_audio(audio, speed)
+        fd, out_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        sf.write(out_path, audio, 24000)
+        try:
+            sound = AudioSegment.from_file(out_path, format="wav")
+            if volume and volume != 1.0:
+                try:
+                    sound = sound + (20 * math.log10(volume))
+                except Exception:
+                    pass
+            play(sound)
+        finally:
+            try:
+                os.remove(out_path)
+            except Exception:
+                pass
+        return True
+    except Exception as e:
+        logging.error(f"Kokoro playback failed ({voice_id}): {e}", exc_info=True)
+        return False
+
+
+def fallback_kokoro_tts(text: str, speed: float = 1.2, volume: float = 1.0) -> bool:
+    for voice_id in KOKORO_FALLBACK_VOICES:
+        if _kokoro_speak(text, voice_id, speed, volume):
+            return True
+    return False
+
+
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
-async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
+async def text_to_speech(text, speed=1.2, volume=1, voice=None):
     try:
         # Online TTS using edge-tts
         rate = "+" + str(int((speed - 1) * 100)) + "%"
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
+        if not voice:
+            voice = DEFAULT_EDGE_VOICE
+        if voice:
+            communicate = edge_tts.Communicate(
+                text, voice, rate=rate
+            )
+        else:
+            communicate = edge_tts.Communicate(
+                text, rate=rate
+            )
         audio_bytes = b""
 
         async for chunk in communicate.stream():
@@ -1068,12 +1183,13 @@ async def text_to_speech(text, speed=1.2, volume=1, voice="en-GB-MiaNeural"):
         audio_fp.seek(0)
 
         # Place the audio data in the playback queue
-        TTS_Audio_play_queue.put(audio_fp)
+        TTS_Audio_play_queue.put((audio_fp, "mp3", text, speed, volume))
 
     except Exception as e:
         logging.error(f"Error executing text_to_speech: {e}", exc_info=True)
-        print("Falling back to offline TTS...")
-        fallback_offline_tts(text, speed, volume)
+        print("Falling back to local TTS...")
+        if not fallback_kokoro_tts(text, speed, volume):
+            fallback_offline_tts(text, speed, volume)
 
 
 # Offline TTS fallback using pyttsx4
@@ -1260,6 +1376,8 @@ import aiohttp
 import asyncio
 
 
+last_tool_call_found = False
+
 async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
     try:
         global Groq_client
@@ -1269,11 +1387,15 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
         if "spotify" in normalized_query:
             if any(token in normalized_query for token in ("kill", "stop", "close", "quit", "exit")):
                 stop_spotify()
+                global last_tool_call_found
+                last_tool_call_found = True
                 return True
             if any(token in normalized_query for token in ("open", "play", "start", "launch", "spotify")):
                 launch_application("spotify")
+                last_tool_call_found = True
                 return True
 
+        last_tool_call_found = False
         tools_messages = [
             {
                 "role": "system",
@@ -1401,6 +1523,7 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 else:
                     logging.error(f"{RED}No tool calls found in the response{RESET}")
 
+                last_tool_call_found = bool(tool_calls)
                 return overall_success
 
             except Exception as e:
@@ -1517,3 +1640,6 @@ def execute_command_fuzzy(transcript):
         logging.error(f"{RED}Error executing fuzzy command: {e}{RESET}", exc_info=True)
 
     return True
+# Preferred Edge voice and local fallback order (ranked)
+DEFAULT_EDGE_VOICE = "en-US-AvaNeural"
+KOKORO_FALLBACK_VOICES = ["af_jessica", "af_sky"]

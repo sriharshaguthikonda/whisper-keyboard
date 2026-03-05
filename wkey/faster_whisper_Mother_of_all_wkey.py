@@ -55,6 +55,10 @@ except ModuleNotFoundError:
         set_volume,
         driver,
     )
+try:
+    import voice_commands as voice_commands_module
+except ModuleNotFoundError:
+    from wkey import voice_commands as voice_commands_module
 # from google_assistant import google_assistant
 try:
     from google_assistant_stub import google_assistant
@@ -1288,6 +1292,7 @@ async def clean_transcript():
     try:
         while True:
             try:
+                global clarification_retry_used
                 global_state["last_heartbeat"] = time.time()
                 transcript, keyword_index = transcript_queue.get()
                 logging.error(f"Transcript received in clean_transcript: {transcript}")
@@ -1296,6 +1301,15 @@ async def clean_transcript():
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
                     await execute_command_run_with_tool(transcript)
+                    if voice_commands_module.last_tool_call_found:
+                        clarification_retry_used = False
+                    if keyword_index == 1:
+                        if (
+                            not voice_commands_module.last_tool_call_found
+                            and not clarification_retry_used
+                        ):
+                            clarification_retry_used = True
+                            _schedule_clarification_retry()
                 elif keyword_index == 2:
                     pass
                 elif keyword_index == 3:
@@ -1325,6 +1339,33 @@ async def clean_transcript():
 
 _spinner = None
 _spinner_thread = None
+
+clarification_retry_used = False
+CLARIFICATION_MAX_SECONDS = 6.0
+
+def _schedule_clarification_stop():
+    def _run():
+        try:
+            time.sleep(CLARIFICATION_MAX_SECONDS)
+            if recording:
+                stop_recording(keyword_index=0)
+        except Exception as e:
+            logging.error(f"Error scheduling clarification stop: {e}", exc_info=True)
+    threading.Thread(target=_run, daemon=True).start()
+
+def _schedule_clarification_retry():
+    def _run():
+        try:
+            voice_commands_module.fallback_offline_tts(
+                "Sorry, I didn't catch that. Please say it again.", speed=1.1
+            )
+            time.sleep(0.4)
+            # Use keyword_index=0 to bypass wake-word validation for the clarification response
+            start_recording(keyword_index=0)
+            _schedule_clarification_stop()
+        except Exception as e:
+            logging.error(f"Error scheduling clarification retry: {e}", exc_info=True)
+    threading.Thread(target=_run, daemon=True).start()
 
 def display_pause_status(start: bool = True):
     """Start/stop the pause-status spinner."""
