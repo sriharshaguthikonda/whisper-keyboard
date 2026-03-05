@@ -196,7 +196,7 @@ class TranscriptionPipeline:
                     self.transcript_queue.put((transcript_stripped, 0))
                     continue
                 if keyword_index is None:
-                    self.log.info("pasing ctrl_r transcription")
+                    self.log.info("pasting manual transcription")
                     self.paste_transcript(transcript, self.beep)
                     continue
                 if keyword_index == 1 and "computer" in transcript_lower:

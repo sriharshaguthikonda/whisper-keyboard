@@ -227,24 +227,21 @@ load_dotenv()
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
 SETTINGS = load_settings(SETTINGS_PATH, SETTINGS_DEFAULTS)
 
-# Get the key labels from environment variables, default to 'f24' if not set
+# Single activation key (F24)
 key_label = os.environ.get("WKEY", "f24").lower()
-# Support both 'f24' and 'ctrl_r' as valid keys
-if key_label not in ['f24', 'ctrl_r']:
+if key_label != "f24":
     print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'f24'")
-    key_label = 'f24'
+    key_label = "f24"
 
-# Store both possible record keys
 RECORD_KEYS = {
-    'f24': Key.f24,
-    'ctrl_r': Key.ctrl_r
+    "f24": Key.f24,
 }
 
 def map_key_to_keyword_index(key):
     """Return keyword index for a given manual trigger key."""
-    if key == RECORD_KEYS['f24']:
-        return 0  # Route directly to execute_command_run_with_tool
-    return None  # Default manual (paste) pathway
+    if key == RECORD_KEYS["f24"]:
+        return 0  # Route to router model (tools vs paste)
+    return None
 
 keyboard_controller = KeyboardController()
 recording = False
@@ -936,7 +933,7 @@ def save_manual_recording_if_configured(
         if not os.path.isdir(target_dir):
             return
 
-        key_label_local = "f24" if keyword_index == 0 else "ctrl_r"
+        key_label_local = "f24" if keyword_index == 0 else "manual"
         duration_ms = int((len(audio_data) / sample_rate) * 1000)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         base_name = f"manual_{key_label_local}_{timestamp}_{duration_ms}ms.wav"
@@ -1301,6 +1298,8 @@ async def clean_transcript():
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
                     await execute_command_run_with_tool(transcript)
+                    if keyword_index == 0 and not voice_commands_module.last_tool_call_found:
+                        paste_transcript(transcript, beep)
                     if voice_commands_module.last_tool_call_found:
                         clarification_retry_used = False
                     if keyword_index == 1:

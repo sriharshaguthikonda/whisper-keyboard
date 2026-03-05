@@ -1399,22 +1399,23 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
         tools_messages = [
             {
                 "role": "system",
-                "content": """You are a specialized assistant for controlling computer functions. Your role is to:
-                1. Carefully analyze user queries to determine the most appropriate tool/function
-                2. Select the SINGLE most relevant tool from the available options
-                3. Only use tools that exactly match the user's intent
-                4. For system controls (volume, media, windows), be very precise in tool selection
-                5. If no exact tool matches the query, do not force a tool selection
-                6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).
+                "content": """You are a router for computer control tools. Your role is to:
+1. Decide if the text is a computer control command or plain dictation.
+2. If it is a command, select the SINGLE most relevant tool.
+3. If it is dictation or does not clearly map to a tool, return no tool calls.
+4. If the user says a wake word like "computer" before the request, treat the remainder as the command.
+5. For system controls (volume, media, windows), be very precise in tool selection.
+6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).
 
-                Examples:
-                - "play music" → use play_song()
-                - "volume up" → use volume_up()
-                - "skip" → use next_track()
-                - "minimize everything" → use minimize_all_windows()
-                - "check internet speed" → ping_google()
+If you decide no tool should be used, return no tool calls and no text.
 
-                Only respond with tool calls, no conversational responses.""",
+Examples:
+- "play music" → use play_song()
+- "volume up" → use volume_up()
+- "skip" → use next_track()
+- "minimize everything" → use minimize_all_windows()
+- "check internet speed" → ping_google()
+""",
             },
             {
                 "role": "user",
@@ -1521,7 +1522,9 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                             overall_success = False
                             continue
                 else:
-                    logging.error(f"{RED}No tool calls found in the response{RESET}")
+                    logging.info(
+                        f"{YELLOW}No tool calls returned; treating as dictation.{RESET}"
+                    )
 
                 last_tool_call_found = bool(tool_calls)
                 return overall_success
