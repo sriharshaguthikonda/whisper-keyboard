@@ -277,7 +277,7 @@ LAUNCH_COMMANDS = {
     "display fusion": '"C:\\Program Files (x86)\\DisplayFusion\\DisplayFusion.exe"',
     "displayfusion": '"C:\\Program Files (x86)\\DisplayFusion\\DisplayFusion.exe"',
     "task scheduler": "taskschd.msc",
-    "startup folder": "shell:startup",
+    "startup folder": "explorer shell:startup",
     "services": "services.msc",
     "sound control panel": "mmsys.cpl",
     "spotify": "spotify",
@@ -310,6 +310,9 @@ def launch_application(app: str):
         normalized = app.strip().lower()
         if normalized == "spotify":
             _launch_spotify()
+            return
+        if normalized == "startup folder":
+            subprocess.Popen(["explorer.exe", "shell:startup"])
             return
         if normalized not in LAUNCH_COMMANDS:
             # fallback to closest known app if confidence is good
