@@ -27,6 +27,7 @@ class SettingsWindow(QWidget):
         self.use_local_cb = QCheckBox("Use local GPU model when available")
         self.use_cpu_cb = QCheckBox("Use local CPU fallback")
         self.use_api_cb = QCheckBox("Fallback to Groq API")
+        self.precheck_cb = QCheckBox("Enable pre-recording keyword check")
         self.max_retries_edit = QLineEdit()
         self.max_retries_edit.setPlaceholderText("Max retries (Groq)")
         self.api_key_edit = QLineEdit()
@@ -35,6 +36,7 @@ class SettingsWindow(QWidget):
         self.layout.addWidget(self.use_local_cb)
         self.layout.addWidget(self.use_cpu_cb)
         self.layout.addWidget(self.use_api_cb)
+        self.layout.addWidget(self.precheck_cb)
         self.layout.addWidget(QLabel("Max Retries:"))
         self.layout.addWidget(self.max_retries_edit)
         self.layout.addWidget(QLabel("Groq API Key:"))
@@ -56,6 +58,9 @@ class SettingsWindow(QWidget):
         self.use_local_cb.setChecked(config.get("use_local_gpu", True))
         self.use_cpu_cb.setChecked(config.get("use_local_cpu", True))
         self.use_api_cb.setChecked(config.get("fallback_to_groq", True))
+        self.precheck_cb.setChecked(
+            config.get("enable_pre_recording_keyword_check", False)
+        )
         self.max_retries_edit.setText(str(config.get("max_retries", 3)))
         self.api_key_edit.setText(os.environ.get("GROQ_API_KEY", ""))
 
@@ -64,6 +69,7 @@ class SettingsWindow(QWidget):
         config["use_local_gpu"] = self.use_local_cb.isChecked()
         config["use_local_cpu"] = self.use_cpu_cb.isChecked()
         config["fallback_to_groq"] = self.use_api_cb.isChecked()
+        config["enable_pre_recording_keyword_check"] = self.precheck_cb.isChecked()
         try:
             max_retries = int(self.max_retries_edit.text().strip())
             config["max_retries"] = max(1, max_retries)

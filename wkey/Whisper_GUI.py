@@ -289,6 +289,13 @@ class VoicePauseController(QMainWindow):
         self.use_groq_cb.stateChanged.connect(self.save_transcription_settings)
         controls_layout.addWidget(self.use_groq_cb)
 
+        self.precheck_cb = QCheckBox("Enable pre-recording keyword check")
+        self.precheck_cb.setObjectName("settingsCheckbox")
+        self.precheck_cb.setFont(QFont("Segoe UI", 10))
+        self.precheck_cb.setToolTip("Validate wake word in pre-recording buffer before full transcription")
+        self.precheck_cb.stateChanged.connect(self.save_transcription_settings)
+        controls_layout.addWidget(self.precheck_cb)
+
         self.use_gpu_cb = QCheckBox("Use local GPU model")
         self.use_gpu_cb.setObjectName("settingsCheckbox")
         self.use_gpu_cb.setFont(QFont("Segoe UI", 10))
@@ -501,6 +508,9 @@ class VoicePauseController(QMainWindow):
             self.use_gpu_cb.setChecked(config.get("use_local_gpu", True))
             self.use_cpu_cb.setChecked(config.get("use_local_cpu", True))
             self.use_groq_cb.setChecked(config.get("fallback_to_groq", True))
+            self.precheck_cb.setChecked(
+                config.get("enable_pre_recording_keyword_check", False)
+            )
             self.max_retries_input.setText(str(config.get("max_retries", 3)))
         except Exception as e:
             print(f"Error loading transcription settings: {e}")
@@ -522,6 +532,7 @@ class VoicePauseController(QMainWindow):
                 "use_local_gpu": self.use_gpu_cb.isChecked(),
                 "use_local_cpu": self.use_cpu_cb.isChecked(),
                 "fallback_to_groq": self.use_groq_cb.isChecked(),
+                "enable_pre_recording_keyword_check": self.precheck_cb.isChecked(),
                 "max_retries": max_retries,
             }
             settings_save(self.transcription_config_file, config)
