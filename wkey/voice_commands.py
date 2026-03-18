@@ -122,6 +122,29 @@ global Groq_client
 Groq_client = Groq(api_key=api_key)
 
 
+def _parse_csv_env(name: str, default_csv: str):
+    raw = os.getenv(name, default_csv)
+    return [item.strip() for item in raw.split(",") if item and item.strip()]
+
+
+# TTS preferences: Ava first, then Edge voice backups, then local fallback.
+DEFAULT_EDGE_VOICE = os.getenv("EDGE_TTS_PRIMARY_VOICE", "en-US-AvaNeural")
+EDGE_TTS_FALLBACK_VOICES = _parse_csv_env(
+    "EDGE_TTS_FALLBACK_VOICES",
+    "en-US-JennyNeural,en-US-AriaNeural",
+)
+KOKORO_FALLBACK_VOICES = _parse_csv_env(
+    "KOKORO_FALLBACK_VOICES",
+    "af_jessica,af_sky",
+)
+DEFAULT_TTS_SPEED = float(os.getenv("TTS_DEFAULT_SPEED", "1.3"))
+ENABLE_PYTTS_FALLBACK = os.getenv("ENABLE_PYTTS_FALLBACK", "0").strip().lower() not in (
+    "0",
+    "false",
+    "no",
+)
+
+
 def initialize_groq_client():
     try:
         global api_key, Groq_client
@@ -998,7 +1021,7 @@ def process_TTS_queue():
             sentence = TTS_queue.get()
             if sentence is None:  # Sentinel value to stop the worker
                 break
-            asyncio.run(text_to_speech(sentence, speed=1.3))
+            asyncio.run(text_to_speech(sentence, speed=DEFAULT_TTS_SPEED))
             TTS_queue.task_done()
     except Exception as e:
         logging.error(f"Error processing TTS queue: {e}", exc_info=True)
@@ -1156,40 +1179,50 @@ def fallback_kokoro_tts(text: str, speed: float = 1.2, volume: float = 1.0) -> b
 
 
 # Function to convert text to speech using edge-tts and play using pydub with speed adjustment
-async def text_to_speech(text, speed=1.2, volume=1, voice=None):
-    try:
-        # Online TTS using edge-tts
-        rate = "+" + str(int((speed - 1) * 100)) + "%"
-        if not voice:
-            voice = DEFAULT_EDGE_VOICE
-        if voice:
-            communicate = edge_tts.Communicate(
-                text, voice, rate=rate
-            )
-        else:
-            communicate = edge_tts.Communicate(
-                text, rate=rate
-            )
-        audio_bytes = b""
+async def text_to_speech(text, speed=DEFAULT_TTS_SPEED, volume=1, voice=None):
+    rate = "+" + str(int((speed - 1) * 100)) + "%"
+    voice_candidates = []
+    if voice:
+        voice_candidates.append(voice)
+    else:
+        voice_candidates.append(DEFAULT_EDGE_VOICE)
+        voice_candidates.extend(EDGE_TTS_FALLBACK_VOICES)
 
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                audio_bytes += chunk["data"]
+    # Deduplicate while preserving order.
+    deduped_candidates = []
+    seen = set()
+    for candidate in voice_candidates:
+        if candidate and candidate not in seen:
+            deduped_candidates.append(candidate)
+            seen.add(candidate)
 
-        if not audio_bytes:
-            raise ValueError("No audio received. verify that your params are correct.")
+    last_edge_error = None
+    for selected_voice in deduped_candidates:
+        try:
+            communicate = edge_tts.Communicate(text, selected_voice, rate=rate)
+            audio_bytes = b""
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    audio_bytes += chunk["data"]
+            if not audio_bytes:
+                raise ValueError("No audio received from edge-tts.")
 
-        audio_fp = io.BytesIO(audio_bytes)
-        audio_fp.seek(0)
+            audio_fp = io.BytesIO(audio_bytes)
+            audio_fp.seek(0)
+            TTS_Audio_play_queue.put((audio_fp, "mp3", text, speed, volume))
+            logging.info("Edge TTS voice selected: %s", selected_voice)
+            return
+        except Exception as e:
+            last_edge_error = e
+            logging.warning("Edge TTS failed for voice %s: %s", selected_voice, e)
 
-        # Place the audio data in the playback queue
-        TTS_Audio_play_queue.put((audio_fp, "mp3", text, speed, volume))
-
-    except Exception as e:
-        logging.error(f"Error executing text_to_speech: {e}", exc_info=True)
-        print("Falling back to local TTS...")
-        if not fallback_kokoro_tts(text, speed, volume):
+    logging.error("All Edge TTS voices failed: %s", last_edge_error, exc_info=True)
+    print("Falling back to local TTS...")
+    if not fallback_kokoro_tts(text, speed, volume):
+        if ENABLE_PYTTS_FALLBACK:
             fallback_offline_tts(text, speed, volume)
+        else:
+            logging.warning("pyttsx4 fallback is disabled; no local TTS fallback left.")
 
 
 # Offline TTS fallback using pyttsx4
@@ -1640,6 +1673,3 @@ def execute_command_fuzzy(transcript):
         logging.error(f"{RED}Error executing fuzzy command: {e}{RESET}", exc_info=True)
 
     return True
-# Preferred Edge voice and local fallback order (ranked)
-DEFAULT_EDGE_VOICE = "en-US-AvaNeural"
-KOKORO_FALLBACK_VOICES = ["af_jessica", "af_sky"]
