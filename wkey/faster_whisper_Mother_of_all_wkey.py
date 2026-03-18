@@ -648,6 +648,10 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             pass
         keyword_validation_event.set()
 
+
+def is_pre_recording_keyword_check_enabled():
+    return bool(SETTINGS.get("enable_pre_recording_keyword_check", False))
+
 def start_recording(keyword_index=None):
     """Start recording audio.
     
@@ -694,7 +698,13 @@ def start_recording(keyword_index=None):
         logging.info(f"{CYAN}Listening...{RESET}")
 
         if keyword_index not in (None, 0) and keyword_index not in RECORD_KEYS.values():
-            if pre_recording_buffer is not None and pre_recording_buffer.size > 0:
+            if not is_pre_recording_keyword_check_enabled():
+                keyword_validation_result = True
+                keyword_validation_event.set()
+                logging.info(
+                    f"{YELLOW}Pre-recording keyword validation is disabled in settings.{RESET}"
+                )
+            elif pre_recording_buffer is not None and pre_recording_buffer.size > 0:
                 pre_recording_data = np.roll(
                     pre_recording_buffer, -buffer_index, axis=0
                 ).flatten()

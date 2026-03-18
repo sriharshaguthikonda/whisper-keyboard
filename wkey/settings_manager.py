@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "use_local_cpu": True,
     "fallback_to_groq": True,
     "max_retries": 3,
+    "enable_pre_recording_keyword_check": False,
 }
 
 
@@ -29,7 +30,12 @@ def _validate_settings(settings, defaults):
         return merged
 
     for key, value in settings.items():
-        if key in ("use_local_gpu", "use_local_cpu", "fallback_to_groq"):
+        if key in (
+            "use_local_gpu",
+            "use_local_cpu",
+            "fallback_to_groq",
+            "enable_pre_recording_keyword_check",
+        ):
             merged[key] = bool(value)
         elif key == "max_retries":
             try:
@@ -116,4 +122,3 @@ def watch_settings(path, defaults, on_change, poll_interval=0.5, debounce_second
     thread = threading.Thread(target=_poll, daemon=True)
     thread.start()
     return thread
-
