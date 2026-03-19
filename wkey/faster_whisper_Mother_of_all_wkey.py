@@ -172,9 +172,9 @@ except ModuleNotFoundError:
         wait_for_silence as wait_for_silence_impl,
     )
 try:
-    from volume_restore_guard import VolumeRestoreGuard
+    from volume_lease_manager import VolumeLeaseManager
 except ModuleNotFoundError:
-    from wkey.volume_restore_guard import VolumeRestoreGuard
+    from wkey.volume_lease_manager import VolumeLeaseManager
 
 # Set up driver reference for commands_and_tools
 try:
@@ -235,13 +235,14 @@ BRIGHT_WHITE = "\033[97m"
 initial_volume = None
 transcript_queue = queue.Queue()
 audio_buffer_queue = queue.Queue()
-volume_restore_guard = VolumeRestoreGuard(
+volume_lease_manager = VolumeLeaseManager(
     get_volume_fn=get_volume,
     set_volume_fn=set_volume,
     logger=logging,
-    window_seconds=300,
-    max_samples=5,
+    duck_volume=0.1,
     tolerance=0.03,
+    history_window_seconds=300,
+    history_max_samples=5,
 )
 
 # Initialize VoiceDetector
@@ -635,29 +636,32 @@ def initialize_wake_stream():
 def decrease_volume_all():
     global initial_volume
     try:
-        current_volume = get_volume()
-        if initial_volume is None or current_volume != initial_volume:
-            initial_volume = current_volume
-        volume_restore_guard.set_target(initial_volume, reason="decrease_volume_all")
-        print(f"Decreasing volume from {initial_volume * 100}% to 10%")
-        set_volume(0.1)
+        baseline_volume, lease_count = volume_lease_manager.begin_duck(
+            reason="decrease_volume_all"
+        )
+        if baseline_volume is None:
+            baseline_volume = get_volume()
+        initial_volume = baseline_volume
+        if lease_count == 1:
+            print(f"Decreasing volume from {initial_volume * 100}% to 10%")
     except Exception as e:
         logging.error(f"Error in decrease_volume_all: {e}", exc_info=True)
 
 def restore_volume_all():
     global initial_volume
     try:
-        if initial_volume is not None:
-            target_volume = initial_volume
+        target_volume, remaining_leases, did_restore = volume_lease_manager.end_duck(
+            reason="restore_volume_all"
+        )
+        if did_restore:
             initial_volume = None
-            volume_restore_guard.set_target(
-                target_volume, reason="restore_volume_all_request"
-            )
-            restored = volume_restore_guard.restore_with_monitor(
-                reason="restore_volume_all"
-            )
-            if not restored:
-                set_volume(target_volume)
+            return
+        if remaining_leases > 0 and target_volume is not None:
+            initial_volume = target_volume
+            return
+        if target_volume is None and initial_volume is not None:
+            set_volume(initial_volume)
+            initial_volume = None
     except Exception as e:
         logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
 
