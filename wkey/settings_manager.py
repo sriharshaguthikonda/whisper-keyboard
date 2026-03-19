@@ -21,6 +21,12 @@ DEFAULT_SETTINGS = {
     "fallback_to_groq": True,
     "max_retries": 3,
     "enable_pre_recording_keyword_check": False,
+    "enable_transcript_context_memory": True,
+    "stt_context_items": 2,
+    "stt_context_chars": 180,
+    "router_context_items": 3,
+    "router_context_chars": 320,
+    "context_max_age_seconds": 180,
 }
 
 
@@ -35,9 +41,17 @@ def _validate_settings(settings, defaults):
             "use_local_cpu",
             "fallback_to_groq",
             "enable_pre_recording_keyword_check",
+            "enable_transcript_context_memory",
         ):
             merged[key] = bool(value)
-        elif key == "max_retries":
+        elif key in (
+            "max_retries",
+            "stt_context_items",
+            "stt_context_chars",
+            "router_context_items",
+            "router_context_chars",
+            "context_max_age_seconds",
+        ):
             try:
                 merged[key] = max(1, int(value))
             except Exception:
