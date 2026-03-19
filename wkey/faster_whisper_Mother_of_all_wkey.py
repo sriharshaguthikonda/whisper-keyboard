@@ -142,6 +142,20 @@ try:
 except ModuleNotFoundError:
     from wkey.transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
 try:
+    from context_memory import (
+        add_recent_transcript,
+        build_stt_prompt,
+        clear_recent_transcripts,
+        get_router_context,
+    )
+except ModuleNotFoundError:
+    from wkey.context_memory import (
+        add_recent_transcript,
+        build_stt_prompt,
+        clear_recent_transcripts,
+        get_router_context,
+    )
+try:
     from audio_io import (
         create_audio_buffers,
         audio_callback as audio_callback_impl,
@@ -367,6 +381,60 @@ something_is_playing = False
 Hey_computer_STT_prompt = None
 General_gorq_system_prompt = "when outputting numbers, no spaces, no commas, no hyphens, just numbers like for example:84567945"
 
+
+def _get_setting_int(name, default_value, minimum=1, maximum=10000):
+    try:
+        value = int(SETTINGS.get(name, default_value))
+        return max(minimum, min(maximum, value))
+    except Exception:
+        return default_value
+
+
+def _is_transcript_context_enabled():
+    return bool(SETTINGS.get("enable_transcript_context_memory", True))
+
+
+def _build_dynamic_stt_prompt():
+    if not _is_transcript_context_enabled():
+        return General_gorq_system_prompt
+    return build_stt_prompt(
+        General_gorq_system_prompt,
+        max_items=_get_setting_int("stt_context_items", 2, minimum=1, maximum=8),
+        max_chars=_get_setting_int("stt_context_chars", 180, minimum=40, maximum=800),
+        max_age_seconds=_get_setting_int(
+            "context_max_age_seconds", 180, minimum=15, maximum=3600
+        ),
+    )
+
+
+def _build_router_context_hint(current_query):
+    if not _is_transcript_context_enabled():
+        return ""
+    return get_router_context(
+        current_query=current_query,
+        max_items=_get_setting_int("router_context_items", 3, minimum=1, maximum=8),
+        max_chars=_get_setting_int(
+            "router_context_chars", 320, minimum=80, maximum=1200
+        ),
+        max_age_seconds=_get_setting_int(
+            "context_max_age_seconds", 180, minimum=15, maximum=3600
+        ),
+    )
+
+
+def _record_recent_transcript(transcript, keyword_index):
+    if not _is_transcript_context_enabled():
+        return
+    source_map = {
+        None: "manual_dictation",
+        0: "manual_router",
+        1: "wake_computer",
+        2: "wake_lama",
+        3: "wake_google",
+    }
+    source = source_map.get(keyword_index, "unknown")
+    add_recent_transcript(transcript, source=source)
+
 api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
 Groq_client = Groq(api_key=api_key)
@@ -426,6 +494,7 @@ def handle_resume_event(reason="resume"):
     resume_cooldown_until = time.time() + RESUME_COOLDOWN_SECONDS
     _drain_queue(audio_buffer_queue)
     _drain_queue(transcript_queue)
+    clear_recent_transcripts()
     try:
         pre_recording_buffer.fill(0)
         if pre_recording_buffer_f24 is not None:
@@ -1152,12 +1221,13 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
 
 
 async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
+    prompt = _build_dynamic_stt_prompt()
     return await transcribe_with_groq_async_util(
         byte_io,
         keyword_index,
         api_key,
         get_groq_audio_model,
-        General_gorq_system_prompt,
+        prompt,
         groq_session_holder,
         max_retries=max_retries,
     )
@@ -1190,6 +1260,7 @@ def init_transcription_pipeline():
             log=logging,
             error_color_prefix=RED,
             error_color_suffix=RESET,
+            record_transcript_context=_record_recent_transcript,
         )
     return transcription_pipeline
 
@@ -1310,7 +1381,11 @@ async def clean_transcript():
                     logging.error(
                         f"Transcript sent for execute_command_run_with_tool: {transcript}"
                     )
-                    await execute_command_run_with_tool(transcript)
+                    router_context_hint = _build_router_context_hint(transcript)
+                    await execute_command_run_with_tool(
+                        transcript,
+                        context_hint=router_context_hint,
+                    )
                     if voice_commands_module.last_tool_call_found:
                         clarification_retry_used = False
                     if keyword_index == 1:

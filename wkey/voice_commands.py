@@ -1411,16 +1411,20 @@ import asyncio
 
 last_tool_call_found = False
 
-async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
+async def execute_command_run_with_tool(
+    query,
+    max_retries=3,
+    retry_delay=2,
+    context_hint="",
+):
     try:
-        global Groq_client
+        global Groq_client, last_tool_call_found
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
         normalized_query = normalize_transcript(query)
         if "spotify" in normalized_query:
             if any(token in normalized_query for token in ("kill", "stop", "close", "quit", "exit")):
                 stop_spotify()
-                global last_tool_call_found
                 last_tool_call_found = True
                 return True
             if any(token in normalized_query for token in ("open", "play", "start", "launch", "spotify")):
@@ -1454,6 +1458,18 @@ async def execute_command_run_with_tool(query, max_retries=3, retry_delay=2):
                 "content": query,
             },
         ]
+        if context_hint:
+            tools_messages.insert(
+                1,
+                {
+                    "role": "system",
+                    "content": (
+                        "Weak context from recent utterances (can be noisy):\n"
+                        f"{context_hint}\n"
+                        "Use only to disambiguate; prioritize the current query."
+                    ),
+                },
+            )
 
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}

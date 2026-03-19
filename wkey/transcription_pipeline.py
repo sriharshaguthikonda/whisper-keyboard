@@ -36,6 +36,7 @@ class TranscriptionPipeline:
         error_color_prefix="",
         error_color_suffix="",
         groq_failures_before_cpu=DEFAULT_GROQ_FAILURES_BEFORE_CPU,
+        record_transcript_context=None,
     ):
         self.audio_buffer_queue = audio_buffer_queue
         self.transcript_queue = transcript_queue
@@ -55,6 +56,7 @@ class TranscriptionPipeline:
         self.error_color_suffix = error_color_suffix
         self.groq_failure_streak = 0
         self.groq_failures_before_cpu = groq_failures_before_cpu
+        self.record_transcript_context = record_transcript_context
         self.global_state.setdefault("transcribe_inflight", False)
         self.global_state.setdefault("last_transcribe_activity", time.time())
 
@@ -188,6 +190,12 @@ class TranscriptionPipeline:
                         "Skipping too-short transcript: '%s'", transcript_stripped
                     )
                     continue
+
+                if self.record_transcript_context is not None:
+                    try:
+                        self.record_transcript_context(transcript_stripped, keyword_index)
+                    except Exception as e:
+                        self.log.warning("Context memory record failed: %s", e)
 
                 if keyword_index == 0:
                     self.log.info(
