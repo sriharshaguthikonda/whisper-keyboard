@@ -171,6 +171,10 @@ except ModuleNotFoundError:
         snapshot_audio_buffer as snapshot_audio_buffer_impl,
         wait_for_silence as wait_for_silence_impl,
     )
+try:
+    from volume_restore_guard import VolumeRestoreGuard
+except ModuleNotFoundError:
+    from wkey.volume_restore_guard import VolumeRestoreGuard
 
 # Set up driver reference for commands_and_tools
 try:
@@ -231,6 +235,14 @@ BRIGHT_WHITE = "\033[97m"
 initial_volume = None
 transcript_queue = queue.Queue()
 audio_buffer_queue = queue.Queue()
+volume_restore_guard = VolumeRestoreGuard(
+    get_volume_fn=get_volume,
+    set_volume_fn=set_volume,
+    logger=logging,
+    window_seconds=300,
+    max_samples=5,
+    tolerance=0.03,
+)
 
 # Initialize VoiceDetector
 vad_detector = VoiceDetector()
@@ -626,6 +638,7 @@ def decrease_volume_all():
         current_volume = get_volume()
         if initial_volume is None or current_volume != initial_volume:
             initial_volume = current_volume
+        volume_restore_guard.set_target(initial_volume, reason="decrease_volume_all")
         print(f"Decreasing volume from {initial_volume * 100}% to 10%")
         set_volume(0.1)
     except Exception as e:
@@ -635,9 +648,16 @@ def restore_volume_all():
     global initial_volume
     try:
         if initial_volume is not None:
-            set_volume(initial_volume)
-            time.sleep(0.5)
+            target_volume = initial_volume
             initial_volume = None
+            volume_restore_guard.set_target(
+                target_volume, reason="restore_volume_all_request"
+            )
+            restored = volume_restore_guard.restore_with_monitor(
+                reason="restore_volume_all"
+            )
+            if not restored:
+                set_volume(target_volume)
     except Exception as e:
         logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
 
