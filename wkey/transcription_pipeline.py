@@ -233,6 +233,9 @@ class TranscriptionPipeline:
                         keyword_position + len("google") :
                     ]
                     self.log.info("Processing google command: %s", stripped_transcript)
+                    self.transcript_queue.put(
+                        (stripped_transcript.strip(), keyword_index)
+                    )
                     continue
 
                 self.global_state["last_successful_operation"] = time.time()
