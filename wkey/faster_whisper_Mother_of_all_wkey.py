@@ -665,6 +665,27 @@ def restore_volume_all():
     except Exception as e:
         logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
 
+def _restore_volume_all_async(delay_seconds=0.0):
+    def _run():
+        try:
+            if delay_seconds and delay_seconds > 0:
+                time.sleep(delay_seconds)
+            restore_volume_all()
+        except Exception as e:
+            logging.error(f"Error in delayed restore_volume_all: {e}", exc_info=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+
+def _get_volume_restore_delay_for_keyword(keyword_index):
+    if keyword_index == 3:
+        try:
+            return max(
+                0.0, float(SETTINGS.get("google_wake_volume_hold_seconds", 2.5))
+            )
+        except Exception:
+            return 2.5
+    return 0.0
+
 def monitor_sound_processing():
     pythoncom.CoInitialize()
     global something_is_playing
@@ -823,10 +844,11 @@ def start_recording(keyword_index=None):
 def stop_recording(keyword_index):
     try:
         global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result
+        restore_delay_seconds = _get_volume_restore_delay_for_keyword(keyword_index)
 
         if not recording:
             if initial_volume is not None:
-                threading.Thread(target=restore_volume_all).start()
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
             beep(STOP_BEEP)
             return
@@ -836,7 +858,7 @@ def stop_recording(keyword_index):
 
         if keyword_index in (1, 2, 3) and keyword_validation_result is False:
             if initial_volume is not None:
-                threading.Thread(target=restore_volume_all).start()
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
             beep(STOP_BEEP)
             with recording_lock:
@@ -849,7 +871,7 @@ def stop_recording(keyword_index):
 
         if not True_positve_audio:
             if initial_volume is not None:
-                threading.Thread(target=restore_volume_all).start()
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
             beep(STOP_BEEP)
             with recording_lock:
@@ -884,11 +906,11 @@ def stop_recording(keyword_index):
             )
             audio_buffer_queue.put((audio_buffer, keyword_index))
 
-            threading.Thread(target=restore_volume_all).start()
+            _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             audio_buffer = np.array([], dtype="float32")
 
             if play_pause_pressed:
-                threading.Thread(target=restore_volume_all).start()
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
                 play_pause_pressed = False
 
             beep(STOP_BEEP)
@@ -929,11 +951,11 @@ def stop_recording(keyword_index):
             audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")
 
-        threading.Thread(target=restore_volume_all).start()
+        _restore_volume_all_async(delay_seconds=restore_delay_seconds)
         audio_buffer = np.array([], dtype="float32")
 
         if play_pause_pressed:
-            threading.Thread(target=restore_volume_all).start()
+            _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
 
         beep(STOP_BEEP)

@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "router_context_items": 3,
     "router_context_chars": 320,
     "context_max_age_seconds": 180,
+    "google_wake_volume_hold_seconds": 2.5,
 }
 
 
@@ -54,6 +55,11 @@ def _validate_settings(settings, defaults):
         ):
             try:
                 merged[key] = max(1, int(value))
+            except Exception:
+                pass
+        elif key == "google_wake_volume_hold_seconds":
+            try:
+                merged[key] = max(0.0, float(value))
             except Exception:
                 pass
         else:
