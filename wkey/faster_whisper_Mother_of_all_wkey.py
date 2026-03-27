@@ -472,6 +472,9 @@ audio_data_lock = threading.Lock()
 keyword_validation_event = threading.Event()
 keyword_validation_result = None
 KEYWORD_VALIDATION_TIMEOUT = 1.5
+recording_start_time = 0.0
+recording_session_counter = 0
+active_recording_session_id = 0
 
 # Resource throttling state
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
@@ -503,11 +506,23 @@ def _drain_queue(q):
 
 def handle_resume_event(reason="resume"):
     """Reset buffers/queues and add a short cooldown after sleep/hibernation."""
-    global resume_cooldown_until, pre_recording_buffer, pre_recording_buffer_f24
+    global resume_cooldown_until
+    global pre_recording_buffer
+    global pre_recording_buffer_f24
+    global audio_buffer
+    global buffer_index
+    global recording
+    global active_recording_session_id
     resume_cooldown_until = time.time() + RESUME_COOLDOWN_SECONDS
     _drain_queue(audio_buffer_queue)
     _drain_queue(transcript_queue)
     clear_recent_transcripts()
+    with recording_lock:
+        recording = False
+        active_recording_session_id = 0
+    with audio_data_lock:
+        audio_buffer = np.array([], dtype="float32")
+    buffer_index = 0
     try:
         pre_recording_buffer.fill(0)
         if pre_recording_buffer_f24 is not None:
@@ -570,6 +585,7 @@ def audio_callback(indata, frames, time, status):
                 pre_recording_buffer=pre_recording_buffer,
                 pre_recording_buffer_f24=pre_recording_buffer_f24,
                 buffer_size=BUFFER_SIZE,
+                max_recording_samples=_get_max_recording_seconds() * sample_rate,
                 recording_lock=recording_lock,
                 audio_data_lock=audio_data_lock,
                 log=logging,
@@ -709,7 +725,7 @@ global True_positve_audio
 True_positve_audio = True
 
 def check_keywords_in_transcription(pre_recording_data, keyword_index):
-    global True_positve_audio, recording, keyword_validation_result
+    global True_positve_audio, recording, keyword_validation_result, active_recording_session_id
     try:
         try:
             pythoncom.CoInitialize()
@@ -730,6 +746,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             )
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         elif keyword_index == 2 and "lama" not in pre_recording_transcript.lower():
             True_positve_audio = False
@@ -739,6 +756,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             )
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         elif keyword_index == 3 and "google" not in pre_recording_transcript.lower():
             True_positve_audio = False
@@ -748,6 +766,7 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
             )
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             threading.Thread(target=stop_recording, args=(keyword_index,)).start()
         else:
             keyword_validation_result = True
@@ -766,6 +785,44 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
 def is_pre_recording_keyword_check_enabled():
     return bool(SETTINGS.get("enable_pre_recording_keyword_check", False))
 
+def _get_max_recording_seconds():
+    return _get_setting_int("max_recording_seconds", 45, minimum=5, maximum=900)
+
+def _trim_audio_to_max_duration(audio_data):
+    try:
+        max_samples = _get_max_recording_seconds() * sample_rate
+        if max_samples <= 0 or audio_data is None:
+            return audio_data
+        if len(audio_data) <= max_samples:
+            return audio_data
+        original_seconds = len(audio_data) / float(sample_rate)
+        max_seconds = max_samples / float(sample_rate)
+        logging.warning(
+            f"{YELLOW}Audio buffer too long ({original_seconds:.1f}s). Trimming to {max_seconds:.1f}s.{RESET}"
+        )
+        return audio_data[-max_samples:]
+    except Exception as e:
+        logging.error(f"Error trimming audio buffer: {e}", exc_info=True)
+        return audio_data
+
+def _schedule_recording_timeout(recording_session_id, keyword_index):
+    max_seconds = _get_max_recording_seconds()
+
+    def _run():
+        try:
+            time.sleep(max_seconds)
+            with recording_lock:
+                if (not recording) or active_recording_session_id != recording_session_id:
+                    return
+            logging.warning(
+                f"{YELLOW}Recording timeout reached ({max_seconds}s). Auto-stopping.{RESET}"
+            )
+            stop_recording(keyword_index)
+        except Exception as e:
+            logging.error(f"Error in recording timeout watchdog: {e}", exc_info=True)
+
+    threading.Thread(target=_run, daemon=True).start()
+
 def start_recording(keyword_index=None):
     """Start recording audio.
     
@@ -782,8 +839,18 @@ def start_recording(keyword_index=None):
             logging.info(f"{YELLOW}Resume cooldown active. Ignoring wake word recording request.{RESET}")
             return
             
-        global stream, recording, play_pause_pressed, something_is_playing, True_positve_audio, keyword_validation_result
+        global stream
+        global recording
+        global play_pause_pressed
+        global something_is_playing
+        global True_positve_audio
+        global keyword_validation_result
+        global audio_buffer
+        global recording_start_time
+        global recording_session_counter
+        global active_recording_session_id
 
+        current_recording_session_id = None
         with recording_lock:
             if recording:
                 logging.info(f"{YELLOW}Recording is already in progress.{RESET}")
@@ -793,6 +860,13 @@ def start_recording(keyword_index=None):
             keyword_validation_event.clear()
             keyword_validation_result = None
             recording = True
+            recording_start_time = time.time()
+            recording_session_counter += 1
+            active_recording_session_id = recording_session_counter
+            current_recording_session_id = active_recording_session_id
+
+        with audio_data_lock:
+            audio_buffer = np.array([], dtype="float32")
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
         decrease_volume_all()
@@ -801,6 +875,7 @@ def start_recording(keyword_index=None):
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             return
 
         if something_is_playing:
@@ -810,6 +885,8 @@ def start_recording(keyword_index=None):
 
         beep(START_BEEP)
         logging.info(f"{CYAN}Listening...{RESET}")
+        if current_recording_session_id is not None:
+            _schedule_recording_timeout(current_recording_session_id, keyword_index)
 
         if keyword_index not in (None, 0) and keyword_index not in RECORD_KEYS.values():
             if not is_pre_recording_keyword_check_enabled():
@@ -830,6 +907,9 @@ def start_recording(keyword_index=None):
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
+        with recording_lock:
+            recording = False
+            active_recording_session_id = 0
 
 """
  ######  ########  #######  ########     ########  ########  ######  
@@ -843,12 +923,14 @@ def start_recording(keyword_index=None):
 
 def stop_recording(keyword_index):
     try:
-        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result
+        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result, active_recording_session_id
         restore_delay_seconds = _get_volume_restore_delay_for_keyword(keyword_index)
 
         if not recording:
             if initial_volume is not None:
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+            with recording_lock:
+                active_recording_session_id = 0
             play_pause_pressed = False
             beep(STOP_BEEP)
             return
@@ -863,6 +945,7 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             logging.info(
                 f"{MAGENTA}Wake-word validation failed. Dropping recording.{RESET}"
             )
@@ -876,6 +959,7 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             logging.info(
                 f"{MAGENTA}True_positve_audio...is {True_positve_audio}{RESET}"
             )
@@ -884,7 +968,6 @@ def stop_recording(keyword_index):
 
         logging.info(f"{GREEN}Stopping recording...{RESET}")
         hard_stop_limit = 5
-        recording_start_time = time.time()
 
         pre_recording_data = np.roll(
             pre_recording_buffer, -buffer_index, axis=0
@@ -901,6 +984,7 @@ def stop_recording(keyword_index):
                 pre_recording_buffer_f24, -buffer_index, axis=0
             ).flatten()
             audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+            audio_buffer = _trim_audio_to_max_duration(audio_buffer)
             save_manual_recording_if_configured(
                 audio_buffer, keyword_index, sample_rate=sample_rate
             )
@@ -916,6 +1000,7 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             with recording_lock:
                 recording = False
+                active_recording_session_id = 0
             logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
             return
         else:
@@ -943,6 +1028,7 @@ def stop_recording(keyword_index):
             audio_buffer, audio_data_lock
         )
         audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
+        audio_buffer = _trim_audio_to_max_duration(audio_buffer)
         if keyword_index in (1, 2, 3) and time.time() < resume_cooldown_until:
             logging.info(
                 f"{YELLOW}Resume cooldown active. Dropping wake-word recording.{RESET}"
@@ -961,6 +1047,7 @@ def stop_recording(keyword_index):
         beep(STOP_BEEP)
         with recording_lock:
             recording = False
+            active_recording_session_id = 0
         logging.info(f"{MAGENTA}Recording stopped. Processing audio...{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
@@ -1385,8 +1472,9 @@ def beep(sound):
 
 def reset_state():
     try:
-        global recording, play_pause_pressed, audio_buffer
+        global recording, play_pause_pressed, audio_buffer, active_recording_session_id
         recording = False
+        active_recording_session_id = 0
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
         threading.Thread(target=restore_volume_all).start()
@@ -1631,10 +1719,11 @@ def monitor_program_health():
 
 def reset_all_states():
     try:
-        global recording, play_pause_pressed, audio_buffer, stream, wake_stream
+        global recording, play_pause_pressed, audio_buffer, stream, wake_stream, active_recording_session_id
 
         with recording_lock:
             recording = False
+            active_recording_session_id = 0
 
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")

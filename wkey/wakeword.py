@@ -17,7 +17,7 @@ DEFAULT_MODEL_PATHS = [
 
 DEFAULT_THRESHOLDS = {
     0: 0.9,
-    1: 0.1,
+    1: 0.05,
     2: 0.1,
     3: 0.1,
 }
