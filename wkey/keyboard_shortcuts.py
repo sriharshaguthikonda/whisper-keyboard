@@ -54,7 +54,4 @@ class KeyboardShortcutHandler:
                 self.stop_recording(keyword_index)
 
     def _pause_combo_active(self):
-        ctrl = any(k in self._pressed for k in (Key.ctrl_l, Key.ctrl_r, Key.ctrl))
-        alt = any(k in self._pressed for k in (Key.alt_l, Key.alt_r, Key.alt))
-        shift = any(k in self._pressed for k in (Key.shift_l, Key.shift_r, Key.shift))
-        return ctrl and alt and shift and Key.scroll_lock in self._pressed
+        return Key.scroll_lock in self._pressed
