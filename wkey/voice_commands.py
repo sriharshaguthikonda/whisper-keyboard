@@ -1411,6 +1411,26 @@ import asyncio
 
 last_tool_call_found = False
 
+
+def _split_compound_commands(query: str):
+    text = (query or "").strip()
+    if not text:
+        return []
+
+    # Split on common command separators while keeping each command phrase intact.
+    parts = re.split(
+        r"\s*(?:,|;|\band then\b|\bthen\b|\band\b)\s*",
+        text,
+        flags=re.IGNORECASE,
+    )
+    commands = []
+    for part in parts:
+        cleaned = part.strip().strip(".!?")
+        if cleaned:
+            commands.append(cleaned)
+    return commands
+
+
 async def execute_command_run_with_tool(
     query,
     max_retries=3,
@@ -1438,11 +1458,12 @@ async def execute_command_run_with_tool(
                 "role": "system",
                 "content": """You are a specialized assistant for controlling computer functions. Your role is to:
                 1. Carefully analyze user queries to determine the most appropriate tool/function
-                2. Select the SINGLE most relevant tool from the available options
-                3. Only use tools that exactly match the user's intent
-                4. For system controls (volume, media, windows), be very precise in tool selection
-                5. If no exact tool matches the query, do not force a tool selection
-                6. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).
+                2. For a query with multiple independent actions, return MULTIPLE tool calls (one per action)
+                3. For a query with a single action, return exactly one tool call
+                4. Only use tools that exactly match the user's intent
+                5. For system controls (volume, media, windows), be very precise in tool selection
+                6. If no exact tool matches the query, do not force a tool selection
+                7. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify, recycle bin).
 
                 Examples:
                 - "play music" → use play_song()
@@ -1450,6 +1471,7 @@ async def execute_command_run_with_tool(
                 - "skip" → use next_track()
                 - "minimize everything" → use minimize_all_windows()
                 - "check internet speed" → ping_google()
+                - "restart voicemeeter and open recycle bin" → call restart_voicemeeter() and launch_application(app="recycle bin")
 
                 Only respond with tool calls, no conversational responses.""",
             },
@@ -1515,62 +1537,109 @@ async def execute_command_run_with_tool(
 
                 overall_success = True
                 if tool_calls:
-                    for tool_call in tool_calls:
-                        function_args = json.loads(tool_call["function"]["arguments"])
-                        function_name = tool_call["function"]["name"]
+                    async def _run_tool_call(tool_call):
+                        try:
+                            function_name = tool_call["function"]["name"]
+                            raw_args = tool_call["function"].get("arguments")
+                            if not raw_args or raw_args == "null":
+                                function_args = {}
+                            else:
+                                function_args = json.loads(raw_args)
+                            if function_args is None:
+                                function_args = {}
+                        except Exception as e:
+                            logging.error(
+                                f"{RED}Invalid tool call payload: {e}{RESET}",
+                                exc_info=True,
+                            )
+                            return False
 
                         if function_name in DISABLED_TOOL_NAMES:
                             logging.info(
                                 f"{YELLOW}Ignoring disabled tool call: {function_name}{RESET}"
                             )
-                            overall_success = False
-                            continue
+                            return False
 
-                        if function_name in globals():
-                            try:
-                                logging.info(
-                                    f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
-                                )
-                                func = globals()[function_name]
-                                # Get the function's parameters
-                                import inspect
-                                sig = inspect.signature(func)
-                                
-                                # Check if the function accepts any parameters
-                                if not any(param.kind == param.POSITIONAL_OR_KEYWORD for param in sig.parameters.values()):
-                                    # Function takes no parameters
-                                    if asyncio.iscoroutinefunction(func):
-                                        result = await func()
-                                    else:
-                                        result = func()
-                                else:
-                                    # Function expects parameters
-                                    if asyncio.iscoroutinefunction(func):
-                                        result = await func(**function_args)
-                                    else:
-                                        result = func(**function_args)
-                                logging.info(
-                                    f"{GREEN}Executed {function_name} with result: {result}{RESET}"
-                                )
-                                """TODO  we have removed "return True" here because to run mulltiple functions  """
-                                """return True"""
-                            except Exception as e:
-                                logging.error(
-                                    f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
-                                    exc_info=True,
-                                )
-                                overall_success = False
-                                continue
-                        else:
+                        if function_name not in globals():
                             logging.error(
                                 f"{RED}Function {function_name} not found{RESET}"
                             )
-                            """TODO  we have removed return False" here because to run mulltiple functions  """
-                            """return False"""
+                            return False
+
+                        try:
+                            logging.info(
+                                f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
+                            )
+                            func = globals()[function_name]
+                            import inspect
+
+                            sig = inspect.signature(func)
+                            accepts_named = any(
+                                param.kind
+                                in (
+                                    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                    inspect.Parameter.KEYWORD_ONLY,
+                                    inspect.Parameter.VAR_KEYWORD,
+                                )
+                                for param in sig.parameters.values()
+                            )
+                            if not accepts_named:
+                                if asyncio.iscoroutinefunction(func):
+                                    result = await func()
+                                else:
+                                    result = await asyncio.to_thread(func)
+                            else:
+                                if asyncio.iscoroutinefunction(func):
+                                    result = await func(**function_args)
+                                else:
+                                    result = await asyncio.to_thread(func, **function_args)
+                            logging.info(
+                                f"{GREEN}Executed {function_name} with result: {result}{RESET}"
+                            )
+                            return True
+                        except Exception as e:
+                            logging.error(
+                                f"{RED}Error executing function {function_name}: {str(e)}{RESET}",
+                                exc_info=True,
+                            )
+                            return False
+
+                    tool_results = await asyncio.gather(
+                        *[_run_tool_call(tc) for tc in tool_calls],
+                        return_exceptions=True,
+                    )
+                    for result in tool_results:
+                        if isinstance(result, Exception):
                             overall_success = False
-                            continue
+                        elif result is False:
+                            overall_success = False
                 else:
                     logging.error(f"{RED}No tool calls found in the response{RESET}")
+                    split_commands = _split_compound_commands(query)
+                    if len(split_commands) > 1:
+                        logging.info(
+                            f"{YELLOW}Fallback: routing {len(split_commands)} sub-commands in parallel{RESET}"
+                        )
+                        sub_results = await asyncio.gather(
+                            *[
+                                execute_command_run_with_tool(
+                                    cmd,
+                                    max_retries=max_retries,
+                                    retry_delay=retry_delay,
+                                    context_hint=context_hint,
+                                )
+                                for cmd in split_commands
+                            ],
+                            return_exceptions=True,
+                        )
+                        successful = []
+                        for sub in sub_results:
+                            if isinstance(sub, Exception):
+                                successful.append(False)
+                            else:
+                                successful.append(bool(sub))
+                        last_tool_call_found = any(successful)
+                        return all(successful)
 
                 last_tool_call_found = bool(tool_calls)
                 return overall_success

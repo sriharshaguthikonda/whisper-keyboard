@@ -278,6 +278,8 @@ LAUNCH_COMMANDS = {
     "displayfusion": '"C:\\Program Files (x86)\\DisplayFusion\\DisplayFusion.exe"',
     "task scheduler": "taskschd.msc",
     "startup folder": "explorer shell:startup",
+    "recycle bin": "explorer shell:RecycleBinFolder",
+    "trash": "explorer shell:RecycleBinFolder",
     "services": "services.msc",
     "sound control panel": "mmsys.cpl",
     "spotify": "spotify",
@@ -313,6 +315,9 @@ def launch_application(app: str):
             return
         if normalized == "startup folder":
             subprocess.Popen(["explorer.exe", "shell:startup"])
+            return
+        if normalized in ("recycle bin", "trash"):
+            subprocess.Popen(["explorer.exe", "shell:RecycleBinFolder"])
             return
         if normalized not in LAUNCH_COMMANDS:
             # fallback to closest known app if confidence is good
@@ -515,6 +520,13 @@ COMMAND_MAPPINGS = {
         "open startup directory",
         "show startup programs",
     ],
+    "open recycle bin": [
+        "open recycle bin",
+        "open trash",
+        "show recycle bin",
+        "open bin",
+        "recycle bin",
+    ],
     "manage_services": [
         "manage services",
         "open services",
@@ -620,6 +632,7 @@ ACTIONS = {
     ),
     "open_task_scheduler": lambda: launch_application("task scheduler"),
     "open_startup_folder": lambda: launch_application("startup folder"),
+    "open recycle bin": lambda: launch_application("recycle bin"),
     "manage_services": lambda: launch_application("services"),
     "start_whisper": start_whisper,
     "start_grok": start_grok,
@@ -653,13 +666,13 @@ tools = [
         "type": "function",
         "function": {
             "name": "launch_application",
-            "description": "Launch a supported desktop app (sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint).",
+            "description": "Launch a supported desktop app (sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, recycle bin, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "app": {
                         "type": "string",
-                        "description": "Name of the app to launch. Supported: sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint.",
+                        "description": "Name of the app to launch. Supported: sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, recycle bin, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify.",
                     }
                 },
                 "required": ["app"],

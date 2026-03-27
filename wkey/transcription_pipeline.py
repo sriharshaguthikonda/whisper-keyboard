@@ -92,6 +92,28 @@ class TranscriptionPipeline:
                 current_settings = self.settings_getter()
                 use_groq = current_settings.get("fallback_to_groq", True)
                 max_retries = current_settings.get("max_retries", 3)
+                try:
+                    max_recording_seconds = max(
+                        5, int(current_settings.get("max_recording_seconds", 45))
+                    )
+                except Exception:
+                    max_recording_seconds = 45
+                max_samples = self.sample_rate * max_recording_seconds
+                if len(audio_buffer_for_processing) > max_samples:
+                    original_seconds = len(audio_buffer_for_processing) / float(
+                        self.sample_rate
+                    )
+                    self.log.warning(
+                        "Input audio too long (%.1fs). Trimming to %ss before transcription.",
+                        original_seconds,
+                        max_recording_seconds,
+                    )
+                    audio_buffer_for_processing = audio_buffer_for_processing[
+                        -max_samples:
+                    ]
+                    byte_io = io.BytesIO()
+                    wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
+                    byte_io.seek(0)
 
                 if use_groq:
                     try:

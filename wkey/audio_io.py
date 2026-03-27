@@ -33,6 +33,7 @@ def audio_callback(
     pre_recording_buffer,
     pre_recording_buffer_f24,
     buffer_size,
+    max_recording_samples=None,
     recording_lock,
     audio_data_lock,
     log=logging,
@@ -54,6 +55,13 @@ def audio_callback(
                 if isinstance(indata, np.ndarray):
                     with audio_data_lock:
                         audio_buffer = np.append(audio_buffer, indata.flatten())
+                        if max_recording_samples:
+                            try:
+                                cap = int(max_recording_samples)
+                            except Exception:
+                                cap = 0
+                            if cap > 0 and len(audio_buffer) > cap:
+                                audio_buffer = audio_buffer[-cap:]
                 else:
                     log.error(
                         f"{error_color_prefix}Invalid indata type: {type(indata)}{error_color_suffix}"

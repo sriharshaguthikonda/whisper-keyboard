@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
     "router_context_items": 3,
     "router_context_chars": 320,
     "context_max_age_seconds": 180,
+    "max_recording_seconds": 45,
     "google_wake_volume_hold_seconds": 2.5,
 }
 
@@ -52,6 +53,7 @@ def _validate_settings(settings, defaults):
             "router_context_items",
             "router_context_chars",
             "context_max_age_seconds",
+            "max_recording_seconds",
         ):
             try:
                 merged[key] = max(1, int(value))
