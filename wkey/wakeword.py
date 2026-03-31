@@ -19,7 +19,7 @@ DEFAULT_THRESHOLDS = {
     0: 0.9,
     1: 0.05,
     2: 0.1,
-    3: 0.1,
+    3: 0.01,
 }
 
 DEFAULT_CHUNK = 5120
