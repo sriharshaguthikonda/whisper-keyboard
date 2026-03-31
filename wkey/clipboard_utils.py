@@ -24,7 +24,7 @@ def set_clipboard_content(text: str) -> None:
                 win32clipboard.SetClipboardText(text)
                 win32clipboard.CloseClipboard()
                 success = True
-            except win32clipboard.Error:
+            except win32clipboard.error:
                 logging.info(
                     "Failed to open the clipboard. Retrying in 1 second..."
                 )
@@ -40,7 +40,7 @@ def get_clipboard_content() -> str:
         data = win32clipboard.GetClipboardData()
         win32clipboard.CloseClipboard()
         return data
-    except win32clipboard.Error:
+    except win32clipboard.error:
         logging.info(
             "Failed to open the clipboard. Returning an empty string."
         )
