@@ -123,6 +123,12 @@ def paste_transcript(transcript: str = "", beep_func=None, **kwargs) -> None:
 
     Supports legacy keyword ``text`` for compatibility with tool calls.
     Leading whitespace is trimmed to avoid unwanted spaces when inserting.
+    
+    This function preserves the original clipboard content by:
+    1. Saving current clipboard content
+    2. Pasting the transcript
+    3. Adding transcript to CopyQ history
+    4. Restoring the original clipboard content
     """
     try:
         if not transcript and "text" in kwargs:
@@ -131,37 +137,28 @@ def paste_transcript(transcript: str = "", beep_func=None, **kwargs) -> None:
         if not cleaned:
             return
 
-        had_clipboard_text = _clipboard_has_unicode_text()
-        previous_clipboard_text = (
-            get_clipboard_content() if had_clipboard_text else None
-        )
-
+        # Save original clipboard content
+        original_clipboard = get_clipboard_content()
+        
+        # Set transcript to clipboard and paste using CopyQ if available
         set_clipboard_content(cleaned)
-        pasted = _copyq_paste()
-        if not pasted:
+        
+        # Try to use CopyQ paste first, fallback to Ctrl+V
+        if not _copyq_paste():
             _send_ctrl_v()
-            pasted = True
-
-        # Best-effort policy:
-        # - If paste path ran and we had previous clipboard text, restore it as top item.
-        # - Then push transcript as second history item in CopyQ.
-        if pasted and had_clipboard_text and previous_clipboard_text is not None:
-            set_clipboard_content(previous_clipboard_text)
-            if _copyq_insert_second_item(cleaned):
-                logging.info("Paste triggered; transcript saved to CopyQ row 1")
-            else:
-                logging.warning(
-                    "Paste triggered; failed to mirror transcript to CopyQ row 1"
-                )
-        elif pasted:
-            logging.info(
-                "Paste triggered; transcript kept as current clipboard item"
-            )
-
+        
+        # Add transcript to CopyQ history (as second item so it's accessible but not active)
+        if original_clipboard:
+            set_clipboard_content(original_clipboard)
+            _copyq_insert_second_item(cleaned)
+            logging.info("Voice transcript pasted, original clipboard restored, transcript saved to CopyQ")
+        else:
+            # If clipboard was empty, just add transcript to CopyQ history
+            _copyq_insert_second_item(cleaned)
+            logging.info("Voice transcript pasted and saved to CopyQ")
+        
         if beep_func:
             beep_func(PASTE_BEEP)
-        if not pasted:
-            logging.info("Paste failed; transcript stored as current clipboard item")
     except Exception as exc:  # pragma: no cover - just logging
         logging.error("Error in paste_transcript: %s", exc, exc_info=True)
 
