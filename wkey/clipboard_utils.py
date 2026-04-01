@@ -2,7 +2,9 @@ import ctypes
 import logging
 import os
 import subprocess
+import threading
 import time
+import unicodedata
 import win32clipboard
 
 
@@ -13,41 +15,128 @@ COPYQ_PATH = os.getenv(
 )
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    try:
+        return max(0.0, float(os.getenv(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+CLIPBOARD_MAX_RETRIES = _env_int("WKEY_CLIPBOARD_MAX_RETRIES", 8)
+CLIPBOARD_RETRY_DELAY_SECONDS = _env_float(
+    "WKEY_CLIPBOARD_RETRY_DELAY_SECONDS", 0.08
+)
+CLIPBOARD_RETRY_MAX_SECONDS = _env_float(
+    "WKEY_CLIPBOARD_RETRY_MAX_SECONDS", 0.60
+)
+CLIPBOARD_LOCK = threading.Lock()
+
+
+def _normalize_text(text: str) -> str:
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFC", text.replace("\x00", ""))
+    return normalized.encode("utf-8", errors="replace").decode("utf-8")
+
+
+def _retry_sleep_seconds(attempt: int) -> float:
+    if CLIPBOARD_RETRY_DELAY_SECONDS <= 0:
+        return 0.0
+    return min(CLIPBOARD_RETRY_DELAY_SECONDS * attempt, CLIPBOARD_RETRY_MAX_SECONDS)
+
+
 def set_clipboard_content(text: str) -> None:
     """Place ``text`` onto the Windows clipboard."""
-    try:
-        success = False
-        while not success:
+    safe_text = _normalize_text(text)
+    with CLIPBOARD_LOCK:
+        for attempt in range(1, CLIPBOARD_MAX_RETRIES + 1):
+            opened = False
             try:
                 win32clipboard.OpenClipboard(0)
+                opened = True
                 win32clipboard.EmptyClipboard()
-                win32clipboard.SetClipboardText(text)
-                win32clipboard.CloseClipboard()
-                success = True
-            except win32clipboard.error:
-                logging.info(
-                    "Failed to open the clipboard. Retrying in 1 second..."
+                # Force Unicode clipboard format to avoid MBCS encoding failures.
+                win32clipboard.SetClipboardText(
+                    safe_text,
+                    win32clipboard.CF_UNICODETEXT,
                 )
-                time.sleep(0.5)
-    except Exception as exc:  # pragma: no cover - just logging
-        logging.error("Error in set_clipboard_content: %s", exc, exc_info=True)
+                return
+            except win32clipboard.error as exc:
+                if attempt == CLIPBOARD_MAX_RETRIES:
+                    logging.error(
+                        "Error in set_clipboard_content after %s retries: %s",
+                        CLIPBOARD_MAX_RETRIES,
+                        exc,
+                        exc_info=True,
+                    )
+                    return
+                wait_seconds = _retry_sleep_seconds(attempt)
+                logging.info(
+                    "Clipboard busy. Retrying in %.2fs (%s/%s)",
+                    wait_seconds,
+                    attempt,
+                    CLIPBOARD_MAX_RETRIES,
+                )
+                if wait_seconds:
+                    time.sleep(wait_seconds)
+            except Exception as exc:  # pragma: no cover - just logging
+                logging.error("Error in set_clipboard_content: %s", exc, exc_info=True)
+                return
+            finally:
+                if opened:
+                    try:
+                        win32clipboard.CloseClipboard()
+                    except win32clipboard.error:
+                        pass
 
 
 def get_clipboard_content() -> str:
     """Return the current string content from the Windows clipboard."""
-    try:
-        win32clipboard.OpenClipboard(0)
-        data = win32clipboard.GetClipboardData()
-        win32clipboard.CloseClipboard()
-        return data
-    except win32clipboard.error:
-        logging.info(
-            "Failed to open the clipboard. Returning an empty string."
-        )
-        return ""
-    except Exception as exc:  # pragma: no cover - just logging
-        logging.error("Error in get_clipboard_content: %s", exc, exc_info=True)
-        return ""
+    with CLIPBOARD_LOCK:
+        for attempt in range(1, CLIPBOARD_MAX_RETRIES + 1):
+            opened = False
+            try:
+                win32clipboard.OpenClipboard(0)
+                opened = True
+                if _clipboard_has_unicode_text():
+                    return win32clipboard.GetClipboardData(
+                        win32clipboard.CF_UNICODETEXT
+                    )
+
+                data = win32clipboard.GetClipboardData()
+                if isinstance(data, str):
+                    return data
+                if isinstance(data, bytes):
+                    return data.decode("utf-8", errors="replace")
+                return str(data)
+            except win32clipboard.error as exc:
+                if attempt == CLIPBOARD_MAX_RETRIES:
+                    logging.info(
+                        "Failed to read clipboard after %s retries: %s",
+                        CLIPBOARD_MAX_RETRIES,
+                        exc,
+                    )
+                    return ""
+                wait_seconds = _retry_sleep_seconds(attempt)
+                if wait_seconds:
+                    time.sleep(wait_seconds)
+            except Exception as exc:  # pragma: no cover - just logging
+                logging.error("Error in get_clipboard_content: %s", exc, exc_info=True)
+                return ""
+            finally:
+                if opened:
+                    try:
+                        win32clipboard.CloseClipboard()
+                    except win32clipboard.error:
+                        pass
+    return ""
 
 
 def _clipboard_has_unicode_text() -> bool:
@@ -75,6 +164,8 @@ def _copyq_paste() -> bool:
             [COPYQ_PATH, "paste"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=3,
             check=False,
         )
@@ -97,10 +188,13 @@ def _copyq_insert_second_item(text: str) -> bool:
         if not os.path.exists(COPYQ_PATH):
             logging.warning("CopyQ not found at path: %s", COPYQ_PATH)
             return False
+        safe_text = _normalize_text(text)
         result = subprocess.run(
             [COPYQ_PATH, "tab", "clipboard", "insert", "1", "-"],
-            input=text,
+            input=safe_text,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             capture_output=True,
             timeout=5,
             check=False,
@@ -133,7 +227,7 @@ def paste_transcript(transcript: str = "", beep_func=None, **kwargs) -> None:
     try:
         if not transcript and "text" in kwargs:
             transcript = kwargs.get("text", "")
-        cleaned = transcript.lstrip()
+        cleaned = _normalize_text(transcript).lstrip()
         if not cleaned:
             return
 
