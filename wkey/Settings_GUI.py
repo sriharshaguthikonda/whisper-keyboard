@@ -13,10 +13,15 @@ from qtpy.QtWidgets import (
     QCheckBox,
     QLineEdit,
     QPushButton,
+    QMessageBox,
+    QToolButton,
+    QFrame,
 )
 from qtpy.QtCore import Qt
+from qtpy.QtGui import QIntValidator
 
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
+
 
 class SettingsWindow(QWidget):
     def __init__(self):
@@ -28,17 +33,119 @@ class SettingsWindow(QWidget):
         self.use_cpu_cb = QCheckBox("Use local CPU fallback")
         self.use_api_cb = QCheckBox("Fallback to Groq API")
         self.precheck_cb = QCheckBox("Enable pre-recording keyword check")
+        self.context_memory_cb = QCheckBox("Enable transcript context memory")
+
         self.max_retries_edit = QLineEdit()
         self.max_retries_edit.setPlaceholderText("Max retries (Groq)")
+        self.max_retries_edit.setValidator(QIntValidator(1, 20, self))
+
+        self.stt_context_items_edit = QLineEdit()
+        self.stt_context_items_edit.setPlaceholderText("1 to 8")
+        self.stt_context_items_edit.setValidator(QIntValidator(1, 8, self))
+
+        self.stt_context_chars_edit = QLineEdit()
+        self.stt_context_chars_edit.setPlaceholderText("40 to 800")
+        self.stt_context_chars_edit.setValidator(QIntValidator(40, 800, self))
+
+        self.router_context_items_edit = QLineEdit()
+        self.router_context_items_edit.setPlaceholderText("1 to 8")
+        self.router_context_items_edit.setValidator(QIntValidator(1, 8, self))
+
+        self.router_context_chars_edit = QLineEdit()
+        self.router_context_chars_edit.setPlaceholderText("80 to 1200")
+        self.router_context_chars_edit.setValidator(QIntValidator(80, 1200, self))
+
+        self.context_max_age_edit = QLineEdit()
+        self.context_max_age_edit.setPlaceholderText("15 to 3600")
+        self.context_max_age_edit.setValidator(QIntValidator(15, 3600, self))
+
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setPlaceholderText("GROQ_API_KEY")
 
-        self.layout.addWidget(self.use_local_cb)
-        self.layout.addWidget(self.use_cpu_cb)
-        self.layout.addWidget(self.use_api_cb)
-        self.layout.addWidget(self.precheck_cb)
-        self.layout.addWidget(QLabel("Max Retries:"))
-        self.layout.addWidget(self.max_retries_edit)
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.use_local_cb,
+                "Use local GPU Faster-Whisper model when available.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.use_cpu_cb,
+                "Allow local CPU model fallback when network transcription fails.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.use_api_cb,
+                "Use Groq API for transcription. If disabled, only local models are used.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.precheck_cb,
+                "Check a small pre-buffer for wake word before processing full command audio.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Max Retries:",
+                self.max_retries_edit,
+                "Number of Groq retry attempts before giving up on the request.",
+            )
+        )
+
+        separator = QFrame()
+        separator.setFrameShape(QFrame.HLine)
+        separator.setFrameShadow(QFrame.Sunken)
+        self.layout.addWidget(separator)
+
+        context_header = QLabel("Transcript Context Memory")
+        context_header.setAlignment(Qt.AlignLeft)
+        self.layout.addWidget(context_header)
+
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.context_memory_cb,
+                "When enabled, recent transcripts are added as context to improve disambiguation. "
+                "Turn this off if old phrases are biasing current transcription.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "STT Context Items:",
+                self.stt_context_items_edit,
+                "How many recent transcript entries can be included in speech-to-text prompt context.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "STT Context Chars:",
+                self.stt_context_chars_edit,
+                "Maximum total characters of recent context passed to speech-to-text prompt.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Router Context Items:",
+                self.router_context_items_edit,
+                "How many recent entries can be attached when routing a transcribed command.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Router Context Chars:",
+                self.router_context_chars_edit,
+                "Maximum character budget for command-router context.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Context Max Age (s):",
+                self.context_max_age_edit,
+                "Only context newer than this age in seconds is eligible.",
+            )
+        )
+
         self.layout.addWidget(QLabel("Groq API Key:"))
         self.layout.addWidget(self.api_key_edit)
 
@@ -51,7 +158,50 @@ class SettingsWindow(QWidget):
         btn_layout.addWidget(close_btn)
         self.layout.addLayout(btn_layout)
 
+        self.context_memory_cb.stateChanged.connect(self._update_context_controls_enabled)
         self.load_settings()
+
+    def _make_info_button(self, text):
+        button = QToolButton()
+        button.setText("?")
+        button.setToolTip("Show explanation")
+        button.setCursor(Qt.PointingHandCursor)
+        button.clicked.connect(
+            lambda: QMessageBox.information(self, "Setting Info", text)
+        )
+        return button
+
+    def _build_checkbox_row(self, checkbox, info_text):
+        row = QHBoxLayout()
+        row.addWidget(checkbox)
+        row.addStretch(1)
+        row.addWidget(self._make_info_button(info_text))
+        return row
+
+    def _build_labeled_edit_row(self, label_text, edit, info_text):
+        row = QHBoxLayout()
+        row.addWidget(QLabel(label_text))
+        row.addWidget(edit, 1)
+        row.addWidget(self._make_info_button(info_text))
+        return row
+
+    def _update_context_controls_enabled(self):
+        enabled = self.context_memory_cb.isChecked()
+        self.stt_context_items_edit.setEnabled(enabled)
+        self.stt_context_chars_edit.setEnabled(enabled)
+        self.router_context_items_edit.setEnabled(enabled)
+        self.router_context_chars_edit.setEnabled(enabled)
+        self.context_max_age_edit.setEnabled(enabled)
+
+    def _set_int_if_valid(self, config, key, edit, minimum, maximum):
+        raw = edit.text().strip()
+        if not raw:
+            return
+        try:
+            value = int(raw)
+            config[key] = max(minimum, min(maximum, value))
+        except Exception:
+            return
 
     def load_settings(self):
         config = settings_load(SETTINGS_PATH, SETTINGS_DEFAULTS)
@@ -61,8 +211,21 @@ class SettingsWindow(QWidget):
         self.precheck_cb.setChecked(
             config.get("enable_pre_recording_keyword_check", False)
         )
+        self.context_memory_cb.setChecked(
+            config.get("enable_transcript_context_memory", True)
+        )
         self.max_retries_edit.setText(str(config.get("max_retries", 3)))
+        self.stt_context_items_edit.setText(str(config.get("stt_context_items", 2)))
+        self.stt_context_chars_edit.setText(str(config.get("stt_context_chars", 180)))
+        self.router_context_items_edit.setText(
+            str(config.get("router_context_items", 3))
+        )
+        self.router_context_chars_edit.setText(
+            str(config.get("router_context_chars", 320))
+        )
+        self.context_max_age_edit.setText(str(config.get("context_max_age_seconds", 180)))
         self.api_key_edit.setText(os.environ.get("GROQ_API_KEY", ""))
+        self._update_context_controls_enabled()
 
     def save_settings(self):
         config = settings_load(SETTINGS_PATH, SETTINGS_DEFAULTS)
@@ -70,11 +233,25 @@ class SettingsWindow(QWidget):
         config["use_local_cpu"] = self.use_cpu_cb.isChecked()
         config["fallback_to_groq"] = self.use_api_cb.isChecked()
         config["enable_pre_recording_keyword_check"] = self.precheck_cb.isChecked()
-        try:
-            max_retries = int(self.max_retries_edit.text().strip())
-            config["max_retries"] = max(1, max_retries)
-        except Exception:
-            pass
+        config["enable_transcript_context_memory"] = self.context_memory_cb.isChecked()
+
+        self._set_int_if_valid(config, "max_retries", self.max_retries_edit, 1, 20)
+        self._set_int_if_valid(
+            config, "stt_context_items", self.stt_context_items_edit, 1, 8
+        )
+        self._set_int_if_valid(
+            config, "stt_context_chars", self.stt_context_chars_edit, 40, 800
+        )
+        self._set_int_if_valid(
+            config, "router_context_items", self.router_context_items_edit, 1, 8
+        )
+        self._set_int_if_valid(
+            config, "router_context_chars", self.router_context_chars_edit, 80, 1200
+        )
+        self._set_int_if_valid(
+            config, "context_max_age_seconds", self.context_max_age_edit, 15, 3600
+        )
+
         settings_save(SETTINGS_PATH, config)
         if self.api_key_edit.text().strip():
             os.environ["GROQ_API_KEY"] = self.api_key_edit.text().strip()

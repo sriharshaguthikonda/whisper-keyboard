@@ -1,4 +1,15 @@
 {
   "use_local_gpu": false,
-  "fallback_to_groq": true
+  "use_local_cpu": true,
+  "fallback_to_groq": true,
+  "max_retries": 3,
+  "enable_pre_recording_keyword_check": false,
+  "enable_transcript_context_memory": false,
+  "stt_context_items": 2,
+  "stt_context_chars": 180,
+  "router_context_items": 3,
+  "router_context_chars": 320,
+  "context_max_age_seconds": 180,
+  "max_recording_seconds": 45,
+  "google_wake_volume_hold_seconds": 2.5
 }
