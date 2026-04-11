@@ -55,3 +55,8 @@ class KeyboardShortcutHandler:
 
     def _pause_combo_active(self):
         return Key.scroll_lock in self._pressed
+
+    def reset_state(self):
+        self._pressed.clear()
+        self._pause_toggle_armed = True
+        self._last_action_time = 0.0

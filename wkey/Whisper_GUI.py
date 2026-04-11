@@ -10,6 +10,10 @@ from settings_manager import (
     save_settings as settings_save,
     DEFAULT_SETTINGS as TRANSCRIPTION_DEFAULTS,
 )
+try:
+    from pause_flag_path import get_pause_flag_path
+except ModuleNotFoundError:
+    from wkey.pause_flag_path import get_pause_flag_path
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QCheckBox, QSystemTrayIcon, QMenu, QFrame, QGridLayout, QSizePolicy,
@@ -35,6 +39,8 @@ class VoicePauseController(QMainWindow):
         super().__init__()
         
         os.chdir(os.path.dirname(os.path.abspath(__file__)))
+        self.pause_flag_path = get_pause_flag_path(__file__)
+        print(f"Using canonical pause flag path: {self.pause_flag_path}")
         
         self.setWindowTitle("Voice Recognition Control")
         self.setMinimumSize(400, 400)
@@ -656,7 +662,7 @@ class VoicePauseController(QMainWindow):
 
     def set_global_pause_flag(self, paused):
         try:
-            with open("voice_pause_flag.txt", "w") as f:
+            with open(self.pause_flag_path, "w") as f:
                 f.write("PAUSED" if paused else "ACTIVE")
         except Exception as e:
             self.error_label.setText(f"Error setting flag: {str(e)}")

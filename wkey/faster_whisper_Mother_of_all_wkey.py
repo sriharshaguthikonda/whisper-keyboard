@@ -175,6 +175,20 @@ try:
     from volume_lease_manager import VolumeLeaseManager
 except ModuleNotFoundError:
     from wkey.volume_lease_manager import VolumeLeaseManager
+try:
+    from pause_flag_path import get_pause_flag_path
+except ModuleNotFoundError:
+    from wkey.pause_flag_path import get_pause_flag_path
+try:
+    from faster_whisper_Mother_of_all_wkey_recovery import (
+        OverflowBurstTracker,
+        ResumeGapDetector,
+    )
+except ModuleNotFoundError:
+    from wkey.faster_whisper_Mother_of_all_wkey_recovery import (
+        OverflowBurstTracker,
+        ResumeGapDetector,
+    )
 
 # Set up driver reference for commands_and_tools
 try:
@@ -184,7 +198,7 @@ except ImportError:
     pass
 
 # Add global variables for pause functionality
-FLAG_PATH = os.path.join(os.path.dirname(__file__), "voice_pause_flag.txt")
+FLAG_PATH = get_pause_flag_path(__file__)
 global_pause_active = False
 last_pause_check = 0
 
@@ -483,6 +497,32 @@ resource_relax_until = 0.0
 # Post-resume cooldown to avoid spurious short transcripts
 RESUME_COOLDOWN_SECONDS = 5.0
 resume_cooldown_until = 0.0
+RESUME_GAP_SECONDS = 20.0
+OVERFLOW_BURST_WINDOW_SECONDS = 8.0
+OVERFLOW_BURST_THRESHOLD = 6
+AUDIO_RECOVERY_MIN_INTERVAL_SECONDS = 8.0
+RESUME_DETECTION_SUPPRESSION_SECONDS = 30.0
+LISTENER_RESTART_DELAY_SECONDS = 0.25
+
+overflow_burst_tracker = OverflowBurstTracker(
+    window_seconds=OVERFLOW_BURST_WINDOW_SECONDS,
+    threshold=OVERFLOW_BURST_THRESHOLD,
+)
+resume_gap_detector = ResumeGapDetector(gap_seconds=RESUME_GAP_SECONDS)
+
+audio_recovery_event = threading.Event()
+audio_recovery_reasons = set()
+audio_recovery_reasons_lock = threading.Lock()
+audio_recovery_state_lock = threading.Lock()
+audio_recovery_execution_lock = threading.Lock()
+input_stream_lock = threading.RLock()
+wake_stream_lock = threading.RLock()
+keyboard_listener_lock = threading.Lock()
+last_audio_recovery_ts = 0.0
+audio_recovery_in_progress = False
+resume_detection_suppressed_until = 0.0
+keyboard_listener_restart_requested = threading.Event()
+keyboard_listener = None
 
 FAULT_LOG_PATH = os.path.join(os.path.dirname(__file__), "faulthandler.log")
 _fault_log_handle = None
@@ -496,6 +536,86 @@ def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
 
 def should_relax_resources():
     return time.time() < resource_relax_until
+
+def is_audio_recovery_in_progress():
+    with audio_recovery_state_lock:
+        return audio_recovery_in_progress
+
+
+def _set_audio_recovery_in_progress(value):
+    global audio_recovery_in_progress
+    with audio_recovery_state_lock:
+        audio_recovery_in_progress = bool(value)
+
+
+def suppress_resume_detection(seconds, reason):
+    global resume_detection_suppressed_until
+    duration = max(0.0, float(seconds))
+    with audio_recovery_state_lock:
+        until = time.monotonic() + duration
+        if until > resume_detection_suppressed_until:
+            resume_detection_suppressed_until = until
+    logging.info(
+        f"{YELLOW}Resume detection suppressed for {duration:.1f}s ({reason}){RESET}"
+    )
+
+
+def _resume_detection_remaining_seconds():
+    with audio_recovery_state_lock:
+        remaining = resume_detection_suppressed_until - time.monotonic()
+    return max(0.0, remaining)
+
+
+def reset_keyboard_handler_state(reason):
+    if keyboard_handler is None:
+        return
+    try:
+        keyboard_handler.reset_state()
+        logging.info(f"{YELLOW}Keyboard shortcut state reset ({reason}){RESET}")
+    except Exception as e:
+        logging.error(
+            f"{RED}Failed to reset keyboard shortcut state ({reason}): {e}{RESET}",
+            exc_info=True,
+        )
+
+
+def request_keyboard_listener_restart(reason):
+    reset_keyboard_handler_state(reason)
+    with keyboard_listener_lock:
+        listener = keyboard_listener
+        can_restart = listener is not None and listener.is_alive()
+        if can_restart:
+            keyboard_listener_restart_requested.set()
+    if not can_restart:
+        logging.info(
+            f"{YELLOW}Keyboard listener restart requested but no active listener was found ({reason}){RESET}"
+        )
+        return
+    logging.info(f"{YELLOW}Restarting keyboard listener ({reason}){RESET}")
+    try:
+        listener.stop()
+    except Exception as e:
+        logging.error(
+            f"{RED}Failed to stop keyboard listener ({reason}): {e}{RESET}",
+            exc_info=True,
+        )
+
+
+def get_current_wake_stream():
+    with wake_stream_lock:
+        return wake_stream
+
+
+def is_wake_stream_active():
+    with wake_stream_lock:
+        current_stream = wake_stream
+        if current_stream is None:
+            return False
+        try:
+            return current_stream.is_active()
+        except Exception:
+            return False
+
 
 def _drain_queue(q):
     try:
@@ -529,7 +649,174 @@ def handle_resume_event(reason="resume"):
             pre_recording_buffer_f24.fill(0)
     except Exception:
         pass
+    overflow_burst_tracker.reset()
     logging.info(f"{YELLOW}Resume cooldown active ({reason}){RESET}")
+
+
+def _status_has_overflow(status):
+    if not status:
+        return False
+    try:
+        if getattr(status, "input_overflow", False):
+            return True
+    except Exception:
+        pass
+    return "overflow" in str(status).lower()
+
+
+def request_audio_recovery(reason):
+    reason = str(reason)
+    if is_audio_recovery_in_progress():
+        logging.info(
+            f"{YELLOW}Audio recovery already running. Queuing additional reason={reason}{RESET}"
+        )
+    with audio_recovery_reasons_lock:
+        audio_recovery_reasons.add(reason)
+    audio_recovery_event.set()
+
+
+def _close_input_stream_for_recovery():
+    global stream
+    with input_stream_lock:
+        local_stream = stream
+        stream = None
+    if not local_stream:
+        return
+    try:
+        if getattr(local_stream, "active", False):
+            local_stream.stop()
+    except Exception as e:
+        logging.info(f"{YELLOW}Input stream stop during recovery raised: {e}{RESET}")
+    try:
+        local_stream.close()
+    except Exception as e:
+        logging.info(f"{YELLOW}Input stream close during recovery raised: {e}{RESET}")
+
+
+def _close_wake_stream_for_recovery():
+    global wake_stream
+    with wake_stream_lock:
+        local_wake_stream = wake_stream
+        wake_stream = None
+    if not local_wake_stream:
+        return
+    try:
+        if local_wake_stream.is_active():
+            local_wake_stream.stop_stream()
+    except Exception as e:
+        logging.info(f"{YELLOW}Wake stream stop during recovery raised: {e}{RESET}")
+    try:
+        local_wake_stream.close()
+    except Exception as e:
+        logging.info(f"{YELLOW}Wake stream close during recovery raised: {e}{RESET}")
+
+
+def _perform_audio_recovery(reason):
+    global last_audio_recovery_ts, audio_recovery_in_progress
+    with audio_recovery_state_lock:
+        if audio_recovery_in_progress:
+            logging.info(
+                f"{YELLOW}Audio recovery skipped because another recovery is already running (reason={reason}){RESET}"
+            )
+            return
+        now = time.time()
+        if now - last_audio_recovery_ts < AUDIO_RECOVERY_MIN_INTERVAL_SECONDS:
+            logging.info(
+                f"{YELLOW}Audio recovery skipped (cooldown) reason={reason}{RESET}"
+            )
+            return
+        last_audio_recovery_ts = now
+        audio_recovery_in_progress = True
+
+    try:
+        with audio_recovery_execution_lock:
+            logging.warning(f"{YELLOW}Audio recovery start: {reason}{RESET}")
+            request_keyboard_listener_restart(f"recovery:{reason}")
+            handle_resume_event(f"recovery:{reason}")
+            _close_input_stream_for_recovery()
+            _close_wake_stream_for_recovery()
+
+            if not initialize_input_stream():
+                logging.warning(
+                    f"{YELLOW}Audio recovery: input stream could not be reinitialized{RESET}"
+                )
+            if not initialize_wake_stream():
+                reinitialize_pyaudio()
+                initialize_wake_stream()
+            resume_gap_detector.mark_now()
+            suppress_resume_detection(
+                RESUME_DETECTION_SUPPRESSION_SECONDS, f"recovery:{reason}"
+            )
+            logging.info(f"{GREEN}Audio recovery complete: {reason}{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Audio recovery failed ({reason}): {e}{RESET}", exc_info=True)
+    finally:
+        _set_audio_recovery_in_progress(False)
+
+
+def audio_recovery_worker():
+    while True:
+        audio_recovery_event.wait()
+        audio_recovery_event.clear()
+        with audio_recovery_reasons_lock:
+            if not audio_recovery_reasons:
+                continue
+            reasons = sorted(audio_recovery_reasons)
+            audio_recovery_reasons.clear()
+        _perform_audio_recovery("|".join(reasons))
+
+
+def maybe_handle_system_resume(source):
+    resumed, gap_seconds = resume_gap_detector.check()
+    if not resumed:
+        return
+    remaining = _resume_detection_remaining_seconds()
+    if remaining > 0:
+        logging.info(
+            f"{YELLOW}Resume detection suppressed ({remaining:.1f}s remaining) for {source}{RESET}"
+        )
+        return
+    logging.warning(
+        f"{YELLOW}Detected resume/time jump ({gap_seconds:.1f}s) from {source}{RESET}"
+    )
+    suppress_resume_detection(
+        RESUME_DETECTION_SUPPRESSION_SECONDS, f"system resume:{source}"
+    )
+    try:
+        set_pause_state(False)
+        logging.info(f"{GREEN}Auto-resumed voice pause state after system wake{RESET}")
+    except Exception as e:
+        logging.error(f"{RED}Failed to auto-resume pause state: {e}{RESET}", exc_info=True)
+    request_keyboard_listener_restart(f"system resume:{source}")
+    handle_resume_event(f"system resume:{source}")
+    request_audio_recovery(f"system resume:{source}")
+
+
+_volume_timeout_hook_registered = False
+
+
+def register_volume_timeout_recovery_hook():
+    global _volume_timeout_hook_registered
+    if _volume_timeout_hook_registered:
+        return
+    register_callback = getattr(
+        voice_commands_module, "register_volume_timeout_callback", None
+    )
+    if not callable(register_callback):
+        logging.warning(
+            f"{YELLOW}Volume timeout callback registration unavailable in voice_commands module{RESET}"
+        )
+        return
+
+    def _on_timeout(timeout_seconds):
+        logging.warning(
+            f"{YELLOW}Volume timeout callback received ({timeout_seconds:.1f}s). Scheduling audio recovery.{RESET}"
+        )
+        request_audio_recovery(f"volume timeout {timeout_seconds:.1f}s")
+
+    register_callback(_on_timeout)
+    _volume_timeout_hook_registered = True
+    logging.info(f"{GREEN}Registered volume-timeout recovery callback{RESET}")
 
 """
  ######  ######## ########  ########    ###    ##     ## 
@@ -574,6 +861,13 @@ def audio_callback(indata, frames, time, status):
             global buffer_index, audio_buffer
             if status:
                 bump_resource_relax()
+                if _status_has_overflow(status):
+                    should_recover, overflow_count = overflow_burst_tracker.note_overflow()
+                    if should_recover:
+                        logging.warning(
+                            f"{YELLOW}Input overflow burst detected ({overflow_count} events in {OVERFLOW_BURST_WINDOW_SECONDS:.1f}s). Scheduling stream recovery.{RESET}"
+                        )
+                        request_audio_recovery("input overflow burst")
             buffer_index, audio_buffer = audio_callback_impl(
                 indata=indata,
                 frames=frames,
@@ -612,42 +906,41 @@ stream = None
 
 def initialize_input_stream():
     global stream
-    was_inactive = stream is None or (hasattr(stream, "active") and not stream.active)
-    success, stream = initialize_input_stream_impl(
-        stream=stream,
-        audio_callback=audio_callback,
-        sample_rate=sample_rate,
-        log=logging,
-        success_color_prefix=GREEN,
-        success_color_suffix=RESET,
-        error_color_prefix=RED,
-        error_color_suffix=RESET,
-    )
-    if success and was_inactive:
-        handle_resume_event("input stream init")
+    with input_stream_lock:
+        success, stream = initialize_input_stream_impl(
+            stream=stream,
+            audio_callback=audio_callback,
+            sample_rate=sample_rate,
+            log=logging,
+            success_color_prefix=GREEN,
+            success_color_suffix=RESET,
+            error_color_prefix=RED,
+            error_color_suffix=RESET,
+        )
     return success
 
 def initialize_wake_stream():
     global wake_stream, p
-    try:
-        if p is None:
-            p = pyaudio.PyAudio()
-        wake_stream = p.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=16000,
-            input=True,
-            frames_per_buffer=16000,
-        )
-        wake_stream.start_stream()
-        logging.info(f"{GREEN}Wake-word stream initialized{RESET}")
-        return True
-    except Exception as e:
-        logging.info(
-            f"{RED}No microphone detected for wake-word stream: {e}{RESET}"
-        )
-        wake_stream = None
-        return False
+    with wake_stream_lock:
+        try:
+            if p is None:
+                p = pyaudio.PyAudio()
+            wake_stream = p.open(
+                format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=16000,
+            )
+            wake_stream.start_stream()
+            logging.info(f"{GREEN}Wake-word stream initialized{RESET}")
+            return True
+        except Exception as e:
+            logging.info(
+                f"{RED}No microphone detected for wake-word stream: {e}{RESET}"
+            )
+            wake_stream = None
+            return False
 
 def decrease_volume_all():
     global initial_volume
@@ -830,6 +1123,13 @@ def start_recording(keyword_index=None):
         keyword_index: Index of the wake word that triggered recording, or None if triggered by F24 key
     """
     try:
+        if is_audio_recovery_in_progress():
+            request_type = "manual" if keyword_index in (None, 0) else "wake-word"
+            logging.info(
+                f"{YELLOW}Audio recovery in progress. Ignoring {request_type} recording request.{RESET}"
+            )
+            return
+
         # Only block wake-word triggers while paused; manual keys still work
         if keyword_index not in (None, 0) and check_pause_status():
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
@@ -1180,30 +1480,23 @@ def save_manual_recording_if_configured(
  #######   ###  ###   ###  ###  
 """
 
-def _get_pause_flag_path():
-    cwd_flag = os.path.join(os.getcwd(), os.path.basename(FLAG_PATH))
-    if os.path.abspath(cwd_flag) != os.path.abspath(FLAG_PATH):
-        return cwd_flag
-    return FLAG_PATH
-
 def check_pause_status():
     """Check if voice recognition should be paused"""
     global global_pause_active, last_pause_check
-    flag_path = _get_pause_flag_path()
     global_pause_active, last_pause_check, paused = pause_check_impl(
-        flag_path, last_pause_check, global_pause_active
+        FLAG_PATH, last_pause_check, global_pause_active
     )
     return paused
 
 def set_pause_state(paused: bool):
     global global_pause_active, last_pause_check
-    pause_set_impl(_get_pause_flag_path(), paused)
+    pause_set_impl(FLAG_PATH, paused)
     global_pause_active = paused
     last_pause_check = time.time()
 
 def toggle_pause_state():
     global global_pause_active, last_pause_check
-    global_pause_active = pause_toggle_impl(_get_pause_flag_path(), global_pause_active)
+    global_pause_active = pause_toggle_impl(FLAG_PATH, global_pause_active)
     last_pause_check = time.time()
     if global_pause_active:
         logging.info(f"{RED}Voice recognition paused via shortcut{RESET}")
@@ -1228,8 +1521,10 @@ def wait_for_microphone(poll_interval=5):
 def reinitialize_pyaudio():
     try:
         global p
-        p.terminate()
-        p = pyaudio.PyAudio()
+        with wake_stream_lock:
+            if p is not None:
+                p.terminate()
+            p = pyaudio.PyAudio()
     except Exception as e:
         logging.error(f"Error in reinitialize_pyaudio: {e}", exc_info=True)
 
@@ -1237,31 +1532,43 @@ def monitor_microphone_availability():
     try:
         global wake_stream, p
         was_missing = False
+        recovery_wait_logged = False
         while True:
-            touch_heartbeat()
+            touch_heartbeat("microphone monitor")
+            maybe_handle_system_resume("microphone monitor")
+
+            if is_audio_recovery_in_progress():
+                if not recovery_wait_logged:
+                    logging.info(
+                        f"{YELLOW}Microphone monitor waiting for active audio recovery to finish{RESET}"
+                    )
+                    recovery_wait_logged = True
+                time.sleep(1)
+                continue
+            recovery_wait_logged = False
+
             if not check_microphone():
                 logging.info(
                     f"{RED}No microphone detected. Pausing wake word detection...{RESET}"
                 )
-                if wake_stream:
-                    try:
-                        wake_stream.stop_stream()
-                        wake_stream.close()
-                    except OSError as e:
-                        logging.info(f"Error stopping stream: {e}")
-                    finally:
-                        wake_stream = None
+                _close_wake_stream_for_recovery()
                 was_missing = True
             else:
-                if (wake_stream is None) or (not wake_stream.is_active()):
+                if was_missing:
+                    logging.info(
+                        f"{GREEN}Microphone detected after outage. Scheduling audio recovery...{RESET}"
+                    )
+                    request_keyboard_listener_restart("microphone restore")
+                    handle_resume_event("microphone restore")
+                    request_audio_recovery("microphone restore")
+                    was_missing = False
+                elif not is_wake_stream_active():
                     logging.info(
                         f"{GREEN}Microphone detected. Resuming wake word detection...{RESET}"
                     )
                     if not initialize_wake_stream():
                         reinitialize_pyaudio()
-                    if was_missing:
-                        handle_resume_event("microphone restore")
-                        was_missing = False
+                        initialize_wake_stream()
 
             time.sleep(10)
     except Exception as e:
@@ -1269,7 +1576,8 @@ def monitor_microphone_availability():
 
 def set_wake_stream(value):
     global wake_stream
-    wake_stream = value
+    with wake_stream_lock:
+        wake_stream = value
 
 def init_wakeword_listener():
     global wakeword_listener
@@ -1291,7 +1599,7 @@ def listen_for_wake_word():
     """Wake-word loop delegated to wakeword module."""
     listener = init_wakeword_listener()
     listener.listen(
-        get_wake_stream=lambda: wake_stream,
+        get_wake_stream=get_current_wake_stream,
         set_wake_stream=set_wake_stream,
         check_pause_status=check_pause_status,
         is_recording=lambda: recording,
@@ -1300,22 +1608,20 @@ def listen_for_wake_word():
         decrease_volume_all=decrease_volume_all,
         restore_volume_all=restore_volume_all,
         should_relax=should_relax_resources,
-        heartbeat=touch_heartbeat,
-        log=print,
+        wake_stream_lock=wake_stream_lock,
+        is_recovery_active=is_audio_recovery_in_progress,
+        heartbeat=lambda: touch_heartbeat("wakeword listener"),
+        log=lambda message: logging.info(message),
     )
 
 def cleanup():
     try:
-        global wake_stream
-        if wake_stream:
-            try:
-                if wake_stream.is_active():
-                    wake_stream.stop_stream()
-                wake_stream.close()
-            except OSError as e:
-                logging.info(f"Error during cleanup: {e}")
-            wake_stream = None
-        p.terminate()
+        global p
+        _close_wake_stream_for_recovery()
+        with wake_stream_lock:
+            if p is not None:
+                p.terminate()
+                p = None
         if groq_session_holder.get("session") is not None:
             asyncio.get_event_loop().run_until_complete(
                 groq_session_holder["session"].close()
@@ -1445,13 +1751,22 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
         logging.error(f"{RED}Error processing transcript: {e}{RESET}", exc_info=True)
 
 def start_listener():
+    global keyboard_listener
+    listener = None
     try:
-        with Listener(on_press=on_press, on_release=on_release) as listener:
+        listener = Listener(on_press=on_press, on_release=on_release)
+        with keyboard_listener_lock:
+            keyboard_listener = listener
+        with listener:
             listener.join()
     except KeyboardInterrupt:
         logging.info("Ctrl+C pressed. Exiting...")
     except Exception as e:
         logging.error(f"Error in start_listener: {e}", exc_info=True)
+    finally:
+        with keyboard_listener_lock:
+            if keyboard_listener is listener:
+                keyboard_listener = None
 
 def beep(sound):
     try:
@@ -1597,7 +1912,7 @@ def display_pause_status(start: bool = True):
         _spinner = make_status_display(
             check_pause_status=check_pause_status,
             active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word... (Ctrl+Alt+Shift+ScrollLock to pause){RESET}",
-            paused_message=f"{RED}VOICE RECOGNITION PAUSED - Press Ctrl+Alt+Shift+ScrollLock to resume{RESET}",
+            paused_message=f"{RED}VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shift+ScrollLock to resume wake words{RESET}",
             spinner_frames=(
                 f"{RED}█{RESET}",
                 f"{BLUE}▄{RESET}",
@@ -1692,7 +2007,8 @@ def start_watchdog():
 
     threading.Thread(target=_watch, name="Watchdog", daemon=True).start()
 
-def touch_heartbeat():
+def touch_heartbeat(source="runtime"):
+    _ = source
     global_state["last_heartbeat"] = time.time()
 
 def monitor_program_health():
@@ -1740,25 +2056,14 @@ def reset_all_states():
             except QueueEmpty:
                 break
 
-        if stream and stream.active:
-            try:
-                stream.stop()
-                stream.close()
-            except:
-                pass
+        _close_input_stream_for_recovery()
 
         if not initialize_input_stream():
             stream = None
 
-        if wake_stream:
-            try:
-                wake_stream.stop_stream()
-                wake_stream.close()
-            except:
-                pass
-            wake_stream = None
-
+        _close_wake_stream_for_recovery()
         initialize_wake_stream()
+        request_keyboard_listener_restart("reset_all_states")
 
         global_state["consecutive_failures"] = 0
         global_state["last_successful_operation"] = time.time()
@@ -1780,6 +2085,7 @@ def main():
     logging.info(
         f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
     )
+    logging.info(f"{CYAN}Using canonical pause flag path: {FLAG_PATH}{RESET}")
 
     def exception_handler(exc_type, exc_value, exc_traceback):
         logging.error(
@@ -1790,10 +2096,12 @@ def main():
     sys.excepthook = exception_handler
 
     try:
+        register_volume_timeout_recovery_hook()
         init_keyboard_handler()
         start_settings_watch()
         init_wakeword_listener()
         start_watchdog()
+        start_thread(audio_recovery_worker, "AudioRecovery")
         start_thread(listen_for_wake_word, "WakeWordListener")
         start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()
@@ -1808,6 +2116,7 @@ def main():
         threading.Thread(target=display_pause_status, daemon=True).start()
 
         while True:
+            touch_heartbeat("main loop")
             wait_for_microphone()
             if not initialize_input_stream():
                 time.sleep(5)
@@ -1820,15 +2129,17 @@ def main():
                     f"{RED}Input stream error: {str(e)}{RESET}", exc_info=True
                 )
             finally:
-                if stream:
-                    try:
-                        if stream.active:
-                            stream.stop()
-                        stream.close()
-                    except Exception:
-                        pass
-                    stream = None
-            time.sleep(2)
+                listener_restart_requested = keyboard_listener_restart_requested.is_set()
+                if listener_restart_requested:
+                    keyboard_listener_restart_requested.clear()
+                    logging.info(
+                        f"{YELLOW}Keyboard listener restart requested. Preserving input stream state for fast rebind.{RESET}"
+                    )
+                else:
+                    _close_input_stream_for_recovery()
+            time.sleep(
+                LISTENER_RESTART_DELAY_SECONDS if listener_restart_requested else 2
+            )
 
     except Exception as e:
         logging.error(

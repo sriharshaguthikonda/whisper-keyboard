@@ -38,8 +38,13 @@ def make_status_display(
     def _write_line(text: str) -> None:
         width = _term_width()
         text = _fit(text, width)
-        sys.stdout.write("\r" + text.ljust(width))
-        sys.stdout.flush()
+        try:
+            sys.stdout.write("\r" + text.ljust(width))
+            sys.stdout.flush()
+        except OSError:
+            return
+        except ValueError:
+            return
 
     def display_loop():
         try:
@@ -59,8 +64,13 @@ def make_status_display(
                     break
         finally:
             width = _term_width()
-            sys.stdout.write("\r" + (" " * width) + "\r")
-            sys.stdout.flush()
+            try:
+                sys.stdout.write("\r" + (" " * width) + "\r")
+                sys.stdout.flush()
+            except OSError:
+                pass
+            except ValueError:
+                pass
 
     def stop():
         stop_event.set()

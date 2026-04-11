@@ -3,6 +3,11 @@ import os
 import time
 import winsound
 
+try:
+    from pause_flag_path import get_pause_flag_path
+except ModuleNotFoundError:
+    from wkey.pause_flag_path import get_pause_flag_path
+
 logger = logging.getLogger(__name__)
 
 PAUSE_BEEP_SEQUENCE = [(900, 80), (600, 80), (400, 120)]
@@ -27,33 +32,21 @@ def _read_flag(path):
 
 
 def read_pause_flag(flag_path):
+    canonical_path = get_pause_flag_path(__file__)
+    target_path = canonical_path if os.path.abspath(flag_path) != os.path.abspath(canonical_path) else flag_path
     try:
-        alt_path = os.path.join(os.getcwd(), os.path.basename(flag_path))
-
-        has_flag = os.path.exists(flag_path)
-        has_alt = alt_path != flag_path and os.path.exists(alt_path)
-
-        if has_flag and has_alt:
-            try:
-                if os.path.getmtime(alt_path) >= os.path.getmtime(flag_path):
-                    return _read_flag(alt_path)
-            except Exception:
-                pass
-            return _read_flag(flag_path)
-
-        if has_alt:
-            return _read_flag(alt_path)
-
-        if has_flag:
-            return _read_flag(flag_path)
+        if os.path.exists(target_path):
+            return _read_flag(target_path)
     except Exception as e:
         logger.error("Error reading pause flag: %s", e, exc_info=True)
     return False
 
 
 def write_pause_flag(flag_path, paused):
+    canonical_path = get_pause_flag_path(__file__)
+    target_path = canonical_path if os.path.abspath(flag_path) != os.path.abspath(canonical_path) else flag_path
     try:
-        with open(flag_path, "w") as f:
+        with open(target_path, "w") as f:
             f.write("PAUSED" if paused else "ACTIVE")
         return True
     except Exception as e:

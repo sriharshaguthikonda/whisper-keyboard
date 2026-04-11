@@ -577,29 +577,102 @@ def kill_process_by_name(process_name):
 
 
 VOLUME_REQUEST_TIMEOUT = 2.0
+VOLUME_WORKER_RESTART_BACKOFF_SECONDS = 1.0
+_volume_timeout_callbacks = []
+_volume_timeout_callbacks_lock = threading.Lock()
+
+
+def register_volume_timeout_callback(callback):
+    if not callable(callback):
+        return
+    with _volume_timeout_callbacks_lock:
+        _volume_timeout_callbacks.append(callback)
+
+
+def _notify_volume_timeout_callbacks(timeout_seconds):
+    with _volume_timeout_callbacks_lock:
+        callbacks = list(_volume_timeout_callbacks)
+    for callback in callbacks:
+        try:
+            callback(timeout_seconds)
+        except Exception as e:
+            logging.error(
+                f"{RED}Volume timeout callback failed: {e}{RESET}", exc_info=True
+            )
+
 
 class VolumeController:
     def __init__(self):
         self._queue = queue.Queue()
-        self._thread = threading.Thread(target=self._worker, daemon=True)
-        self._thread.start()
+        self._thread = None
+        self._thread_lock = threading.Lock()
+        self._worker_seq = 0
+        self._last_worker_start_ts = 0.0
+        self._ensure_worker(reason="startup")
 
-    def _worker(self):
+    def _start_worker_locked(self, reason):
+        now = time.time()
+        reason_str = str(reason)
+        force_restart = reason_str.startswith("timeout")
+        thread_alive = self._thread is not None and self._thread.is_alive()
+        if thread_alive and not force_restart:
+            return
+        if (
+            force_restart
+            and now - self._last_worker_start_ts < VOLUME_WORKER_RESTART_BACKOFF_SECONDS
+        ):
+            return
+        self._worker_seq += 1
+        worker_id = self._worker_seq
+        self._last_worker_start_ts = now
+        self._thread = threading.Thread(
+            target=self._worker,
+            args=(worker_id,),
+            daemon=True,
+            name=f"VolumeControllerWorker-{worker_id}",
+        )
+        self._thread.start()
+        logging.info(
+            f"{BLUE}VolumeController worker started (id={worker_id}, reason={reason}){RESET}"
+        )
+
+    def _ensure_worker(self, reason):
+        with self._thread_lock:
+            self._start_worker_locked(reason)
+
+    def _restart_worker(self, reason):
+        with self._thread_lock:
+            logging.warning(
+                f"{YELLOW}VolumeController worker restart requested (reason={reason}){RESET}"
+            )
+            self._start_worker_locked(reason)
+
+    def _worker(self, worker_id):
         try:
             import pythoncom
+
             pythoncom.CoInitialize()
         except Exception as e:
-            logging.error(f"{RED}VolumeController COM init failed: {e}{RESET}", exc_info=True)
+            logging.error(
+                f"{RED}VolumeController COM init failed (worker={worker_id}): {e}{RESET}",
+                exc_info=True,
+            )
         while True:
             action, default, result_container, done_event = self._queue.get()
             result = default
+            volume_interface = None
+            interface = None
+            devices = None
             try:
                 devices = AudioUtilities.GetSpeakers()
                 interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
                 volume_interface = cast(interface, POINTER(IAudioEndpointVolume))
                 result = action(volume_interface)
             except Exception as e:
-                logging.error(f"{RED}VolumeController action failed: {e}{RESET}", exc_info=True)
+                logging.error(
+                    f"{RED}VolumeController action failed (worker={worker_id}): {e}{RESET}",
+                    exc_info=True,
+                )
             finally:
                 try:
                     volume_interface = None
@@ -615,11 +688,16 @@ class VolumeController:
                 done_event.set()
 
     def run(self, action, default=None):
+        self._ensure_worker(reason="run")
         result_container = {"value": default}
         done_event = threading.Event()
         self._queue.put((action, default, result_container, done_event))
         if not done_event.wait(timeout=VOLUME_REQUEST_TIMEOUT):
-            logging.error(f"{RED}VolumeController timeout after {VOLUME_REQUEST_TIMEOUT}s{RESET}")
+            logging.error(
+                f"{RED}VolumeController timeout after {VOLUME_REQUEST_TIMEOUT}s{RESET}"
+            )
+            self._restart_worker(reason="timeout")
+            _notify_volume_timeout_callbacks(VOLUME_REQUEST_TIMEOUT)
             return default
         return result_container["value"]
 

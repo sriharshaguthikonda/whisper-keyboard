@@ -82,21 +82,40 @@ class WakeWordListener:
         restore_volume_all,
         heartbeat=None,
         should_relax=None,
+        wake_stream_lock=None,
+        is_recovery_active=None,
         log=print,
     ):
         log("Listening for wake words...")
+        recovery_wait_logged = False
 
         while True:
             try:
                 if heartbeat:
                     heartbeat()
+                if is_recovery_active and is_recovery_active():
+                    if not recovery_wait_logged:
+                        log("Wake-word listener waiting for audio recovery to finish")
+                        recovery_wait_logged = True
+                    time.sleep(self.relax_sleep)
+                    continue
+                recovery_wait_logged = False
                 if check_pause_status():
                     time.sleep(1)
                     continue
 
                 wake_stream = get_wake_stream()
                 if wake_stream:
-                    data = wake_stream.read(self.chunk, exception_on_overflow=False)
+                    if wake_stream_lock is not None:
+                        with wake_stream_lock:
+                            wake_stream = get_wake_stream()
+                            if wake_stream is None:
+                                continue
+                            data = wake_stream.read(
+                                self.chunk, exception_on_overflow=False
+                            )
+                    else:
+                        data = wake_stream.read(self.chunk, exception_on_overflow=False)
 
                     if (should_relax and should_relax()) or self._cpu_overloaded():
                         time.sleep(self.relax_sleep)
@@ -149,13 +168,30 @@ class WakeWordListener:
 
             except OSError as e:
                 log(f"Audio stream error: {e}")
-                wake_stream = get_wake_stream()
-                if wake_stream:
-                    try:
-                        if wake_stream.is_active():
-                            wake_stream.stop_stream()
-                        wake_stream.close()
-                    except OSError:
-                        log("Stream already closed or failed to close.")
-                set_wake_stream(None)
+                if is_recovery_active and is_recovery_active():
+                    log("Wake-word stream error occurred during active recovery; deferring cleanup")
+                    time.sleep(self.relax_sleep)
+                    continue
+
+                if wake_stream_lock is not None:
+                    with wake_stream_lock:
+                        wake_stream = get_wake_stream()
+                        if wake_stream:
+                            try:
+                                if wake_stream.is_active():
+                                    wake_stream.stop_stream()
+                                wake_stream.close()
+                            except OSError:
+                                log("Stream already closed or failed to close.")
+                            set_wake_stream(None)
+                else:
+                    wake_stream = get_wake_stream()
+                    if wake_stream:
+                        try:
+                            if wake_stream.is_active():
+                                wake_stream.stop_stream()
+                            wake_stream.close()
+                        except OSError:
+                            log("Stream already closed or failed to close.")
+                    set_wake_stream(None)
                 time.sleep(10)
