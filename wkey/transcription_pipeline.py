@@ -211,6 +211,11 @@ class TranscriptionPipeline:
                     self.log.warning(
                         "Skipping too-short transcript: '%s'", transcript_stripped
                     )
+                    if keyword_index == 1:
+                        self.log.warning(
+                            "Wake transcript routing rejected for 'computer': too short after transcription (%r)",
+                            transcript_stripped,
+                        )
                     continue
 
                 if self.record_transcript_context is not None:
@@ -237,8 +242,17 @@ class TranscriptionPipeline:
                     self.log.info(
                         "Processing computer command: %s", stripped_transcript
                     )
+                    self.log.info(
+                        "Wake transcript routing accepted for 'computer'; queueing command"
+                    )
                     self.transcript_queue.put(
                         (stripped_transcript.strip(), keyword_index)
+                    )
+                    continue
+                if keyword_index == 1:
+                    self.log.warning(
+                        "Wake transcript routing rejected for 'computer': wake token missing in transcript %r",
+                        transcript_stripped,
                     )
                     continue
                 if keyword_index == 2 and "lama" in transcript_lower:

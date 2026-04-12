@@ -108,7 +108,15 @@ async def transcribe_with_groq_async(
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
     model_name = get_groq_audio_model()
-    logging.info("transcribe_with_groq_async: Starting with model %s", model_name)
+    logging.info(
+        "transcribe_with_groq_async: Starting with model %s (keyword_index=%s)",
+        model_name,
+        keyword_index,
+    )
+    if keyword_index == 1:
+        logging.info(
+            "transcribe_with_groq_async: Using wake-command prompt bias for 'computer'"
+        )
 
     for attempt in range(max_retries):
         try:
@@ -121,7 +129,11 @@ async def transcribe_with_groq_async(
                 logging.info("transcribe_with_groq_async: Building form data")
                 form_data = aiohttp.FormData()
                 audio_bytes = byte_io.getvalue()
-                logging.info("transcribe_with_groq_async: Audio size = %d bytes", len(audio_bytes))
+                logging.info(
+                    "transcribe_with_groq_async: Audio size = %d bytes (keyword_index=%s)",
+                    len(audio_bytes),
+                    keyword_index,
+                )
                 form_data.add_field(
                     "file",
                     audio_bytes,

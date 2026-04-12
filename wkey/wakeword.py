@@ -27,6 +27,7 @@ DEFAULT_COOLDOWN = 6
 DEFAULT_RELAX_SLEEP = 0.25
 DEFAULT_CPU_THRESHOLD = 80.0
 DEFAULT_CPU_CHECK_INTERVAL = 1.0
+DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS = 1.25
 
 
 class WakeWordListener:
@@ -80,6 +81,7 @@ class WakeWordListener:
         stop_recording_async,
         decrease_volume_all,
         restore_volume_all,
+        capture_wake_command_async=None,
         heartbeat=None,
         should_relax=None,
         wake_stream_lock=None,
@@ -151,8 +153,16 @@ class WakeWordListener:
                             stop_recording_async(keyword_index)
                         elif keyword_index == 1:
                             log("Custom wake word 'hey_computer10' detected!")
-                            start_recording_async(keyword_index)
-                            stop_recording_async(1)
+                            if capture_wake_command_async is not None:
+                                capture_wake_command_async(keyword_index)
+                            else:
+                                log(
+                                    "Wake capture mode for 'hey_computer10': "
+                                    f"holding {DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS:.2f}s before silence stop"
+                                )
+                                start_recording_async(keyword_index)
+                                time.sleep(DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS)
+                                stop_recording_async(1)
                         elif keyword_index == 2:
                             log("Custom wake word 'hey_lama' detected!")
                             start_recording_async(keyword_index)

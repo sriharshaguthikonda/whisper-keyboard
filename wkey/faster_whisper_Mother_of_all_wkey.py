@@ -407,6 +407,13 @@ something_is_playing = False
 
 Hey_computer_STT_prompt = None
 General_gorq_system_prompt = "when outputting numbers, no spaces, no commas, no hyphens, just numbers like for example:84567945"
+COMPUTER_WAKE_GROQ_PROMPT_HINT = (
+    "This audio was triggered by the wake word 'computer'. Preserve the word "
+    "'computer' when it is spoken, and transcribe the wake word together with "
+    "the command that follows. Do not collapse short wake-command speech into "
+    "punctuation-only output."
+)
+COMPUTER_WAKE_CAPTURE_GRACE_SECONDS = 1.25
 
 
 def _get_setting_int(name, default_value, minimum=1, maximum=10000):
@@ -421,17 +428,24 @@ def _is_transcript_context_enabled():
     return bool(SETTINGS.get("enable_transcript_context_memory", True))
 
 
-def _build_dynamic_stt_prompt():
+def _build_dynamic_stt_prompt(keyword_index=None):
     if not _is_transcript_context_enabled():
-        return General_gorq_system_prompt
-    return build_stt_prompt(
-        General_gorq_system_prompt,
-        max_items=_get_setting_int("stt_context_items", 2, minimum=1, maximum=8),
-        max_chars=_get_setting_int("stt_context_chars", 180, minimum=40, maximum=800),
-        max_age_seconds=_get_setting_int(
-            "context_max_age_seconds", 180, minimum=15, maximum=3600
-        ),
-    )
+        base_prompt = General_gorq_system_prompt
+    else:
+        base_prompt = build_stt_prompt(
+            General_gorq_system_prompt,
+            max_items=_get_setting_int("stt_context_items", 2, minimum=1, maximum=8),
+            max_chars=_get_setting_int(
+                "stt_context_chars", 180, minimum=40, maximum=800
+            ),
+            max_age_seconds=_get_setting_int(
+                "context_max_age_seconds", 180, minimum=15, maximum=3600
+            ),
+        )
+
+    if keyword_index == 1:
+        return f"{base_prompt}\n{COMPUTER_WAKE_GROQ_PROMPT_HINT}"
+    return base_prompt
 
 
 def _build_router_context_hint(current_query):
@@ -1329,6 +1343,13 @@ def stop_recording(keyword_index):
         )
         audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
         audio_buffer = _trim_audio_to_max_duration(audio_buffer)
+        if keyword_index == 1:
+            audio_duration_seconds = len(audio_buffer) / float(sample_rate)
+            logging.info(
+                "Wake capture audio prepared for 'hey_computer10': %.2fs (%d samples)",
+                audio_duration_seconds,
+                len(audio_buffer),
+            )
         if keyword_index in (1, 2, 3) and time.time() < resume_cooldown_until:
             logging.info(
                 f"{YELLOW}Resume cooldown active. Dropping wake-word recording.{RESET}"
@@ -1360,6 +1381,31 @@ def _start_recording_async(keyword_index):
 
 def _stop_recording_async(keyword_index):
     threading.Thread(target=stop_recording, args=(keyword_index,)).start()
+
+def _capture_wake_command(keyword_index, grace_seconds=COMPUTER_WAKE_CAPTURE_GRACE_SECONDS):
+    start_recording(keyword_index)
+    with recording_lock:
+        started = recording and active_recording_session_id != 0
+    if not started:
+        logging.info(
+            f"{YELLOW}Wake capture worker skipped stop because recording never started for keyword_index={keyword_index}.{RESET}"
+        )
+        return
+
+    logging.info(
+        "Wake capture mode for 'hey_computer10': holding %.2fs before silence stop",
+        grace_seconds,
+    )
+    time.sleep(grace_seconds)
+    stop_recording(keyword_index)
+
+def _capture_wake_command_async(keyword_index):
+    threading.Thread(
+        target=_capture_wake_command,
+        args=(keyword_index,),
+        daemon=True,
+        name="WakeCommandCapture",
+    ).start()
 
 def init_keyboard_handler():
     global keyboard_handler
@@ -1605,6 +1651,7 @@ def listen_for_wake_word():
         is_recording=lambda: recording,
         start_recording_async=_start_recording_async,
         stop_recording_async=_stop_recording_async,
+        capture_wake_command_async=_capture_wake_command_async,
         decrease_volume_all=decrease_volume_all,
         restore_volume_all=restore_volume_all,
         should_relax=should_relax_resources,
@@ -1660,7 +1707,7 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
 
 
 async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
-    prompt = _build_dynamic_stt_prompt()
+    prompt = _build_dynamic_stt_prompt(keyword_index)
     return await transcribe_with_groq_async_util(
         byte_io,
         keyword_index,

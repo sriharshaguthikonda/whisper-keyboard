@@ -983,16 +983,16 @@ tools = [
         "type": "function",
         "function": {
             "name": "start_display_fusion",
-            "description": "Load a DisplayFusion monitor load profile",
+            "description": "Load a DisplayFusion monitor load profile (defaults to 'Default' when omitted)",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "profile_name": {
                         "type": "string",
-                        "description": "The name of the DisplayFusion profile to load",
+                        "description": "The name of the DisplayFusion profile to load. If omitted, uses 'Default'.",
                     }
                 },
-                "required": ["profile_name"],
+                "required": [],
             },
         },
     },

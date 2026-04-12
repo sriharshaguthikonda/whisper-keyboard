@@ -839,14 +839,18 @@ def restart_voicemeeter():
 
 
 # DisplayFusion commands
-def start_display_fusion(profile_name):
+def start_display_fusion(profile_name="Default"):
     try:
+        selected_profile = (profile_name or "Default").strip() or "Default"
+        logging.info(
+            f"{CYAN}start_display_fusion using profile: {selected_profile}{RESET}"
+        )
         subprocess.run(["taskkill", "/F", "/IM", "DisplayFusion.exe"])
         subprocess.run(
             [
                 "C:\\Program Files (x86)\\DisplayFusion\\DisplayFusionCommand.exe",
                 "-monitorloadprofile",
-                profile_name,
+                selected_profile,
             ]
         )
     except Exception as e:
@@ -1514,12 +1518,38 @@ async def execute_command_run_with_tool(
     max_retries=3,
     retry_delay=2,
     context_hint="",
+    _allow_compound_split=True,
 ):
     try:
         global Groq_client, last_tool_call_found
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
         normalized_query = normalize_transcript(query)
+        split_commands = _split_compound_commands(query)
+        if _allow_compound_split and len(split_commands) > 1:
+            logging.info(
+                f"{YELLOW}Compound command detected; executing {len(split_commands)} sub-commands sequentially{RESET}"
+            )
+            sub_results = []
+            for idx, cmd in enumerate(split_commands, start=1):
+                logging.info(
+                    f"{YELLOW}Compound sub-command {idx}/{len(split_commands)}: {cmd}{RESET}"
+                )
+                sub_ok = await execute_command_run_with_tool(
+                    cmd,
+                    max_retries=max_retries,
+                    retry_delay=retry_delay,
+                    context_hint=context_hint,
+                    _allow_compound_split=False,
+                )
+                sub_results.append(bool(sub_ok))
+            last_tool_call_found = any(sub_results)
+            if not all(sub_results):
+                logging.warning(
+                    f"{YELLOW}One or more sub-commands failed in compound execution: {split_commands}{RESET}"
+                )
+            return all(sub_results)
+
         if "spotify" in normalized_query:
             if any(token in normalized_query for token in ("kill", "stop", "close", "quit", "exit")):
                 stop_spotify()
@@ -1542,6 +1572,7 @@ async def execute_command_run_with_tool(
                 5. For system controls (volume, media, windows), be very precise in tool selection
                 6. If no exact tool matches the query, do not force a tool selection
                 7. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify, recycle bin).
+                8. If the user says "start/open display fusion" without a profile, call start_display_fusion(profile_name="Default").
 
                 Examples:
                 - "play music" → use play_song()
@@ -1696,20 +1727,18 @@ async def execute_command_run_with_tool(
                     split_commands = _split_compound_commands(query)
                     if len(split_commands) > 1:
                         logging.info(
-                            f"{YELLOW}Fallback: routing {len(split_commands)} sub-commands in parallel{RESET}"
+                            f"{YELLOW}Fallback: routing {len(split_commands)} sub-commands sequentially{RESET}"
                         )
-                        sub_results = await asyncio.gather(
-                            *[
-                                execute_command_run_with_tool(
-                                    cmd,
-                                    max_retries=max_retries,
-                                    retry_delay=retry_delay,
-                                    context_hint=context_hint,
-                                )
-                                for cmd in split_commands
-                            ],
-                            return_exceptions=True,
-                        )
+                        sub_results = []
+                        for cmd in split_commands:
+                            sub_result = await execute_command_run_with_tool(
+                                cmd,
+                                max_retries=max_retries,
+                                retry_delay=retry_delay,
+                                context_hint=context_hint,
+                                _allow_compound_split=False,
+                            )
+                            sub_results.append(sub_result)
                         successful = []
                         for sub in sub_results:
                             if isinstance(sub, Exception):
