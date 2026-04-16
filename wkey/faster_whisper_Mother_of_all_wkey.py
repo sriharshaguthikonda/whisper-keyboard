@@ -267,6 +267,15 @@ load_dotenv()
 # Load transcription settings
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
 SETTINGS = load_settings(SETTINGS_PATH, SETTINGS_DEFAULTS)
+try:
+    voice_commands_module.set_selenium_enabled(
+        SETTINGS.get("enable_edge_selenium", True),
+        start_if_needed=False,
+    )
+except AttributeError:
+    pass
+except Exception as e:
+    logging.warning(f"{YELLOW}Failed to apply initial Selenium setting: {e}{RESET}")
 
 # Get the key labels from environment variables, default to 'f24' if not set
 key_label = os.environ.get("WKEY", "f24").lower()
@@ -374,6 +383,7 @@ def apply_settings(new_settings):
 
     want_gpu = SETTINGS.get("use_local_gpu", True)
     want_cpu = SETTINGS.get("use_local_cpu", True)
+    want_selenium = SETTINGS.get("enable_edge_selenium", True)
 
     if not want_gpu and model_device == "cuda":
         model = None
@@ -390,6 +400,15 @@ def apply_settings(new_settings):
     gpu_available = want_gpu and torch.cuda.is_available()
     if gpu_available and model_device != "cuda":
         initialize_local_model_gpu()
+
+    try:
+        voice_commands_module.set_selenium_enabled(
+            want_selenium, start_if_needed=True
+        )
+    except AttributeError:
+        pass
+    except Exception as e:
+        logging.warning(f"{YELLOW}Failed to apply Selenium setting update: {e}{RESET}")
 
 def start_settings_watch():
     global settings_watch_handle
@@ -1187,6 +1206,7 @@ def start_recording(keyword_index=None):
 
         if not initialize_input_stream():
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
+            restore_volume_all()
             with recording_lock:
                 recording = False
                 active_recording_session_id = 0
@@ -1221,6 +1241,10 @@ def start_recording(keyword_index=None):
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
+        restore_volume_all()
+        if play_pause_pressed:
+            restore_volume_all()
+            play_pause_pressed = False
         with recording_lock:
             recording = False
             active_recording_session_id = 0
@@ -1243,6 +1267,8 @@ def stop_recording(keyword_index):
         if not recording:
             if initial_volume is not None:
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+            if play_pause_pressed:
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             with recording_lock:
                 active_recording_session_id = 0
             play_pause_pressed = False
@@ -1254,6 +1280,8 @@ def stop_recording(keyword_index):
 
         if keyword_index in (1, 2, 3) and keyword_validation_result is False:
             if initial_volume is not None:
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+            if play_pause_pressed:
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
             beep(STOP_BEEP)
@@ -1268,6 +1296,8 @@ def stop_recording(keyword_index):
 
         if not True_positve_audio:
             if initial_volume is not None:
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+            if play_pause_pressed:
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             play_pause_pressed = False
             beep(STOP_BEEP)
@@ -1837,9 +1867,14 @@ def reset_state():
         global recording, play_pause_pressed, audio_buffer, active_recording_session_id
         recording = False
         active_recording_session_id = 0
+        was_play_pause = play_pause_pressed
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
-        threading.Thread(target=restore_volume_all).start()
+        def _drain_volume():
+            restore_volume_all()
+            if was_play_pause:
+                restore_volume_all()
+        threading.Thread(target=_drain_volume).start()
         logging.info("State reset completed")
     except Exception as e:
         logging.error(f"Error in reset_state: {e}", exc_info=True)
@@ -2088,6 +2123,7 @@ def reset_all_states():
             recording = False
             active_recording_session_id = 0
 
+        was_play_pause = play_pause_pressed
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
 
@@ -2116,7 +2152,11 @@ def reset_all_states():
         global_state["last_successful_operation"] = time.time()
         global_state["is_processing"] = False
 
-        threading.Thread(target=restore_volume_all).start()
+        def _drain_volume():
+            restore_volume_all()
+            if was_play_pause:
+                restore_volume_all()
+        threading.Thread(target=_drain_volume).start()
         logging.info(f"{GREEN}All states reset successfully{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in reset_all_states: {e}{RESET}", exc_info=True)
@@ -2159,7 +2199,25 @@ def main():
         start_thread(
             lambda: run_asyncio_in_thread(loop, process_audio_async()), "ProcessAudio"
         )
-        threading.Thread(target=start_driver, daemon=True).start()
+        selenium_enabled = True
+        try:
+            selenium_enabled = bool(voice_commands_module.is_selenium_enabled())
+        except AttributeError:
+            selenium_enabled = True
+        except Exception as e:
+            logging.warning(
+                f"{YELLOW}Could not read Selenium setting at startup; defaulting to enabled ({e}).{RESET}"
+            )
+        if selenium_enabled:
+            threading.Thread(
+                target=start_driver,
+                daemon=True,
+                name="EdgeSeleniumStartup",
+            ).start()
+        else:
+            logging.info(
+                f"{YELLOW}Edge/Selenium browser automation disabled in settings. Skipping WebDriver startup.{RESET}"
+            )
         threading.Thread(target=display_pause_status, daemon=True).start()
 
         while True:
