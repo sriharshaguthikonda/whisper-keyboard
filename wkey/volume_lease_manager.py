@@ -74,12 +74,27 @@ class VolumeLeaseManager:
     def begin_duck(self, reason="duck"):
         with self._lock:
             if self._lease_count == 0:
-                self._restore_target = self._safe_get_volume(default=0.5)
-                self._restore_pending = False
+                if self._restore_pending and self._restore_target is not None:
+                    # Restore still in flight — read would return stale ducked value.
+                    # Reuse the known target so we don't clobber it with 0.1.
+                    baseline = self._restore_target
+                    self._log.warning(
+                        "begin_duck called while restore in flight "
+                        "(reason=%s); reusing cached target=%.2f to avoid race",
+                        reason, baseline,
+                    )
+                else:
+                    baseline = self._safe_get_volume(default=0.5)
+                self._restore_target = baseline
+                self._restore_pending = False  # cancel in-flight restore; new duck owns it
             baseline = self._restore_target
             self._lease_count += 1
             lease_count = self._lease_count
 
+        self._log.info(
+            "begin_duck reason=%s lease_count=%d restore_target=%.2f duck_volume=%.2f",
+            reason, lease_count, baseline, self._duck_volume,
+        )
         self._record_sample(reason=f"{reason}:begin", value=baseline)
         self._safe_set_volume(self._duck_volume, reason=f"{reason}:duck")
         return baseline, lease_count
@@ -87,6 +102,9 @@ class VolumeLeaseManager:
     def end_duck(self, reason="restore"):
         with self._lock:
             if self._lease_count <= 0:
+                self._log.warning(
+                    "end_duck called with lease_count=0 (reason=%s) — unbalanced call", reason
+                )
                 return None, 0, False
 
             self._lease_count -= 1
@@ -96,20 +114,63 @@ class VolumeLeaseManager:
             if should_restore:
                 self._restore_pending = True
 
+        self._log.info(
+            "end_duck reason=%s remaining_leases=%d target=%.2f should_restore=%s",
+            reason, remaining, target if target is not None else -1, should_restore,
+        )
         if should_restore:
-            self._safe_set_volume(target, reason=f"{reason}:initial_restore")
-            threading.Thread(
-                target=self._fallback_restore_verify,
-                args=(target, reason),
-                daemon=True,
-                name="volume-restore-verify",
-            ).start()
+            self._start_restore(
+                target,
+                reason,
+                async_set=False,
+                thread_name="volume-restore-verify",
+            )
 
         self._record_sample(reason=f"{reason}:end", value=target)
         return target, remaining, should_restore
 
+    def force_release_all(self, reason="force_release", *, restore=True, async_restore=True):
+        with self._lock:
+            released_leases = self._lease_count
+            target = self._restore_target
+            had_restore_pending = self._restore_pending
+            should_restore = bool(
+                restore and target is not None and (released_leases > 0 or had_restore_pending)
+            )
+            self._lease_count = 0
+            self._restore_pending = should_restore
+            self._last_reapply_ts = 0.0
+
+        if released_leases <= 0 and not should_restore:
+            self._log.debug(
+                "force_release_all noop (reason=%s target=%s)",
+                reason,
+                f"{target:.2f}" if target is not None else "None",
+            )
+            return target, released_leases, False
+
+        self._log.warning(
+            "force_release_all reason=%s released_leases=%d target=%s "
+            "had_restore_pending=%s should_restore=%s",
+            reason,
+            released_leases,
+            f"{target:.2f}" if target is not None else "None",
+            had_restore_pending,
+            should_restore,
+        )
+        if should_restore:
+            self._start_restore(
+                target,
+                reason,
+                async_set=async_restore,
+                thread_name="volume-force-restore",
+            )
+        self._record_sample(reason=f"{reason}:force_release", value=target)
+        return target, released_leases, should_restore
+
     def on_volume_notify(self, new_volume):
         now = time.time()
+        self._log.debug("on_volume_notify new_volume=%.2f", new_volume)
         self._record_sample(reason="callback", value=new_volume)
 
         should_reapply = False
@@ -146,14 +207,32 @@ class VolumeLeaseManager:
         with self._lock:
             return list(self._history)
 
+    def snapshot_state(self):
+        with self._lock:
+            return {
+                "lease_count": self._lease_count,
+                "restore_target": self._restore_target,
+                "restore_pending": self._restore_pending,
+                "last_reapply_ts": self._last_reapply_ts,
+                "history_size": len(self._history),
+            }
+
     def _fallback_restore_verify(self, target, reason):
-        # Minimal safety checks in case callback did not fire.
         for delay_seconds in (0.4, 1.2):
             time.sleep(delay_seconds)
             with self._lock:
                 if self._lease_count > 0 or not self._restore_pending:
+                    self._log.debug(
+                        "_fallback_restore_verify early exit at %.1fs "
+                        "(lease_count=%d restore_pending=%s reason=%s)",
+                        delay_seconds, self._lease_count, self._restore_pending, reason,
+                    )
                     return
             observed = self._safe_get_volume(default=None)
+            self._log.debug(
+                "_fallback_restore_verify delay=%.1fs target=%.2f observed=%s reason=%s",
+                delay_seconds, target, f"{observed:.2f}" if observed is not None else "None", reason,
+            )
             if observed is None:
                 continue
             if abs(observed - target) <= self._tolerance:
@@ -179,6 +258,30 @@ class VolumeLeaseManager:
             self._set_volume(value)
         except Exception:
             self._log.error("Volume set failed (%s)", reason, exc_info=True)
+
+    def _start_restore(self, target, reason, *, async_set, thread_name):
+        if target is None:
+            return
+
+        if async_set:
+            def _run():
+                self._safe_set_volume(target, reason=f"{reason}:initial_restore")
+                self._fallback_restore_verify(target, reason)
+
+            threading.Thread(
+                target=_run,
+                daemon=True,
+                name=thread_name,
+            ).start()
+            return
+
+        self._safe_set_volume(target, reason=f"{reason}:initial_restore")
+        threading.Thread(
+            target=self._fallback_restore_verify,
+            args=(target, reason),
+            daemon=True,
+            name=thread_name,
+        ).start()
 
     def _record_sample(self, reason, value):
         now = time.time()

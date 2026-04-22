@@ -259,6 +259,100 @@ volume_lease_manager = VolumeLeaseManager(
     history_max_samples=5,
 )
 
+
+def _format_volume_value(value):
+    if value is None:
+        return "None"
+    try:
+        return f"{float(value):.2f}"
+    except Exception:
+        return str(value)
+
+
+def log_volume_lease_state(context, level=logging.INFO):
+    try:
+        snapshot = volume_lease_manager.snapshot_state()
+        logging.log(
+            level,
+            "volume_lease_state context=%s lease_count=%d restore_pending=%s "
+            "restore_target=%s initial_volume=%s recording=%s "
+            "play_pause_pressed=%s recovery_in_progress=%s",
+            context,
+            snapshot["lease_count"],
+            snapshot["restore_pending"],
+            _format_volume_value(snapshot["restore_target"]),
+            _format_volume_value(globals().get("initial_volume")),
+            bool(globals().get("recording", False)),
+            bool(globals().get("play_pause_pressed", False)),
+            is_audio_recovery_in_progress(),
+        )
+    except Exception as e:
+        logging.error(
+            "Failed to log volume lease state (%s): %s", context, e, exc_info=True
+        )
+
+
+def _set_volume_async(target_volume, reason):
+    def _run():
+        try:
+            set_volume(target_volume)
+        except Exception as e:
+            logging.error(
+                "Async cached volume restore failed (%s): %s",
+                reason,
+                e,
+                exc_info=True,
+            )
+
+    threading.Thread(
+        target=_run,
+        daemon=True,
+        name="VolumeCachedRestore",
+    ).start()
+
+
+def force_release_volume_ducking(reason, level=logging.WARNING):
+    global initial_volume
+    cached_initial_volume = initial_volume
+    (
+        target_volume,
+        released_leases,
+        scheduled_restore,
+    ) = volume_lease_manager.force_release_all(
+        reason=reason,
+        restore=True,
+        async_restore=True,
+    )
+
+    if not scheduled_restore and cached_initial_volume is not None:
+        logging.log(
+            level,
+            "force_release_volume_ducking fallback restore reason=%s cached_initial_volume=%s",
+            reason,
+            _format_volume_value(cached_initial_volume),
+        )
+        _set_volume_async(cached_initial_volume, reason=f"{reason}:cached_initial_volume")
+        target_volume = cached_initial_volume
+        scheduled_restore = True
+
+    initial_volume = None
+    log_level = (
+        level
+        if released_leases > 0 or scheduled_restore or cached_initial_volume is not None
+        else logging.DEBUG
+    )
+    logging.log(
+        log_level,
+        "force_release_volume_ducking reason=%s released_leases=%d target=%s scheduled_restore=%s",
+        reason,
+        released_leases,
+        _format_volume_value(target_volume),
+        scheduled_restore,
+    )
+    log_volume_lease_state(f"force_release:{reason}", level=log_level)
+    return target_volume, released_leases, scheduled_restore
+
+
 # Initialize VoiceDetector
 vad_detector = VoiceDetector()
 
@@ -666,6 +760,9 @@ def handle_resume_event(reason="resume"):
     global buffer_index
     global recording
     global active_recording_session_id
+    global play_pause_pressed
+    global keyword_validation_result
+    log_volume_lease_state(f"resume_event_enter:{reason}", level=logging.INFO)
     resume_cooldown_until = time.time() + RESUME_COOLDOWN_SECONDS
     _drain_queue(audio_buffer_queue)
     _drain_queue(transcript_queue)
@@ -676,6 +773,9 @@ def handle_resume_event(reason="resume"):
     with audio_data_lock:
         audio_buffer = np.array([], dtype="float32")
     buffer_index = 0
+    play_pause_pressed = False
+    keyword_validation_result = None
+    keyword_validation_event.set()
     try:
         pre_recording_buffer.fill(0)
         if pre_recording_buffer_f24 is not None:
@@ -683,6 +783,22 @@ def handle_resume_event(reason="resume"):
     except Exception:
         pass
     overflow_burst_tracker.reset()
+    snapshot = volume_lease_manager.snapshot_state()
+    if snapshot["lease_count"] > 0:
+        logging.warning(
+            "resume_event reset recording while active volume leases remain "
+            "(reason=%s lease_count=%d restore_target=%s)",
+            reason,
+            snapshot["lease_count"],
+            _format_volume_value(snapshot["restore_target"]),
+        )
+    if (
+        snapshot["lease_count"] > 0
+        or snapshot["restore_pending"]
+        or initial_volume is not None
+    ):
+        force_release_volume_ducking(f"resume_event:{reason}", level=logging.WARNING)
+    log_volume_lease_state(f"resume_event_exit:{reason}", level=logging.INFO)
     logging.info(f"{YELLOW}Resume cooldown active ({reason}){RESET}")
 
 
@@ -764,6 +880,7 @@ def _perform_audio_recovery(reason):
     try:
         with audio_recovery_execution_lock:
             logging.warning(f"{YELLOW}Audio recovery start: {reason}{RESET}")
+            log_volume_lease_state(f"audio_recovery_start:{reason}", level=logging.WARNING)
             request_keyboard_listener_restart(f"recovery:{reason}")
             handle_resume_event(f"recovery:{reason}")
             _close_input_stream_for_recovery()
@@ -779,6 +896,9 @@ def _perform_audio_recovery(reason):
             resume_gap_detector.mark_now()
             suppress_resume_detection(
                 RESUME_DETECTION_SUPPRESSION_SECONDS, f"recovery:{reason}"
+            )
+            log_volume_lease_state(
+                f"audio_recovery_complete:{reason}", level=logging.INFO
             )
             logging.info(f"{GREEN}Audio recovery complete: {reason}{RESET}")
     except Exception as e:
@@ -844,6 +964,9 @@ def register_volume_timeout_recovery_hook():
     def _on_timeout(timeout_seconds):
         logging.warning(
             f"{YELLOW}Volume timeout callback received ({timeout_seconds:.1f}s). Scheduling audio recovery.{RESET}"
+        )
+        log_volume_lease_state(
+            f"volume_timeout_callback:{timeout_seconds:.1f}s", level=logging.WARNING
         )
         request_audio_recovery(f"volume timeout {timeout_seconds:.1f}s")
 
@@ -978,32 +1101,58 @@ def initialize_wake_stream():
 def decrease_volume_all():
     global initial_volume
     try:
+        log_volume_lease_state("decrease_volume_all:before", level=logging.DEBUG)
         baseline_volume, lease_count = volume_lease_manager.begin_duck(
             reason="decrease_volume_all"
         )
         if baseline_volume is None:
             baseline_volume = get_volume()
         initial_volume = baseline_volume
-        if lease_count == 1:
-            print(f"Decreasing volume from {initial_volume * 100}% to 10%")
+        logging.info(
+            "decrease_volume_all: lease_count=%d baseline=%.2f duck_to=0.10",
+            lease_count, initial_volume,
+        )
+        if lease_count > 1:
+            log_volume_lease_state(
+                f"decrease_volume_all:after:nested={lease_count}",
+                level=logging.WARNING,
+            )
+        else:
+            log_volume_lease_state("decrease_volume_all:after", level=logging.DEBUG)
     except Exception as e:
         logging.error(f"Error in decrease_volume_all: {e}", exc_info=True)
 
 def restore_volume_all():
     global initial_volume
     try:
+        log_volume_lease_state("restore_volume_all:before", level=logging.DEBUG)
         target_volume, remaining_leases, did_restore = volume_lease_manager.end_duck(
             reason="restore_volume_all"
+        )
+        logging.info(
+            "restore_volume_all: remaining_leases=%d target=%s did_restore=%s",
+            remaining_leases,
+            f"{target_volume:.2f}" if target_volume is not None else "None",
+            did_restore,
         )
         if did_restore:
             initial_volume = None
             return
         if remaining_leases > 0 and target_volume is not None:
             initial_volume = target_volume
+            log_volume_lease_state(
+                f"restore_volume_all:after:remaining={remaining_leases}",
+                level=logging.WARNING,
+            )
             return
         if target_volume is None and initial_volume is not None:
+            logging.warning(
+                "restore_volume_all: lease manager returned None target; "
+                "falling back to initial_volume=%.2f", initial_volume
+            )
             set_volume(initial_volume)
             initial_volume = None
+        log_volume_lease_state("restore_volume_all:after", level=logging.DEBUG)
     except Exception as e:
         logging.error(f"Error in restore_volume_all: {e}", exc_info=True)
 
@@ -1149,6 +1298,41 @@ def _schedule_recording_timeout(recording_session_id, keyword_index):
 
     threading.Thread(target=_run, daemon=True).start()
 
+
+def _cancel_recording_start_if_invalid(recording_session_id, keyword_index, context):
+    global recording, active_recording_session_id, play_pause_pressed
+    recovery_in_progress = is_audio_recovery_in_progress()
+    with recording_lock:
+        session_stale = (
+            recording_session_id is None
+            or not recording
+            or active_recording_session_id != recording_session_id
+        )
+        active_session_id = active_recording_session_id
+
+    if not recovery_in_progress and not session_stale:
+        return False
+
+    logging.warning(
+        "Cancelling recording start context=%s keyword_index=%s "
+        "session_id=%s active_session_id=%s recovery_in_progress=%s",
+        context,
+        keyword_index,
+        recording_session_id,
+        active_session_id,
+        recovery_in_progress,
+    )
+    force_release_volume_ducking(
+        f"start_recording_cancel:{context}",
+        level=logging.WARNING,
+    )
+    with recording_lock:
+        if active_recording_session_id == recording_session_id or not recording:
+            recording = False
+            active_recording_session_id = 0
+    play_pause_pressed = False
+    return True
+
 def start_recording(keyword_index=None):
     """Start recording audio.
     
@@ -1203,21 +1387,48 @@ def start_recording(keyword_index=None):
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
         decrease_volume_all()
+        if _cancel_recording_start_if_invalid(
+            current_recording_session_id,
+            keyword_index,
+            "after_primary_duck",
+        ):
+            return
 
         if not initialize_input_stream():
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
-            restore_volume_all()
+            force_release_volume_ducking(
+                "start_recording:no_input_stream",
+                level=logging.WARNING,
+            )
             with recording_lock:
                 recording = False
                 active_recording_session_id = 0
+            return
+        if _cancel_recording_start_if_invalid(
+            current_recording_session_id,
+            keyword_index,
+            "after_initialize_input_stream",
+        ):
             return
 
         if something_is_playing:
             logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
             decrease_volume_all()
             play_pause_pressed = True
+            if _cancel_recording_start_if_invalid(
+                current_recording_session_id,
+                keyword_index,
+                "after_secondary_duck",
+            ):
+                return
 
         beep(START_BEEP)
+        if _cancel_recording_start_if_invalid(
+            current_recording_session_id,
+            keyword_index,
+            "before_listening",
+        ):
+            return
         logging.info(f"{CYAN}Listening...{RESET}")
         if current_recording_session_id is not None:
             _schedule_recording_timeout(current_recording_session_id, keyword_index)
@@ -1241,10 +1452,11 @@ def start_recording(keyword_index=None):
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
-        restore_volume_all()
-        if play_pause_pressed:
-            restore_volume_all()
-            play_pause_pressed = False
+        force_release_volume_ducking(
+            "start_recording:exception",
+            level=logging.WARNING,
+        )
+        play_pause_pressed = False
         with recording_lock:
             recording = False
             active_recording_session_id = 0
@@ -1265,10 +1477,26 @@ def stop_recording(keyword_index):
         restore_delay_seconds = _get_volume_restore_delay_for_keyword(keyword_index)
 
         if not recording:
-            if initial_volume is not None:
-                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
-            if play_pause_pressed:
-                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+            snapshot = volume_lease_manager.snapshot_state()
+            if (
+                snapshot["lease_count"] > 0
+                or snapshot["restore_pending"]
+                or initial_volume is not None
+            ):
+                logging.warning(
+                    "stop_recording called while recording=False with active volume "
+                    "state keyword_index=%s lease_count=%d restore_pending=%s "
+                    "restore_target=%s play_pause_pressed=%s",
+                    keyword_index,
+                    snapshot["lease_count"],
+                    snapshot["restore_pending"],
+                    _format_volume_value(snapshot["restore_target"]),
+                    play_pause_pressed,
+                )
+                force_release_volume_ducking(
+                    f"stop_recording:not_recording:{keyword_index}",
+                    level=logging.WARNING,
+                )
             with recording_lock:
                 active_recording_session_id = 0
             play_pause_pressed = False
@@ -1867,14 +2095,9 @@ def reset_state():
         global recording, play_pause_pressed, audio_buffer, active_recording_session_id
         recording = False
         active_recording_session_id = 0
-        was_play_pause = play_pause_pressed
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
-        def _drain_volume():
-            restore_volume_all()
-            if was_play_pause:
-                restore_volume_all()
-        threading.Thread(target=_drain_volume).start()
+        force_release_volume_ducking("reset_state", level=logging.WARNING)
         logging.info("State reset completed")
     except Exception as e:
         logging.error(f"Error in reset_state: {e}", exc_info=True)
@@ -1907,10 +2130,17 @@ async def clean_transcript():
                 global clarification_retry_used
                 global_state["last_heartbeat"] = time.time()
                 transcript, keyword_index = transcript_queue.get()
-                logging.error(f"Transcript received in clean_transcript: {transcript}")
+                logging.debug(
+                    "clean_transcript received keyword_index=%s transcript_len=%d",
+                    keyword_index,
+                    len(transcript or ""),
+                )
                 if keyword_index in (0, 1):
-                    logging.error(
-                        f"Transcript sent for execute_command_run_with_tool: {transcript}"
+                    logging.debug(
+                        "clean_transcript routing to execute_command_run_with_tool "
+                        "keyword_index=%s transcript_len=%d",
+                        keyword_index,
+                        len(transcript or ""),
                     )
                     router_context_hint = _build_router_context_hint(transcript)
                     await execute_command_run_with_tool(
@@ -1929,7 +2159,10 @@ async def clean_transcript():
                 elif keyword_index == 2:
                     pass
                 elif keyword_index == 3:
-                    logging.error(f"google assistant command: {transcript}")
+                    logging.debug(
+                        "clean_transcript routing to google_assistant transcript_len=%d",
+                        len(transcript or ""),
+                    )
                     await google_assistant(transcript)
                 else:
                     logging.info(f"Unknown keyword index {keyword_index}")
@@ -2123,7 +2356,6 @@ def reset_all_states():
             recording = False
             active_recording_session_id = 0
 
-        was_play_pause = play_pause_pressed
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
 
@@ -2152,11 +2384,7 @@ def reset_all_states():
         global_state["last_successful_operation"] = time.time()
         global_state["is_processing"] = False
 
-        def _drain_volume():
-            restore_volume_all()
-            if was_play_pause:
-                restore_volume_all()
-        threading.Thread(target=_drain_volume).start()
+        force_release_volume_ducking("reset_all_states", level=logging.WARNING)
         logging.info(f"{GREEN}All states reset successfully{RESET}")
     except Exception as e:
         logging.error(f"{RED}Error in reset_all_states: {e}{RESET}", exc_info=True)
@@ -2257,7 +2485,7 @@ def main():
                 stream.stop()
                 stream.close()
             cleanup()
-            threading.Thread(target=restore_volume_all).start()
+            force_release_volume_ducking("main_cleanup", level=logging.WARNING)
             logging.info(f"{YELLOW}Cleanup completed. Exiting...{RESET}")
             if driver:
                 driver.quit()

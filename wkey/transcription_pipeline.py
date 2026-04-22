@@ -78,12 +78,12 @@ class TranscriptionPipeline:
                     self.global_state["consecutive_failures"] += 1
                     continue
 
-                self.log.info("process_audio_async: Creating WAV buffer")
+                self.log.debug("process_audio_async: creating WAV buffer")
                 byte_io = io.BytesIO()
                 wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
                 byte_io.seek(0)
-                self.log.info(
-                    "process_audio_async: WAV buffer created, size=%d bytes",
+                self.log.debug(
+                    "process_audio_async: WAV buffer ready, size=%d bytes",
                     byte_io.getbuffer().nbytes,
                 )
 
@@ -117,7 +117,7 @@ class TranscriptionPipeline:
 
                 if use_groq:
                     try:
-                        self.log.info("process_audio_async: Starting Groq transcription")
+                        self.log.debug("process_audio_async: starting Groq transcription")
                         groq_start_time = time.time()
                         self.global_state["transcribe_inflight"] = True
                         self.global_state["last_transcribe_activity"] = time.time()
@@ -128,8 +128,9 @@ class TranscriptionPipeline:
                         finally:
                             self.global_state["transcribe_inflight"] = False
                             self.global_state["last_transcribe_activity"] = time.time()
-                        self.log.info(
-                            "process_audio_async: Groq returned transcript=%r", transcript
+                        self.log.debug(
+                            "process_audio_async: Groq returned transcript_len=%d",
+                            len(transcript or ""),
                         )
                         if transcript is not None:
                             groq_success = True
@@ -231,7 +232,7 @@ class TranscriptionPipeline:
                     self.transcript_queue.put((transcript_stripped, 0))
                     continue
                 if keyword_index is None:
-                    self.log.info("pasing ctrl_r transcription")
+                    self.log.debug("routing ctrl_r transcription for paste")
                     self.paste_transcript(transcript, self.beep)
                     continue
                 if keyword_index == 1 and "computer" in transcript_lower:
@@ -239,7 +240,7 @@ class TranscriptionPipeline:
                     stripped_transcript = transcript_lower[
                         keyword_position + len("computer") :
                     ]
-                    self.log.info(
+                    self.log.debug(
                         "Processing computer command: %s", stripped_transcript
                     )
                     self.log.info(
