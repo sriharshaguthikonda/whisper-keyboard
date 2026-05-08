@@ -60,6 +60,16 @@ from commands_and_tools import (
     stop_spotify,
 )
 from model_rotation import next_tool_use_model
+try:
+    from settings_manager import (
+        load_settings as settings_load,
+        DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+    )
+except ModuleNotFoundError:
+    from wkey.settings_manager import (
+        load_settings as settings_load,
+        DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
+    )
 
 # Temporarily disable browser/media tools from LLM tool selection
 DISABLED_TOOL_NAMES = {
@@ -125,6 +135,27 @@ Groq_client = Groq(api_key=api_key)
 def _parse_csv_env(name: str, default_csv: str):
     raw = os.getenv(name, default_csv)
     return [item.strip() for item in raw.split(",") if item and item.strip()]
+
+
+def _parse_positive_float_env(name: str, default_value: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return float(default_value)
+    try:
+        value = float(raw.strip())
+        if value > 0:
+            return value
+    except Exception:
+        pass
+    logging.warning(
+        "Invalid %s value %r, using default %.1f", name, raw, float(default_value)
+    )
+    return float(default_value)
+
+
+TOOL_EXECUTION_TIMEOUT_SECONDS = _parse_positive_float_env(
+    "WKEY_TOOL_EXEC_TIMEOUT_SECONDS", 20.0
+)
 
 
 # TTS preferences: Ava first, then Edge voice backups, then local fallback.
@@ -194,12 +225,88 @@ options.add_argument("--remote-debugging-port=0")  # allow dynamic debug port
 
 
 # Initialize the WebDriver (use Selenium Manager by default)
-service = Service()
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
 
 driver = None
 driver_pid = None
 session_id = None
 executor_url = None
+_driver_control_lock = threading.RLock()
+
+
+def _load_edge_selenium_setting():
+    try:
+        config = settings_load(SETTINGS_PATH, SETTINGS_DEFAULTS)
+        return bool(config.get("enable_edge_selenium", True))
+    except Exception as e:
+        logging.warning(
+            f"{YELLOW}Failed to load enable_edge_selenium setting ({e}); defaulting to enabled.{RESET}"
+        )
+        return True
+
+
+_edge_selenium_enabled = _load_edge_selenium_setting()
+
+
+def _set_driver_reference(driver_instance):
+    try:
+        from commands_and_tools import set_driver_reference
+
+        set_driver_reference(driver_instance)
+    except ImportError:
+        pass
+
+
+def is_selenium_enabled():
+    with _driver_control_lock:
+        return _edge_selenium_enabled
+
+
+def stop_driver(reason="manual stop"):
+    global driver, driver_pid, session_id, executor_url
+    with _driver_control_lock:
+        current_driver = driver
+        driver = None
+        driver_pid = None
+        session_id = None
+        executor_url = None
+    _set_driver_reference(None)
+    if current_driver is not None:
+        try:
+            current_driver.quit()
+            logging.info(
+                f"{YELLOW}WebDriver stopped ({reason}).{RESET}"
+            )
+        except Exception as e:
+            logging.warning(
+                f"{YELLOW}WebDriver stop encountered an error ({reason}): {e}{RESET}"
+            )
+
+
+def set_selenium_enabled(enabled, start_if_needed=False):
+    global _edge_selenium_enabled
+    enabled = bool(enabled)
+    should_start_driver = False
+    with _driver_control_lock:
+        previous = _edge_selenium_enabled
+        _edge_selenium_enabled = enabled
+        should_start_driver = enabled and start_if_needed and driver is None
+    if previous != enabled:
+        state = "enabled" if enabled else "disabled"
+        logging.info(f"{CYAN}Edge/Selenium automation {state} via settings.{RESET}")
+    if not enabled:
+        stop_driver(reason="disabled in settings")
+    elif should_start_driver:
+        threading.Thread(target=start_driver, daemon=True, name="EdgeSeleniumStartup").start()
+
+
+def _ensure_selenium_enabled(action_name):
+    if not is_selenium_enabled():
+        logging.info(
+            f"{YELLOW}Skipping Selenium action '{action_name}' because enable_edge_selenium is off.{RESET}"
+        )
+        return False
+    return True
 
 def _get_executor_url(driver_instance):
     try:
@@ -214,31 +321,50 @@ def _get_executor_url(driver_instance):
 
 
 def start_driver():
+    global driver, driver_pid, session_id, executor_url
+    if not _ensure_selenium_enabled("start_driver"):
+        return False
     try:
-        global driver, driver_pid, session_id, executor_url
+        with _driver_control_lock:
+            if driver is not None:
+                logging.info(f"{CYAN}WebDriver already initialized. Skipping startup.{RESET}")
+                return True
 
         logging.info(f"{CYAN}Starting driver...{RESET}")
-        driver = webdriver.Edge(service=service, options=options)
+        new_driver = webdriver.Edge(service=Service(), options=options)
         time.sleep(6)
-        driver.get("https://open.spotify.com/collection/tracks")
-        # driver.execute_script("window.focus();")
+        new_driver.get("https://open.spotify.com/collection/tracks")
         time.sleep(5)  # Wait for the page to load
-        driver_pid = driver.service.process.pid
-        session_id = driver.session_id
-        executor_url = _get_executor_url(driver)
-        if not executor_url:
+        new_executor_url = _get_executor_url(new_driver)
+        if not new_executor_url:
             logging.warning(f"{YELLOW}Could not determine executor_url for WebDriver session.{RESET}")
+
+        with _driver_control_lock:
+            if not _edge_selenium_enabled:
+                try:
+                    new_driver.quit()
+                except Exception:
+                    pass
+                logging.info(
+                    f"{YELLOW}WebDriver startup aborted because Selenium automation was disabled mid-start.{RESET}"
+                )
+                return False
+            driver = new_driver
+            driver_pid = new_driver.service.process.pid if new_driver.service and new_driver.service.process else None
+            session_id = new_driver.session_id
+            executor_url = new_executor_url
+        _set_driver_reference(driver)
         logging.info(f"{GREEN}WebDriver started successfully.{RESET}")
-        
-        # Update driver reference in commands_and_tools
-        try:
-            from commands_and_tools import set_driver_reference
-            set_driver_reference(driver)
-        except ImportError:
-            pass
-            
+        return True
     except Exception as e:
         logging.error(f"{RED}Error starting driver: {e}{RESET}", exc_info=True)
+        with _driver_control_lock:
+            driver = None
+            driver_pid = None
+            session_id = None
+            executor_url = None
+        _set_driver_reference(None)
+        return False
 
 
 """
@@ -247,54 +373,39 @@ https://chatgpt.com/c/66e49b09-cca4-8013-a443-6793c6073c2f
 
 
 def reconnect_driver():
+    global driver, session_id, executor_url, options
+    if not _ensure_selenium_enabled("reconnect_driver"):
+        return False
     try:
-        global driver, session_id, executor_url, options
-
         logging.info(f"{CYAN}Reconnecting to WebDriver session...{RESET}")
         if session_id and executor_url:
-            driver = webdriver.Remote(command_executor=executor_url, options=options)
-            driver.session_id = session_id
+            new_driver = webdriver.Remote(command_executor=executor_url, options=options)
+            new_driver.session_id = session_id
+
+            with _driver_control_lock:
+                if not _edge_selenium_enabled:
+                    try:
+                        new_driver.quit()
+                    except Exception:
+                        pass
+                    logging.info(
+                        f"{YELLOW}Skipping reconnect completion because Selenium automation is disabled.{RESET}"
+                    )
+                    return False
+                driver = new_driver
+
             logging.info(f"{GREEN}Reconnected to the existing session.{RESET}")
-            
-            # Update driver reference in commands_and_tools
-            try:
-                from commands_and_tools import set_driver_reference
-                set_driver_reference(driver)
-            except ImportError:
-                pass
-                
+            _set_driver_reference(driver)
+            return True
     except (SessionNotCreatedException, WebDriverException) as e:
         logging.error(
             f"{RED}Failed to reconnect to the session: {str(e)}{RESET}", exc_info=True
         )
+    except Exception as e:
+        logging.error(f"{RED}Unexpected reconnect error: {e}{RESET}", exc_info=True)
 
-        # Attempt to start a new session
-        try:
-            logging.info(f"{CYAN}Attempting to start a new WebDriver session...{RESET}")
-            # options = webdriver.EdgeOptions()
-            # options.binary_location = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"  # Correct Edge binary path
-
-            driver = webdriver.Edge(service=Service(), options=options)
-            time.sleep(3)
-            driver.get("https://open.spotify.com/collection/tracks")
-            time.sleep(3)
-            logging.info(f"{GREEN}Started a new session.{RESET}")
-            executor_url = _get_executor_url(driver)
-            if not executor_url:
-                logging.warning(f"{YELLOW}Could not determine executor_url for WebDriver session.{RESET}")
-            
-            # Update driver reference in commands_and_tools
-            try:
-                from commands_and_tools import set_driver_reference
-                set_driver_reference(driver)
-            except ImportError:
-                pass
-                
-        except Exception as new_session_error:
-            logging.error(
-                f"{RED}Failed to start a new session: {new_session_error}{RESET}",
-                exc_info=True,
-            )
+    logging.info(f"{CYAN}Attempting to start a new WebDriver session...{RESET}")
+    return start_driver()
 
 
 # Start the WebDriver in a separate thread
@@ -313,9 +424,15 @@ def reconnect_driver():
 
 
 def change_device():
+    if not _ensure_selenium_enabled("change_device"):
+        return False
+    local_driver = driver
+    if local_driver is None:
+        logging.warning(f"{YELLOW}change_device requested but WebDriver is not available.{RESET}")
+        return False
     try:
         logging.info("Changing playback device...")
-        devices_button = driver.find_element(
+        devices_button = local_driver.find_element(
             By.XPATH, "//button[@aria-label='Connect to a device']"
         )
         # Click the button
@@ -326,30 +443,38 @@ def change_device():
         # wait = WebDriverWait(driver, 10)
         time.sleep(2)
         try:
-            driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
+            local_driver.find_element(By.XPATH, '//*[@id="device-picker"]').click()
         except Exception as e:
             logging.error(
                 f"Error while trying to play after reconnection: {e}", exc_info=True
             )
         time.sleep(2)
-        driver.find_element(
+        local_driver.find_element(
             # By.XPATH, '//*[text()="Web Player (Microsoft Edge)"]'
             By.XPATH,
             '//*[text()="This web browser"]',
         ).click()
         # Click the panel
+        return True
     except Exception as e:
         logging.error(
             f"Error while trying to play after reconnection: {e}", exc_info=True
         )
+        return False
 
 
 # Control playback
 def play_music():
+    if not _ensure_selenium_enabled("play_music"):
+        return False
     try:
+        if driver is None:
+            logging.warning(f"{YELLOW}play_music requested but WebDriver is not available.{RESET}")
+            return False
         play_button = driver.find_element(By.XPATH, "//button[@aria-label='Play']")
         play_button.click()
         change_device()
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected" in error_message:
@@ -361,11 +486,13 @@ def play_music():
                 )
                 play_button.click()
                 print("Playback started after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
         elif "target window already closed" in error_message:
-            driver.quit()
+            if driver is not None:
+                driver.quit()
             start_driver()
             try:
                 play_button = driver.find_element(
@@ -373,18 +500,26 @@ def play_music():
                 )
                 play_button.click()
                 print("Playback started after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to play after reconnection: {e}")
 
         else:
             print(f"Error while trying to play: {e}")
+        return False
 
 
 def pause_song():
+    if not _ensure_selenium_enabled("pause_song"):
+        return False
     try:
+        if driver is None:
+            logging.warning(f"{YELLOW}pause_song requested but WebDriver is not available.{RESET}")
+            return False
         pause_button = driver.find_element("xpath", "//button[@aria-label='Pause']")
         pause_button.click()
         print("Playback paused.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -396,17 +531,25 @@ def pause_song():
                 )
                 pause_button.click()
                 print("Playback paused after reconnection.")
+                return True
             except Exception as e:
                 print(f"Error while trying to pause after reconnection: {e}")
         else:
             print(f"Error while trying to pause: {e}")
+        return False
 
 
 def next_track():
+    if not _ensure_selenium_enabled("next_track"):
+        return False
     try:
+        if driver is None:
+            logging.warning(f"{YELLOW}next_track requested but WebDriver is not available.{RESET}")
+            return False
         next_button = driver.find_element("xpath", "//button[@aria-label='Next']")
         next_button.click()
         print("Next track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -418,19 +561,27 @@ def next_track():
                 )
                 next_button.click()
                 print("Next track after reconnection.")
+                return True
             except Exception as e:
                 print(
                     f"Error while trying to skip to next track after reconnection: {e}"
                 )
         else:
             print(f"Error while trying to skip to next track: {e}")
+        return False
 
 
 def previous_track():
+    if not _ensure_selenium_enabled("previous_track"):
+        return False
     try:
+        if driver is None:
+            logging.warning(f"{YELLOW}previous_track requested but WebDriver is not available.{RESET}")
+            return False
         prev_button = driver.find_element("xpath", "//button[@aria-label='Previous']")
         prev_button.click()
         print("Previous track.")
+        return True
     except Exception as e:
         error_message = str(e)
         if "disconnected: not connected to DevTools" in error_message:
@@ -442,12 +593,14 @@ def previous_track():
                 )
                 prev_button.click()
                 print("Previous track after reconnection.")
+                return True
             except Exception as e:
                 print(
                     f"Error while trying to go to previous track after reconnection: {e}"
                 )
         else:
             print(f"Error while trying to go to previous track: {e}")
+        return False
 
 
 """
@@ -589,16 +742,29 @@ def register_volume_timeout_callback(callback):
         _volume_timeout_callbacks.append(callback)
 
 
-def _notify_volume_timeout_callbacks(timeout_seconds):
+def _run_volume_timeout_callback(callback, timeout_seconds):
+    try:
+        callback(timeout_seconds)
+    except Exception as e:
+        logging.error(
+            f"{RED}Volume timeout callback failed: {e}{RESET}", exc_info=True
+        )
+
+
+def _notify_volume_timeout_callbacks(timeout_seconds, async_dispatch=False):
     with _volume_timeout_callbacks_lock:
         callbacks = list(_volume_timeout_callbacks)
+    if async_dispatch:
+        for index, callback in enumerate(callbacks, start=1):
+            threading.Thread(
+                target=_run_volume_timeout_callback,
+                args=(callback, timeout_seconds),
+                daemon=True,
+                name=f"VolumeTimeoutCallback-{index}",
+            ).start()
+        return
     for callback in callbacks:
-        try:
-            callback(timeout_seconds)
-        except Exception as e:
-            logging.error(
-                f"{RED}Volume timeout callback failed: {e}{RESET}", exc_info=True
-            )
+        _run_volume_timeout_callback(callback, timeout_seconds)
 
 
 class VolumeController:
@@ -697,7 +863,10 @@ class VolumeController:
                 f"{RED}VolumeController timeout after {VOLUME_REQUEST_TIMEOUT}s{RESET}"
             )
             self._restart_worker(reason="timeout")
-            _notify_volume_timeout_callbacks(VOLUME_REQUEST_TIMEOUT)
+            _notify_volume_timeout_callbacks(
+                VOLUME_REQUEST_TIMEOUT,
+                async_dispatch=True,
+            )
             return default
         return result_container["value"]
 
@@ -712,7 +881,7 @@ def get_volume():
         lambda volume_interface: volume_interface.GetMasterVolumeLevelScalar(),
         default=0.5,
     )
-    logging.info(f"{BLUE}Getting volume...{RESET}")
+    logging.debug(f"{BLUE}Getting volume...{RESET}")
     return round(current_volume, 2)
 
 
@@ -824,17 +993,37 @@ def flush_dns():
 
 # VB Matrix commands
 def restart_voicemeeter():
+    initial_volume = None
     try:
         initial_volume = get_volume()
-        print(initial_volume)
+        logging.info(
+            f"{CYAN}restart_voicemeeter: issuing restart command (timeout={TOOL_EXECUTION_TIMEOUT_SECONDS:.1f}s){RESET}"
+        )
         subprocess.run(
-            '"C:\\Program Files (x86)\\VB\\VBAudioMatrix\\VBAudioMatrix_x64.exe" -r',
-            shell=True
+            [
+                "C:\\Program Files (x86)\\VB\\VBAudioMatrix\\VBAudioMatrix_x64.exe",
+                "-r",
+            ],
+            check=False,
+            timeout=TOOL_EXECUTION_TIMEOUT_SECONDS,
         )
         time.sleep(2)
-        set_volume(initial_volume)
+    except subprocess.TimeoutExpired:
+        logging.error(
+            f"{RED}restart_voicemeeter timed out after {TOOL_EXECUTION_TIMEOUT_SECONDS:.1f}s{RESET}"
+        )
     except Exception as e:
         logging.error(f"Error executing restart_voicemeeter: {e}", exc_info=True)
+    finally:
+        if initial_volume is not None:
+            try:
+                set_volume(initial_volume)
+            except Exception as restore_error:
+                logging.error(
+                    "Failed to restore volume after restart_voicemeeter: %s",
+                    restore_error,
+                    exc_info=True,
+                )
 
 
 
@@ -1694,18 +1883,26 @@ async def execute_command_run_with_tool(
                             )
                             if not accepts_named:
                                 if asyncio.iscoroutinefunction(func):
-                                    result = await func()
+                                    invocation = func()
                                 else:
-                                    result = await asyncio.to_thread(func)
+                                    invocation = asyncio.to_thread(func)
                             else:
                                 if asyncio.iscoroutinefunction(func):
-                                    result = await func(**function_args)
+                                    invocation = func(**function_args)
                                 else:
-                                    result = await asyncio.to_thread(func, **function_args)
+                                    invocation = asyncio.to_thread(func, **function_args)
+                            result = await asyncio.wait_for(
+                                invocation, timeout=TOOL_EXECUTION_TIMEOUT_SECONDS
+                            )
                             logging.info(
                                 f"{GREEN}Executed {function_name} with result: {result}{RESET}"
                             )
                             return True
+                        except asyncio.TimeoutError:
+                            logging.error(
+                                f"{RED}Tool execution timeout ({TOOL_EXECUTION_TIMEOUT_SECONDS:.1f}s) for {function_name}{RESET}"
+                            )
+                            return False
                         except Exception as e:
                             logging.error(
                                 f"{RED}Error executing function {function_name}: {str(e)}{RESET}",

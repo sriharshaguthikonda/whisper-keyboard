@@ -19,6 +19,7 @@ DEFAULT_SETTINGS = {
     "use_local_gpu": True,
     "use_local_cpu": True,
     "fallback_to_groq": True,
+    "enable_edge_selenium": True,
     "max_retries": 3,
     "enable_pre_recording_keyword_check": False,
     "enable_transcript_context_memory": True,
@@ -42,6 +43,7 @@ def _validate_settings(settings, defaults):
             "use_local_gpu",
             "use_local_cpu",
             "fallback_to_groq",
+            "enable_edge_selenium",
             "enable_pre_recording_keyword_check",
             "enable_transcript_context_memory",
         ):

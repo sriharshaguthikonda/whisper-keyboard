@@ -14,6 +14,7 @@ def make_status_display(
     check_pause_status: Callable[[], bool],
     active_message: str,
     paused_message: str,
+    override_message: Optional[Callable[[], Optional[str]]] = None,
     spinner_frames: Optional[Iterable[str]] = None,
     refresh_interval: float = 0.15,
     min_padding: int = 2,
@@ -53,11 +54,21 @@ def make_status_display(
                     break
 
                 try:
-                    paused = check_pause_status()  # fast responsiveness
+                    message_override = (
+                        override_message() if override_message is not None else None
+                    )
                 except Exception:
-                    paused = False  # keep spinner going even if status check glitches
+                    message_override = None
 
-                msg = paused_message if paused else active_message
+                if message_override:
+                    msg = message_override
+                else:
+                    try:
+                        paused = check_pause_status()  # fast responsiveness
+                    except Exception:
+                        paused = False  # keep spinner going even if status check glitches
+
+                    msg = paused_message if paused else active_message
                 _write_line(f"{frame} {msg}")
 
                 if stop_event.wait(refresh_interval):

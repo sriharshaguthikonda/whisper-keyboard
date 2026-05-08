@@ -51,7 +51,7 @@ class VolumeLeaseManager:
         self._history_window_seconds = history_window_seconds
         self._history = deque(maxlen=history_max_samples)
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._lease_count = 0
         self._restore_target = None
         self._restore_pending = False
@@ -72,25 +72,43 @@ class VolumeLeaseManager:
         self._callback_thread.start()
 
     def begin_duck(self, reason="duck"):
+        baseline = None
+        reuse_cached_target = False
         with self._lock:
             if self._lease_count == 0:
                 if self._restore_pending and self._restore_target is not None:
-                    # Restore still in flight — read would return stale ducked value.
-                    # Reuse the known target so we don't clobber it with 0.1.
                     baseline = self._restore_target
-                    self._log.warning(
-                        "begin_duck called while restore in flight "
-                        "(reason=%s); reusing cached target=%.2f to avoid race",
-                        reason, baseline,
-                    )
-                else:
-                    baseline = self._safe_get_volume(default=0.5)
+                    reuse_cached_target = True
+            else:
+                baseline = self._restore_target
+
+        if baseline is None:
+            baseline = self._safe_get_volume(default=0.5)
+
+        with self._lock:
+            if self._lease_count == 0:
+                # Restore still in flight — read would return stale ducked value.
+                # Reuse the known target so we don't clobber it with 0.1.
+                if reuse_cached_target and self._restore_target is not None:
+                    baseline = self._restore_target
+                if baseline is None:
+                    baseline = 0.5
                 self._restore_target = baseline
                 self._restore_pending = False  # cancel in-flight restore; new duck owns it
-            baseline = self._restore_target
+            else:
+                baseline = self._restore_target
+                if baseline is None:
+                    baseline = 0.5
+                    self._restore_target = baseline
             self._lease_count += 1
             lease_count = self._lease_count
 
+        if reuse_cached_target:
+            self._log.warning(
+                "begin_duck called while restore in flight "
+                "(reason=%s); reusing cached target=%.2f to avoid race",
+                reason, baseline,
+            )
         self._log.info(
             "begin_duck reason=%s lease_count=%d restore_target=%.2f duck_volume=%.2f",
             reason, lease_count, baseline, self._duck_volume,
@@ -207,15 +225,18 @@ class VolumeLeaseManager:
         with self._lock:
             return list(self._history)
 
+    def try_snapshot_state(self):
+        acquired = self._lock.acquire(blocking=False)
+        if not acquired:
+            return None
+        try:
+            return self._snapshot_state_unlocked()
+        finally:
+            self._lock.release()
+
     def snapshot_state(self):
         with self._lock:
-            return {
-                "lease_count": self._lease_count,
-                "restore_target": self._restore_target,
-                "restore_pending": self._restore_pending,
-                "last_reapply_ts": self._last_reapply_ts,
-                "history_size": len(self._history),
-            }
+            return self._snapshot_state_unlocked()
 
     def _fallback_restore_verify(self, target, reason):
         for delay_seconds in (0.4, 1.2):
@@ -282,6 +303,15 @@ class VolumeLeaseManager:
             daemon=True,
             name=thread_name,
         ).start()
+
+    def _snapshot_state_unlocked(self):
+        return {
+            "lease_count": self._lease_count,
+            "restore_target": self._restore_target,
+            "restore_pending": self._restore_pending,
+            "last_reapply_ts": self._last_reapply_ts,
+            "history_size": len(self._history),
+        }
 
     def _record_sample(self, reason, value):
         now = time.time()

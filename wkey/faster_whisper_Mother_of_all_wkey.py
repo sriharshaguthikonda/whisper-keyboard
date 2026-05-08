@@ -71,9 +71,9 @@ except ModuleNotFoundError:
 import pyaudio
 from concurrent.futures import ThreadPoolExecutor
 try:
-    from clipboard_utils import paste_transcript
+    from clipboard_utils import paste_transcript as clipboard_paste_transcript
 except ModuleNotFoundError:
-    from wkey.clipboard_utils import paste_transcript
+    from wkey.clipboard_utils import paste_transcript as clipboard_paste_transcript
 import webrtcvad
 try:
     from voice_activity_detection import VoiceDetector
@@ -271,7 +271,19 @@ def _format_volume_value(value):
 
 def log_volume_lease_state(context, level=logging.INFO):
     try:
-        snapshot = volume_lease_manager.snapshot_state()
+        snapshot = volume_lease_manager.try_snapshot_state()
+        if snapshot is None:
+            logging.log(
+                level,
+                "volume_lease_state context=%s lock_busy=True initial_volume=%s "
+                "recording=%s play_pause_pressed=%s recovery_in_progress=%s",
+                context,
+                _format_volume_value(globals().get("initial_volume")),
+                bool(globals().get("recording", False)),
+                bool(globals().get("play_pause_pressed", False)),
+                is_audio_recovery_in_progress(),
+            )
+            return
         logging.log(
             level,
             "volume_lease_state context=%s lease_count=%d restore_pending=%s "
@@ -604,6 +616,7 @@ transcription_pipeline = None
 # Define beep sounds
 START_BEEP = (2080, 100)
 STOP_BEEP = (440, 100)
+COPYQ_RECOVERY_BEEP = (1560, 120)
 
 # Locks for synchronization
 recording_lock = threading.Lock()
@@ -647,6 +660,9 @@ wake_stream_lock = threading.RLock()
 keyboard_listener_lock = threading.Lock()
 last_audio_recovery_ts = 0.0
 audio_recovery_in_progress = False
+audio_recovery_started_at = 0.0
+audio_recovery_reason = ""
+audio_recovery_stuck_reported = False
 resume_detection_suppressed_until = 0.0
 keyboard_listener_restart_requested = threading.Event()
 keyboard_listener = None
@@ -669,10 +685,45 @@ def is_audio_recovery_in_progress():
         return audio_recovery_in_progress
 
 
+def get_audio_recovery_status():
+    with audio_recovery_state_lock:
+        return {
+            "in_progress": audio_recovery_in_progress,
+            "started_at": audio_recovery_started_at,
+            "reason": audio_recovery_reason,
+            "stuck_reported": audio_recovery_stuck_reported,
+        }
+
+
 def _set_audio_recovery_in_progress(value):
     global audio_recovery_in_progress
+    global audio_recovery_started_at
+    global audio_recovery_reason
+    global audio_recovery_stuck_reported
     with audio_recovery_state_lock:
         audio_recovery_in_progress = bool(value)
+        if not audio_recovery_in_progress:
+            audio_recovery_started_at = 0.0
+            audio_recovery_reason = ""
+            audio_recovery_stuck_reported = False
+
+
+def _mark_audio_recovery_started(reason):
+    global audio_recovery_in_progress
+    global audio_recovery_started_at
+    global audio_recovery_reason
+    global audio_recovery_stuck_reported
+    with audio_recovery_state_lock:
+        audio_recovery_in_progress = True
+        audio_recovery_started_at = time.monotonic()
+        audio_recovery_reason = str(reason)
+        audio_recovery_stuck_reported = False
+
+
+def _mark_audio_recovery_stuck_reported():
+    global audio_recovery_stuck_reported
+    with audio_recovery_state_lock:
+        audio_recovery_stuck_reported = True
 
 
 def suppress_resume_detection(seconds, reason):
@@ -875,7 +926,7 @@ def _perform_audio_recovery(reason):
             )
             return
         last_audio_recovery_ts = now
-        audio_recovery_in_progress = True
+    _mark_audio_recovery_started(reason)
 
     try:
         with audio_recovery_execution_lock:
@@ -2080,6 +2131,18 @@ def beep(sound):
     except Exception as e:
         logging.error(f"Error in beep: {e}", exc_info=True)
 
+
+def paste_transcript(transcript: str = "", beep_func=None, status_callback=None, **kwargs):
+    if status_callback is None:
+        status_callback = set_transient_status_message
+    return clipboard_paste_transcript(
+        transcript=transcript,
+        beep_func=beep_func,
+        status_callback=status_callback,
+        copyq_recovery_beep=COPYQ_RECOVERY_BEEP,
+        **kwargs,
+    )
+
 """
 ########  ########  ######  ######## ######## ##    ## 
 ##     ## ##       ##    ## ##          ##    
@@ -2188,6 +2251,9 @@ async def clean_transcript():
 
 _spinner = None
 _spinner_thread = None
+_status_override_lock = threading.Lock()
+_status_override_message = None
+_status_override_until = 0.0
 
 clarification_retry_used = False
 CLARIFICATION_MAX_SECONDS = 6.0
@@ -2216,6 +2282,30 @@ def _schedule_clarification_retry():
             logging.error(f"Error scheduling clarification retry: {e}", exc_info=True)
     threading.Thread(target=_run, daemon=True).start()
 
+
+def set_transient_status_message(message: str, duration: float = 3.0):
+    global _status_override_message, _status_override_until
+    cleaned = (message or "").strip()
+    with _status_override_lock:
+        if not cleaned:
+            _status_override_message = None
+            _status_override_until = 0.0
+            return
+        _status_override_message = cleaned
+        _status_override_until = time.monotonic() + max(0.0, duration)
+
+
+def get_transient_status_message():
+    global _status_override_message, _status_override_until
+    with _status_override_lock:
+        if not _status_override_message:
+            return None
+        if time.monotonic() >= _status_override_until:
+            _status_override_message = None
+            _status_override_until = 0.0
+            return None
+        return _status_override_message
+
 def display_pause_status(start: bool = True):
     """Start/stop the pause-status spinner."""
     global _spinner, _spinner_thread
@@ -2228,6 +2318,7 @@ def display_pause_status(start: bool = True):
             check_pause_status=check_pause_status,
             active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word... (Ctrl+Alt+Shift+ScrollLock to pause){RESET}",
             paused_message=f"{RED}VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shift+ScrollLock to resume wake words{RESET}",
+            override_message=get_transient_status_message,
             spinner_frames=(
                 f"{RED}█{RESET}",
                 f"{BLUE}▄{RESET}",
@@ -2286,6 +2377,7 @@ global_state = {
 
 WATCHDOG_INTERVAL_SECONDS = 30
 WATCHDOG_STALE_SECONDS = 120
+AUDIO_RECOVERY_STUCK_SECONDS = 20
 
 def start_watchdog():
     """Dump thread stacks if no heartbeat for a while (helps catch silent hangs)."""
@@ -2301,6 +2393,20 @@ def start_watchdog():
         while True:
             try:
                 now = time.time()
+                recovery_status = get_audio_recovery_status()
+                if recovery_status["in_progress"] and recovery_status["started_at"] > 0:
+                    recovery_age = time.monotonic() - recovery_status["started_at"]
+                    if (
+                        recovery_age > AUDIO_RECOVERY_STUCK_SECONDS
+                        and not recovery_status["stuck_reported"]
+                    ):
+                        _mark_audio_recovery_stuck_reported()
+                        logging.error(
+                            f"{RED}Watchdog: audio recovery stuck for "
+                            f"{int(recovery_age)}s (reason={recovery_status['reason']}). "
+                            f"Dumping stacks...{RESET}"
+                        )
+                        faulthandler.dump_traceback(all_threads=True)
                 if now - global_state.get("last_heartbeat", now) > WATCHDOG_STALE_SECONDS:
                     logging.error(
                         f"{RED}Watchdog: no heartbeat for {WATCHDOG_STALE_SECONDS}s. Dumping stacks...{RESET}"

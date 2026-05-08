@@ -310,6 +310,18 @@ class VoicePauseController(QMainWindow):
             "Checks a short pre-buffer for wake words before running full command transcription.",
         )
 
+        self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
+        self.edge_selenium_cb.setObjectName("settingsCheckbox")
+        self.edge_selenium_cb.setFont(QFont("Segoe UI", 10))
+        self.edge_selenium_cb.setToolTip("Enable Selenium-controlled Edge browser automation features")
+        self.edge_selenium_cb.stateChanged.connect(self.save_transcription_settings)
+        self._add_with_info_button(
+            controls_layout,
+            self.edge_selenium_cb,
+            "Turns Selenium-based Edge browser automation on or off globally. "
+            "Disable this if you do not want WebDriver sessions running.",
+        )
+
         self.use_gpu_cb = QCheckBox("Use local GPU model")
         self.use_gpu_cb.setObjectName("settingsCheckbox")
         self.use_gpu_cb.setFont(QFont("Segoe UI", 10))
@@ -568,6 +580,9 @@ class VoicePauseController(QMainWindow):
             self.precheck_cb.setChecked(
                 config.get("enable_pre_recording_keyword_check", False)
             )
+            self.edge_selenium_cb.setChecked(
+                config.get("enable_edge_selenium", True)
+            )
             self.context_memory_cb.setChecked(
                 config.get("enable_transcript_context_memory", True)
             )
@@ -597,6 +612,7 @@ class VoicePauseController(QMainWindow):
                     "use_local_cpu": self.use_cpu_cb.isChecked(),
                     "fallback_to_groq": self.use_groq_cb.isChecked(),
                     "enable_pre_recording_keyword_check": self.precheck_cb.isChecked(),
+                    "enable_edge_selenium": self.edge_selenium_cb.isChecked(),
                     "enable_transcript_context_memory": self.context_memory_cb.isChecked(),
                     "max_retries": max_retries,
                 }
