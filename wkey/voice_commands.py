@@ -59,7 +59,20 @@ from commands_and_tools import (
     launch_application,
     stop_spotify,
 )
-from model_rotation import next_tool_use_model
+try:
+    from model_rotation import (
+        next_tool_use_model,
+        note_tool_use_model_failure,
+        refresh_groq_model_rotators,
+    )
+    from groq_model_catalog import classify_groq_model_error
+except ModuleNotFoundError:
+    from wkey.model_rotation import (
+        next_tool_use_model,
+        note_tool_use_model_failure,
+        refresh_groq_model_rotators,
+    )
+    from wkey.groq_model_catalog import classify_groq_model_error
 try:
     from settings_manager import (
         load_settings as settings_load,
@@ -1794,6 +1807,16 @@ async def execute_command_run_with_tool(
         url = "https://api.groq.com/openai/v1/chat/completions"
         headers = {"Authorization": f"Bearer {api_key}"}
 
+        try:
+            refresh_groq_model_rotators(api_key)
+        except Exception as e:
+            logging.warning(
+                "%sGroq model catalog refresh failed before tool-use request: %s%s",
+                YELLOW,
+                e,
+                RESET,
+            )
+
         for attempt in range(max_retries):
             try:
                 tool_model = next_tool_use_model()
@@ -1813,10 +1836,36 @@ async def execute_command_run_with_tool(
                         },
                         headers=headers,
                     ) as response:
-                        if response.status == 404:
-                            logging.error(
-                                f"Groq API endpoint not found: {response.url}"
+                        if response.status >= 400:
+                            response_text = await response.text()
+                            classification = classify_groq_model_error(
+                                response.status,
+                                response_text,
                             )
+                            logging.error(
+                                "Groq tool-use API error %s %s for model %s: %s",
+                                response.status,
+                                response.reason,
+                                tool_model,
+                                response_text[:500],
+                            )
+                            if classification.is_model_error:
+                                note_tool_use_model_failure(
+                                    tool_model,
+                                    classification.reason,
+                                )
+                                try:
+                                    refresh_groq_model_rotators(api_key, force_refresh=True)
+                                except Exception as refresh_error:
+                                    logging.warning(
+                                        "%sGroq model catalog force-refresh failed after %s: %s%s",
+                                        YELLOW,
+                                        classification.reason,
+                                        refresh_error,
+                                        RESET,
+                                    )
+                                if attempt < max_retries - 1:
+                                    continue
                             raise aiohttp.ClientResponseError(
                                 response.request_info,
                                 response.history,
@@ -1824,7 +1873,6 @@ async def execute_command_run_with_tool(
                                 message=response.reason,
                                 headers=response.headers,
                             )
-                        response.raise_for_status()
                         response_data = await response.json()
 
                 response_message = response_data["choices"][0]["message"]

@@ -7,6 +7,11 @@ import aiohttp
 import numpy as np
 from scipy.io.wavfile import write as wav_write
 
+try:
+    from groq_model_catalog import classify_groq_model_error
+except ModuleNotFoundError:
+    from wkey.groq_model_catalog import classify_groq_model_error
+
 
 def transcribe_pre_recording_buffer(
     pre_recording_data,
@@ -17,6 +22,7 @@ def transcribe_pre_recording_buffer(
     max_retries: int = 3,
     retry_delay: int = 2,
     timeout_total: float = 10.0,
+    report_model_failure: Optional[Callable[[str, str], None]] = None,
 ):
     """Transcribe a short pre-recording buffer using Groq."""
     if not api_key:
@@ -34,7 +40,7 @@ def transcribe_pre_recording_buffer(
     async def _run():
         url = "https://api.groq.com/openai/v1/audio/transcriptions"
         headers = {"Authorization": f"Bearer {api_key}"}
-        model_name = get_groq_audio_model()
+        model_name = None
         timeout = aiohttp.ClientTimeout(
             total=timeout_total,
             connect=min(5.0, timeout_total),
@@ -43,6 +49,7 @@ def transcribe_pre_recording_buffer(
 
         for attempt in range(max_retries):
             try:
+                model_name = get_groq_audio_model()
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     form_data = aiohttp.FormData()
                     audio_bytes = byte_io.getvalue()
@@ -62,11 +69,18 @@ def transcribe_pre_recording_buffer(
                         response_text = await response.text()
                         if response.status >= 400:
                             logging.error(
-                                "Groq API error %s %s: %s",
+                                "Groq pre-recording API error %s %s for model %s: %s",
                                 response.status,
                                 response.reason,
+                                model_name,
+                                response_text[:500],
+                            )
+                            classification = classify_groq_model_error(
+                                response.status,
                                 response_text,
                             )
+                            if classification.is_model_error and report_model_failure:
+                                report_model_failure(model_name, classification.reason)
                         response.raise_for_status()
                         transcription = await response.json()
                         return transcription.get("text", "").lower()
@@ -103,14 +117,14 @@ async def transcribe_with_groq_async(
     prompt: str,
     groq_session_holder: Dict[str, Optional[aiohttp.ClientSession]],
     max_retries: int = 3,
+    report_model_failure: Optional[Callable[[str, str], None]] = None,
 ):
     """Async transcription via Groq API with retry logic."""
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {api_key}"}
-    model_name = get_groq_audio_model()
+    model_name = None
     logging.info(
-        "transcribe_with_groq_async: Starting with model %s (keyword_index=%s)",
-        model_name,
+        "transcribe_with_groq_async: Starting Groq STT (keyword_index=%s)",
         keyword_index,
     )
     if keyword_index == 1:
@@ -120,8 +134,14 @@ async def transcribe_with_groq_async(
 
     for attempt in range(max_retries):
         try:
-            logging.info("transcribe_with_groq_async: Attempt %d of %d", attempt + 1, max_retries)
-            
+            model_name = get_groq_audio_model()
+            logging.info(
+                "transcribe_with_groq_async: Attempt %d of %d using model %s",
+                attempt + 1,
+                max_retries,
+                model_name,
+            )
+
             # Create a fresh session for each request to avoid cross-event-loop issues
             timeout = aiohttp.ClientTimeout(total=15, connect=5, sock_read=10)
             logging.info("transcribe_with_groq_async: Creating new aiohttp session")
@@ -149,16 +169,20 @@ async def transcribe_with_groq_async(
                 logging.info("transcribe_with_groq_async: Sending POST request to Groq")
                 async with session.post(url, data=form_data, headers=headers) as response:
                     response_text = await response.text()
-                    if response.status == 404:
-                        logging.error("Groq API endpoint not found: %s", response.url)
-                        response.raise_for_status()
                     if response.status >= 400:
                         logging.error(
-                            "Groq API error %s %s: %s",
+                            "Groq STT API error %s %s for model %s: %s",
                             response.status,
                             response.reason,
+                            model_name,
+                            response_text[:500],
+                        )
+                        classification = classify_groq_model_error(
+                            response.status,
                             response_text,
                         )
+                        if classification.is_model_error and report_model_failure:
+                            report_model_failure(model_name, classification.reason)
                     response.raise_for_status()
                     transcription = await response.json()
                     logging.info("transcribe_with_groq_async: Got transcription response")
@@ -171,8 +195,6 @@ async def transcribe_with_groq_async(
                 e.request_info.url,
                 exc_info=True,
             )
-            if e.status == 404:
-                raise
         except Exception as e:
             logging.error("Unexpected error in transcribe_with_groq_async: %s", e, exc_info=True)
         logging.info("transcribe_with_groq_async: Sleeping before retry")
