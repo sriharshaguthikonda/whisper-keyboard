@@ -72,6 +72,10 @@ def audio_callback(
                     if buf_len == 0:
                         return
                     data_len = len(data)
+                    if data_len >= buf_len:
+                        buffer[:] = data[-buf_len:]
+                        return
+                    start_idx = start_idx % buf_len
                     first_len = min(data_len, buf_len - start_idx)
                     if first_len > 0:
                         buffer[start_idx : start_idx + first_len] = data[:first_len]
@@ -79,10 +83,7 @@ def audio_callback(
                     if remaining > 0:
                         buffer[0:remaining] = data[first_len:first_len + remaining]
 
-                end_index = buffer_index + frames
-                if end_index > buffer_size:
-                    end_index = buffer_size
-                chunk = indata[: end_index - buffer_index]
+                chunk = indata[:frames]
                 _write_circular(pre_recording_buffer, buffer_index, chunk)
                 if pre_recording_buffer_f24 is not None:
                     f24_len = len(pre_recording_buffer_f24)
@@ -92,7 +93,7 @@ def audio_callback(
                             buffer_index % f24_len,
                             chunk,
                         )
-                buffer_index = (buffer_index + frames) % buffer_size
+                buffer_index = (buffer_index + len(chunk)) % buffer_size
     except Exception as e:
         log.error(
             f"{error_color_prefix}Error in audio_callback: {e}{error_color_suffix}",
@@ -100,6 +101,28 @@ def audio_callback(
         )
 
     return buffer_index, audio_buffer
+
+
+def get_default_input_device(log=logging):
+    try:
+        query_devices = getattr(sd, "query_devices", None)
+        if query_devices is not None:
+            query_devices(None, "input")
+    except Exception as e:
+        log.debug("Could not query default input device details: %s", e)
+
+    try:
+        default_device = getattr(getattr(sd, "default", None), "device", None)
+        if isinstance(default_device, (list, tuple)):
+            input_device = default_device[0] if default_device else None
+        else:
+            input_device = default_device
+        if input_device in (None, -1):
+            return None
+        return input_device
+    except Exception as e:
+        log.debug("Could not resolve default input device: %s", e)
+        return None
 
 
 def initialize_input_stream(
@@ -126,9 +149,10 @@ def initialize_input_stream(
         stream = None
 
     try:
+        input_device = get_default_input_device(log=log)
         stream = sd.InputStream(
             callback=audio_callback,
-            device=None,
+            device=input_device,
             channels=1,
             samplerate=sample_rate,
             blocksize=int(sample_rate * 0.1),

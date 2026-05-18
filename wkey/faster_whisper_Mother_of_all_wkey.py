@@ -28,9 +28,17 @@ from scipy.io.wavfile import write as wav_write
 import groq
 from groq import Groq
 try:
-    from model_rotation import next_audio_stt_model
+    from model_rotation import (
+        next_audio_stt_model,
+        note_audio_stt_model_failure,
+        refresh_groq_model_rotators,
+    )
 except ModuleNotFoundError:
-    from wkey.model_rotation import next_audio_stt_model
+    from wkey.model_rotation import (
+        next_audio_stt_model,
+        note_audio_stt_model_failure,
+        refresh_groq_model_rotators,
+    )
 import torch
 import logging
 import io
@@ -383,22 +391,48 @@ except AttributeError:
 except Exception as e:
     logging.warning(f"{YELLOW}Failed to apply initial Selenium setting: {e}{RESET}")
 
-# Get the key labels from environment variables, default to 'f24' if not set
+# Get the key labels from environment variables, default to 'f24' if not set.
 key_label = os.environ.get("WKEY", "f24").lower()
-# Support both 'f24' and 'ctrl_r' as valid keys
-if key_label not in ['f24', 'ctrl_r']:
-    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'f24'")
-    key_label = 'f24'
-
-# Store both possible record keys
-RECORD_KEYS = {
+SUPPORTED_RECORD_KEYS = {
     'f24': Key.f24,
     'ctrl_r': Key.ctrl_r
 }
+if key_label not in SUPPORTED_RECORD_KEYS:
+    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'f24'")
+    key_label = 'f24'
+
+runtime_mode = os.environ.get("WKEY_RUNTIME_MODE", "combined").strip().lower()
+if runtime_mode not in {"combined", "keyboard", "wakeword"}:
+    print(
+        f"Warning: WKEY_RUNTIME_MODE '{runtime_mode}' is not supported. "
+        "Defaulting to 'combined'"
+    )
+    runtime_mode = "combined"
+
+record_key_labels = [
+    label.strip().lower()
+    for label in os.environ.get("WKEY_RECORD_KEYS", "f24,ctrl_r").split(",")
+    if label.strip()
+]
+RECORD_KEYS = {
+    label: SUPPORTED_RECORD_KEYS[label]
+    for label in record_key_labels
+    if label in SUPPORTED_RECORD_KEYS
+}
+if runtime_mode == "keyboard" and not RECORD_KEYS:
+    RECORD_KEYS = {key_label: SUPPORTED_RECORD_KEYS[key_label]}
+
+
+def is_keyboard_runtime_enabled():
+    return runtime_mode in {"combined", "keyboard"} and bool(RECORD_KEYS)
+
+
+def is_wakeword_runtime_enabled():
+    return runtime_mode in {"combined", "wakeword"}
 
 def map_key_to_keyword_index(key):
     """Return keyword index for a given manual trigger key."""
-    if key == RECORD_KEYS['f24']:
+    if RECORD_KEYS.get('f24') is not None and key == RECORD_KEYS['f24']:
         return 0  # Route directly to execute_command_run_with_tool
     return None  # Default manual (paste) pathway
 
@@ -604,6 +638,10 @@ def _record_recent_transcript(transcript, keyword_index):
 api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
 Groq_client = Groq(api_key=api_key)
+try:
+    refresh_groq_model_rotators(api_key)
+except Exception as e:
+    logging.warning("Groq model catalog refresh failed during startup: %s", e)
 
 # Reusable HTTP session for Groq API calls
 groq_session_holder = {"session": None}
@@ -918,13 +956,13 @@ def _perform_audio_recovery(reason):
             logging.info(
                 f"{YELLOW}Audio recovery skipped because another recovery is already running (reason={reason}){RESET}"
             )
-            return
+            return False
         now = time.time()
         if now - last_audio_recovery_ts < AUDIO_RECOVERY_MIN_INTERVAL_SECONDS:
             logging.info(
                 f"{YELLOW}Audio recovery skipped (cooldown) reason={reason}{RESET}"
             )
-            return
+            return False
         last_audio_recovery_ts = now
     _mark_audio_recovery_started(reason)
 
@@ -956,6 +994,7 @@ def _perform_audio_recovery(reason):
         logging.error(f"{RED}Audio recovery failed ({reason}): {e}{RESET}", exc_info=True)
     finally:
         _set_audio_recovery_in_progress(False)
+    return True
 
 
 def audio_recovery_worker():
@@ -967,7 +1006,13 @@ def audio_recovery_worker():
                 continue
             reasons = sorted(audio_recovery_reasons)
             audio_recovery_reasons.clear()
-        _perform_audio_recovery("|".join(reasons))
+        if not _perform_audio_recovery("|".join(reasons)):
+            with audio_recovery_reasons_lock:
+                audio_recovery_reasons.update(reasons)
+            threading.Timer(
+                AUDIO_RECOVERY_MIN_INTERVAL_SECONDS,
+                audio_recovery_event.set,
+            ).start()
 
 
 def maybe_handle_system_resume(source):
@@ -2012,6 +2057,7 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
         get_groq_audio_model,
         max_retries=max_retries,
         retry_delay=retry_delay,
+        report_model_failure=note_audio_stt_model_failure,
     )
 
 
@@ -2025,6 +2071,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
         prompt,
         groq_session_holder,
         max_retries=max_retries,
+        report_model_failure=note_audio_stt_model_failure,
     )
 
 
@@ -2500,8 +2547,18 @@ def main():
     global driver
     global driver_pid
 
+    if is_keyboard_runtime_enabled():
+        logging.info(
+            f"{CYAN}wkey is active. Hold down {BOLD}{key_label.upper()}{RESET}{CYAN} to start dictating.{RESET}"
+        )
+    else:
+        logging.info(f"{CYAN}wkey is active in wake-word-only mode.{RESET}")
     logging.info(
-        f"{CYAN}wkey is active. Hold down {BOLD}{key_label.upper()}{RESET}{CYAN} to start dictating.{RESET}"
+        "%sRuntime mode=%s enabled_record_keys=%s%s",
+        CYAN,
+        runtime_mode,
+        ",".join(RECORD_KEYS.keys()) or "none",
+        RESET,
     )
     logging.info(
         f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
@@ -2518,13 +2575,17 @@ def main():
 
     try:
         register_volume_timeout_recovery_hook()
-        init_keyboard_handler()
+        if is_keyboard_runtime_enabled():
+            init_keyboard_handler()
         start_settings_watch()
-        init_wakeword_listener()
+        if is_wakeword_runtime_enabled():
+            init_wakeword_listener()
+            initialize_wake_stream()
         start_watchdog()
         start_thread(audio_recovery_worker, "AudioRecovery")
-        start_thread(listen_for_wake_word, "WakeWordListener")
-        start_thread(monitor_microphone_availability, "MicrophoneMonitor")
+        if is_wakeword_runtime_enabled():
+            start_thread(listen_for_wake_word, "WakeWordListener")
+            start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()
         start_thread(
             lambda: run_asyncio_in_thread(loop2, clean_transcript()), "CleanTranscript"
@@ -2562,7 +2623,10 @@ def main():
                 continue
 
             try:
-                start_listener()
+                if is_keyboard_runtime_enabled():
+                    start_listener()
+                else:
+                    time.sleep(1)
             except Exception as e:
                 logging.error(
                     f"{RED}Input stream error: {str(e)}{RESET}", exc_info=True

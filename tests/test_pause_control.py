@@ -3,10 +3,11 @@ import time
 import pytest
 
 
-def test_read_pause_flag(tmp_path):
+def test_read_pause_flag(tmp_path, monkeypatch):
     from wkey import pause_control
 
     flag = tmp_path / "voice_pause_flag.txt"
+    monkeypatch.setattr(pause_control, "get_pause_flag_path", lambda _file: str(flag))
     assert pause_control.read_pause_flag(str(flag)) is False
     flag.write_text("PAUSED")
     assert pause_control.read_pause_flag(str(flag)) is True
@@ -14,10 +15,11 @@ def test_read_pause_flag(tmp_path):
     assert pause_control.read_pause_flag(str(flag)) is False
 
 
-def test_check_pause_status_respects_min_interval(tmp_path):
+def test_check_pause_status_respects_min_interval(tmp_path, monkeypatch):
     from wkey import pause_control
 
     flag = tmp_path / "voice_pause_flag.txt"
+    monkeypatch.setattr(pause_control, "get_pause_flag_path", lambda _file: str(flag))
     flag.write_text("PAUSED")
     paused, last_check, status = pause_control.check_pause_status(
         str(flag), 0, False, min_interval=0
@@ -38,6 +40,7 @@ def test_toggle_pause_state_beeps(monkeypatch, tmp_path):
 
     flag = tmp_path / "voice_pause_flag.txt"
     beeps = []
+    monkeypatch.setattr(pause_control, "get_pause_flag_path", lambda _file: str(flag))
 
     def fake_beep(freq, dur):
         beeps.append((freq, dur))

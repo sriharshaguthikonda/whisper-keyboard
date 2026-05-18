@@ -32,8 +32,13 @@ def test_create_wav_buffer(fw_module):
 
 
 def test_check_pause_status(tmp_path, fw_module, monkeypatch):
-    monkeypatch.chdir(tmp_path)
     flag = tmp_path / 'voice_pause_flag.txt'
+
+    def fake_pause_check(flag_path, last_pause_check, global_pause_active, min_interval=0.5):
+        paused = flag.exists() and flag.read_text().strip() == 'PAUSED'
+        return paused, 1, paused
+
+    monkeypatch.setattr(fw_module, 'pause_check_impl', fake_pause_check)
     flag.write_text('PAUSED')
     fw_module.last_pause_check = 0
     assert fw_module.check_pause_status() is True
@@ -56,15 +61,26 @@ def test_beep(fw_module, monkeypatch):
 
 
 def test_volume_functions(fw_module, monkeypatch):
-    monkeypatch.setattr(fw_module, 'get_volume', lambda: 0.5)
-    calls = []
-    monkeypatch.setattr(fw_module, 'set_volume', lambda v: calls.append(v))
+    class DummyLeaseManager:
+        def begin_duck(self, reason):
+            return 0.5, 1
+
+        def end_duck(self, reason):
+            return 0.5, 0, True
+
+        def try_snapshot_state(self):
+            return {
+                "lease_count": 0,
+                "restore_pending": False,
+                "restore_target": None,
+            }
+
+    monkeypatch.setattr(fw_module, 'volume_lease_manager', DummyLeaseManager())
     fw_module.initial_volume = None
     fw_module.decrease_volume_all()
     assert fw_module.initial_volume == 0.5
-    assert calls[-1] == 0.1
     fw_module.restore_volume_all()
-    assert calls[-1] == 0.5
+    assert fw_module.initial_volume is None
 
 
 def test_save_audio(tmp_path, fw_module):
@@ -145,5 +161,12 @@ def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
 
     queued_audio, idx = fw_module.audio_buffer_queue.get_nowait()
     assert idx is None
-    assert len(queued_audio) == fw_module.BUFFER_SIZE + 3
+    assert len(queued_audio) == len(fw_module.pre_recording_buffer_f24) + 3
     assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
+
+
+def test_audio_recovery_reports_cooldown_skip(fw_module):
+    fw_module.audio_recovery_in_progress = False
+    fw_module.last_audio_recovery_ts = fw_module.time.time()
+
+    assert fw_module._perform_audio_recovery("test-cooldown") is False

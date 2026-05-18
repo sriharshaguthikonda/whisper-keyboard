@@ -75,6 +75,31 @@ webrtcvad = types.ModuleType('webrtcvad')
 webrtcvad.Vad = lambda *a, **k: types.SimpleNamespace(is_speech=lambda *a, **k: False)
 pythoncom = types.ModuleType('pythoncom')
 pythoncom.CoInitialize = lambda : None
+comtypes = types.ModuleType('comtypes')
+comtypes.CLSCTX_ALL = 0
+
+pycaw = types.ModuleType('pycaw')
+pycaw.callbacks = types.ModuleType('pycaw.callbacks')
+pycaw.pycaw = types.ModuleType('pycaw.pycaw')
+
+class DummyAudioEndpointVolumeCallback:
+    pass
+
+class DummyEndpointDevices:
+    def Activate(self, *a, **k):
+        return object()
+
+class DummyAudioUtilities:
+    @staticmethod
+    def GetSpeakers():
+        return DummyEndpointDevices()
+
+class DummyIAudioEndpointVolume:
+    _iid_ = object()
+
+pycaw.callbacks.AudioEndpointVolumeCallback = DummyAudioEndpointVolumeCallback
+pycaw.pycaw.AudioUtilities = DummyAudioUtilities
+pycaw.pycaw.IAudioEndpointVolume = DummyIAudioEndpointVolume
 faster_whisper = types.ModuleType('faster_whisper')
 class DummyWhisperModel:
     def __init__(self, *a, **k):
@@ -97,6 +122,20 @@ pynput.keyboard = types.SimpleNamespace(
 
 dotenv = types.ModuleType('dotenv')
 dotenv.load_dotenv = lambda: None
+
+try:
+    import scipy  # type: ignore
+    import scipy.io  # type: ignore
+    import scipy.io.wavfile  # type: ignore
+    _has_scipy = True
+except Exception:
+    _has_scipy = False
+    scipy = types.ModuleType('scipy')
+    scipy_io = types.ModuleType('scipy.io')
+    scipy_io_wavfile = types.ModuleType('scipy.io.wavfile')
+    scipy_io_wavfile.write = lambda *a, **k: None
+    scipy.io = scipy_io
+    scipy.io.wavfile = scipy_io_wavfile
 
 voice_commands = types.ModuleType('voice_commands')
 voice_commands.execute_command_fuzzy = lambda *a, **k: None
@@ -134,6 +173,10 @@ modules = {
     'pyautogui': pyautogui,
     'webrtcvad': webrtcvad,
     'pythoncom': pythoncom,
+    'comtypes': comtypes,
+    'pycaw': pycaw,
+    'pycaw.callbacks': pycaw.callbacks,
+    'pycaw.pycaw': pycaw.pycaw,
     'faster_whisper': faster_whisper,
     'pynput': pynput,
     'pynput.keyboard': pynput.keyboard,
@@ -144,6 +187,13 @@ modules = {
     'clipboard_utils': clipboard_utils,
     'voice_activity_detection': voice_activity_detection,
 }
+
+if not _has_scipy:
+    modules.update({
+        'scipy': scipy,
+        'scipy.io': scipy_io,
+        'scipy.io.wavfile': scipy_io_wavfile,
+    })
 
 @pytest.fixture(scope='session', autouse=True)
 def patch_modules():
