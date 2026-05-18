@@ -1,14 +1,7 @@
-get default device and use it in sd.rec
+# Runtime TODO
 
-use hardware detection integration into the main script
-
-get rid of global There_is_a_device if it is not being used
-
-
-
-there audio-substract branch is combining previous commands into current commands
-
-i think it is combining previous audio into new audio
-
-
-
+- [x] Resolve default input device before creating `sounddevice.InputStream`.
+- [x] Preserve full pre-recording ring-buffer chunks across wraparound.
+- [x] Confirm `There_is_a_device` is not active in tracked code.
+- [ ] Extend hardware detection beyond microphone-present checks if device selection still fails after hibernate.
+- [ ] Revisit old audio-subtract branch before restoring any audio-subtraction behavior.

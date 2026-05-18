@@ -1,63 +1,97 @@
-# whisper-keyboard
+whisper-keyboard
+================
 
-Video demo: https://www.youtube.com/watch?v=VnFtVR72jM4&feature=youtu.be
+Windows-first voice keyboard and voice-command runner.
 
-Smulate keyboard typing with voice commands on your computer. Use the power of OpenAI's Whisper.
+The active runtime is ``wkey/faster_whisper_Mother_of_all_wkey.py``. It keeps a microphone stream warm, records while a manual key is held, captures wake-word commands, transcribes through Groq STT with local Faster-Whisper fallback, and routes results either to clipboard paste or command execution.
 
-Start the wkey listener. Keep a button pressed (by default: right ctrl) and speak. Your voice will be recoded locally. When the button is released, your command will be transcribed via Whisper and the text will be streamed to your keyboard.
+Entry Points
+------------
 
-You can use your voice to write anywhere. 
+Run from the repo root::
 
-You will incur costs for Whisper API. Currently, it costs $0.36 for 1 hour of transcription.
+   python .\wkey\faster_whisper_Mother_of_all_wkey.py
 
-## Setup
+Mode-specific launchers::
 
-Install the package.
+   python .\wkey\faster_whisper_Mother_of_all_wkey_just_f24.py
+   python .\wkey\faster_whisper_Mother_of_all_wkey_no_f24.py
 
-```shell
-pip install wkey
-```
+``faster_whisper_Mother_of_all_wkey.py`` is the combined keyboard and wake-word runtime.
+``faster_whisper_Mother_of_all_wkey_just_f24.py`` is keyboard-only F24.
+``faster_whisper_Mother_of_all_wkey_no_f24.py`` is wake-word-only.
+``wkey/Whisper_GUI.py`` is the main settings GUI.
 
-You will need to set two environment variables:
+Activation
+----------
 
-- OPENAI_API_KEY: your personal OpenAI API key. You can get it by signing up here: https://platform.openai.com/
-- WKEY: the keyboard key you want to use to start recording. By default, it is set to right ctrl. You can use any key. Note that Mac and Windows might have different key codes. You can run `fkey` to find the code of the key you want to use.
+Manual keys:
 
-You can set the environment variables in your shell:
+* ``F24`` routes transcript to tool-use command execution.
+* ``right Ctrl`` routes transcript to clipboard paste.
 
-```shell
-export OPENAI_API_KEY=<your key>
-export WKEY=ctrl_r
-```
+Wake words are handled by ``wkey/wakeword.py`` using local OpenWakeWord models under ``wkey/openwakeword_models/``.
 
-Run `wkey` in a terminal window to start listening. 
+Optional environment variables:
 
-If there are issues, check the additional requirements.
+* ``WKEY``: display/default key label, usually ``f24`` or ``ctrl_r``.
+* ``WKEY_RUNTIME_MODE``: ``combined``, ``keyboard``, or ``wakeword``. Default: ``combined``.
+* ``WKEY_RECORD_KEYS``: comma-separated enabled manual keys, for example ``f24,ctrl_r`` or ``f24``.
 
-## Additional requirements
+Settings
+--------
 
-Requirements differ depending on your OS.
+Settings live in ``wkey/transcription_config.json`` and are managed by::
 
-### Ubuntu
+   python .\wkey\Whisper_GUI.py
 
-You will need to install the portaudio library. 
+The settings layer controls local GPU/CPU fallback, Groq fallback, Selenium/browser automation, wake-word precheck, transcript context memory, command routing context, max recording length, and wake-volume timing.
 
-```shell
-sudo apt-get install portaudio19-dev 
-```
+Groq Model Catalog
+------------------
 
-### Mac
-You will need to authorize your terminal to use the microphone and keyboard. Go to System Settings > Privacy and Security. Then: 
-* Select Microphone and authorize your terminal.
-* Select Accessibility and authorize your terminal.
+Set ``GROQ_API_KEY`` for Groq STT and tool-use model calls.
 
-Restart the terminal for the changes to take effect. 
+The app discovers current Groq models from ``https://api.groq.com/openai/v1/models``.
 
-Note that this might entail security risks.
+Runtime behavior:
 
-### Windows
-Haven't tested it on Windows yet. If you do, please let me know how it goes.
+* tool-use models and Groq STT models are filtered against the live catalog when available;
+* the catalog is cached in ``wkey/groq_model_catalog_cache.json``;
+* the cache stores model IDs only, never API keys or transcripts;
+* if a model returns a model-specific HTTP 400 or 404, it is quarantined and the next model is tried;
+* if catalog refresh fails, the app uses the cache, then configured defaults.
 
-## Security risks
+Optional environment variables:
 
-This script creates a recording with your microphone and sends the audio to the Whisper API. The Whisper API response will be automatically streamed to your keyboard and executed there. This might entail security risks. Use at your own risk. 
+* ``GROQ_MODEL_CATALOG_TTL_SECONDS``: cache freshness window. Default: ``86400``.
+* ``GROQ_BAD_MODEL_COOLDOWN_SECONDS``: bad-model quarantine duration. Default: ``3600``.
+
+Audio Recovery
+--------------
+
+The main runtime includes recovery for hibernate/wake and device churn:
+
+* input-stream restart through ``wkey/audio_io.py``;
+* wake-stream restart through ``initialize_wake_stream()``;
+* keyboard listener restart after recovery;
+* pre-recording ring buffers for manual and wake-word capture;
+* volume-duck lease recovery through ``wkey/volume_lease_manager.py``.
+
+Testing
+-------
+
+Focused tests::
+
+   python -m pytest tests\test_audio_io.py tests\test_keyboard_shortcuts.py tests\test_faster_whisper.py -q
+
+All tests::
+
+   python -m pytest tests -q
+
+After changing runtime code, also run a bounded primary-script smoke and stop it before handoff.
+
+Security
+--------
+
+This tool records microphone audio and can paste text or execute commands through keyboard/browser automation. Groq requests use configured API keys. Local cache files must not contain API keys, transcripts, audio, or command text.
