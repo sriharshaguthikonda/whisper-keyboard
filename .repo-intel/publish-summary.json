@@ -1,0 +1,277 @@
+﻿{
+    "schemaVersion":  "repo-map-artifact-branch/v1",
+    "repo":  "sriharshaguthikonda/whisper-keyboard",
+    "generatedAt":  "2026-06-01T06:12:55.2881142Z",
+    "source":  "Repo_maps GitHub footprint publish runner",
+    "publishBranch":  "repo-intel-artifacts",
+    "mapCount":  38,
+    "totalBytes":  11924396,
+    "maps":  [
+                 {
+                     "name":  "Dynamic-recording",
+                     "ref":  "refs/remotes/origin/Dynamic-recording",
+                     "commit":  "c052627407de84ca12ac778496fefdce1499e393",
+                     "path":  ".repo-intel/branches/remote-origin/dynamic-recording__c052627407de/repo-map-full.json",
+                     "bytes":  120811
+                 },
+                 {
+                     "name":  "GUI_merge_al_good_imprv_func_alarms",
+                     "ref":  "refs/remotes/origin/GUI_merge_al_good_imprv_func_alarms",
+                     "commit":  "8147f48e06793a7684a3311d4629e54b81aee785",
+                     "path":  ".repo-intel/branches/remote-origin/gui-merge-al-good-imprv-func-alarms__8147f48e0679/repo-map-full.json",
+                     "bytes":  407749
+                 },
+                 {
+                     "name":  "RNN-substraction",
+                     "ref":  "refs/remotes/origin/RNN-substraction",
+                     "commit":  "86dcb3db71c2c37a0dc313b69b4d898c44f10470",
+                     "path":  ".repo-intel/branches/remote-origin/rnn-substraction__86dcb3db71c2/repo-map-full.json",
+                     "bytes":  112728
+                 },
+                 {
+                     "name":  "audio-substract",
+                     "ref":  "refs/remotes/origin/audio-substract",
+                     "commit":  "a53d764f00928b44ee6e6a8872cd9985ebaf97dd",
+                     "path":  ".repo-intel/branches/remote-origin/audio-substract__a53d764f0092/repo-map-full.json",
+                     "bytes":  110824
+                 },
+                 {
+                     "name":  "clipboard",
+                     "ref":  "refs/remotes/origin/clipboard",
+                     "commit":  "4c009813995c4556fd694f36e40d8a8a144bc921",
+                     "path":  ".repo-intel/branches/remote-origin/clipboard__4c009813995c/repo-map-full.json",
+                     "bytes":  124867
+                 },
+                 {
+                     "name":  "clipboard-restoration-feature",
+                     "ref":  "refs/remotes/origin/clipboard-restoration-feature",
+                     "commit":  "23deca1419ba078ca395f3a4e042116451267277",
+                     "path":  ".repo-intel/branches/remote-origin/clipboard-restoration-feature__23deca1419ba/repo-map-full.json",
+                     "bytes":  663704
+                 },
+                 {
+                     "name":  "codex/combine-last-seconds-of-audio-for-transcription",
+                     "ref":  "refs/remotes/origin/codex/combine-last-seconds-of-audio-for-transcription",
+                     "commit":  "1a5be8f5ec13ebe7b1217ce28e57eb06df4c175b",
+                     "path":  ".repo-intel/branches/remote-origin/codex-combine-last-seconds-of-audio-for-transcription__1a5be8f5ec13/repo-map-full.json",
+                     "bytes":  426776
+                 },
+                 {
+                     "name":  "codex/fixed-pre-recording-buffer-addition",
+                     "ref":  "refs/remotes/origin/codex/fixed-pre-recording-buffer-addition",
+                     "commit":  "304bfe660b7f4a06f4dab77fb5aed8fbac41f0fd",
+                     "path":  ".repo-intel/branches/remote-origin/codex-fixed-pre-recording-buffer-addition__304bfe660b7f/repo-map-full.json",
+                     "bytes":  517572
+                 },
+                 {
+                     "name":  "codex/refactor-gui_merge_al_good_imprv_func_alarms-branch",
+                     "ref":  "refs/remotes/origin/codex/refactor-gui_merge_al_good_imprv_func_alarms-branch",
+                     "commit":  "c5a1e0e903d078b8e071f015cbbb4ec9159ed46e",
+                     "path":  ".repo-intel/branches/remote-origin/codex-refactor-gui-merge-al-good-imprv-func-alarms-branch__c5a1e0e903d0/repo-map-full.json",
+                     "bytes":  425228
+                 },
+                 {
+                     "name":  "codex/reuse-http-session-and-use-local-whisper-model",
+                     "ref":  "refs/remotes/origin/codex/reuse-http-session-and-use-local-whisper-model",
+                     "commit":  "6a6b08c29afbd32dd8d7ee1ce51fa4c242a725a3",
+                     "path":  ".repo-intel/branches/remote-origin/codex-reuse-http-session-and-use-local-whisper-model__6a6b08c29afb/repo-map-full.json",
+                     "bytes":  414486
+                 },
+                 {
+                     "name":  "codex/sort-redundant-functions-in-voice_commands.py",
+                     "ref":  "refs/remotes/origin/codex/sort-redundant-functions-in-voice_commands.py",
+                     "commit":  "4a487b24b4794066f1b896d5f8dd1fbe73688df9",
+                     "path":  ".repo-intel/branches/remote-origin/codex-sort-redundant-functions-in-voice-commands-py__4a487b24b479/repo-map-full.json",
+                     "bytes":  415020
+                 },
+                 {
+                     "name":  "copyq-clipboard-second-item",
+                     "ref":  "refs/remotes/origin/copyq-clipboard-second-item",
+                     "commit":  "3da1e80522c0fe23594264a108fe44ef1a37969b",
+                     "path":  ".repo-intel/branches/remote-origin/copyq-clipboard-second-item__3da1e80522c0/repo-map-full.json",
+                     "bytes":  556292
+                 },
+                 {
+                     "name":  "deque",
+                     "ref":  "refs/remotes/origin/deque",
+                     "commit":  "75b418f7f1b56cf76bd64799735e1b4db611f866",
+                     "path":  ".repo-intel/branches/remote-origin/deque__75b418f7f1b5/repo-map-full.json",
+                     "bytes":  164013
+                 },
+                 {
+                     "name":  "f24-activates-hey-coumputer",
+                     "ref":  "refs/remotes/origin/f24-activates-hey-coumputer",
+                     "commit":  "541e1ad73f2bd760e990bf096a3ebe1bc688954d",
+                     "path":  ".repo-intel/branches/remote-origin/f24-activates-hey-coumputer__541e1ad73f2b/repo-map-full.json",
+                     "bytes":  456760
+                 },
+                 {
+                     "name":  "fp43wr-codex/refactor-mother-script-size",
+                     "ref":  "refs/remotes/origin/fp43wr-codex/refactor-mother-script-size",
+                     "commit":  "fbdca639689a7ac477689d34b3be48962f394661",
+                     "path":  ".repo-intel/branches/remote-origin/fp43wr-codex-refactor-mother-script-size__fbdca639689a/repo-map-full.json",
+                     "bytes":  78067
+                 },
+                 {
+                     "name":  "lcl_bkup_whisp_brwsr_mgr",
+                     "ref":  "refs/remotes/origin/lcl_bkup_whisp_brwsr_mgr",
+                     "commit":  "4c68382a6b433813d775061a5720f6f4098bc1cf",
+                     "path":  ".repo-intel/branches/remote-origin/lcl-bkup-whisp-brwsr-mgr__4c68382a6b43/repo-map-full.json",
+                     "bytes":  194038
+                 },
+                 {
+                     "name":  "lcl_bkup_whisp_brwsr_mgr_VAD",
+                     "ref":  "refs/remotes/origin/lcl_bkup_whisp_brwsr_mgr_VAD",
+                     "commit":  "9c6cdf3b6cc12a72e79dfa091b0a1b39e7b9cc65",
+                     "path":  ".repo-intel/branches/remote-origin/lcl-bkup-whisp-brwsr-mgr-vad__9c6cdf3b6cc1/repo-map-full.json",
+                     "bytes":  200003
+                 },
+                 {
+                     "name":  "lcl_bkup_whisp_brwsr_mgr_VAD_fixing_silent_stops",
+                     "ref":  "refs/remotes/origin/lcl_bkup_whisp_brwsr_mgr_VAD_fixing_silent_stops",
+                     "commit":  "cc376cd3fa04bc88b486c7faa46cc0db0796c384",
+                     "path":  ".repo-intel/branches/remote-origin/lcl-bkup-whisp-brwsr-mgr-vad-fixing-silent-stops__cc376cd3fa04/repo-map-full.json",
+                     "bytes":  205737
+                 },
+                 {
+                     "name":  "lcl_bkup_whisper",
+                     "ref":  "refs/remotes/origin/lcl_bkup_whisper",
+                     "commit":  "b4a00b84b08d6c7467c2d4e84f472627efcc7d21",
+                     "path":  ".repo-intel/branches/remote-origin/lcl-bkup-whisper__b4a00b84b08d/repo-map-full.json",
+                     "bytes":  191159
+                 },
+                 {
+                     "name":  "main",
+                     "ref":  "refs/remotes/origin/main",
+                     "commit":  "df136c326804fae8757502c163ceade71ddfcd74",
+                     "path":  ".repo-intel/branches/remote-origin/main__df136c326804/repo-map-full.json",
+                     "bytes":  78031
+                 },
+                 {
+                     "name":  "merge_al_good_imprv_func_alarms",
+                     "ref":  "refs/remotes/origin/merge_al_good_imprv_func_alarms",
+                     "commit":  "a5380a09a3115322e13a8816e3b70c057aa7a9c2",
+                     "path":  ".repo-intel/branches/remote-origin/merge-al-good-imprv-func-alarms__a5380a09a311/repo-map-full.json",
+                     "bytes":  376705
+                 },
+                 {
+                     "name":  "merging_all_good_into_one",
+                     "ref":  "refs/remotes/origin/merging_all_good_into_one",
+                     "commit":  "73f3d53f20f5c074ecddb91b18580999eb9016fa",
+                     "path":  ".repo-intel/branches/remote-origin/merging-all-good-into-one__73f3d53f20f5/repo-map-full.json",
+                     "bytes":  243206
+                 },
+                 {
+                     "name":  "merging_all_good_into_one_imprv_funcs",
+                     "ref":  "refs/remotes/origin/merging_all_good_into_one_imprv_funcs",
+                     "commit":  "f1e3283b4b8060a813f5af8890a013f135f46175",
+                     "path":  ".repo-intel/branches/remote-origin/merging-all-good-into-one-imprv-funcs__f1e3283b4b80/repo-map-full.json",
+                     "bytes":  365180
+                 },
+                 {
+                     "name":  "merging_all_good_into_one_imprv_funcs_troubleshootin",
+                     "ref":  "refs/remotes/origin/merging_all_good_into_one_imprv_funcs_troubleshootin",
+                     "commit":  "8e9e18a3ac0e65a86ac65efa58a4793dbe2ce19e",
+                     "path":  ".repo-intel/branches/remote-origin/merging-all-good-into-one-imprv-funcs-troubleshootin__8e9e18a3ac0e/repo-map-full.json",
+                     "bytes":  274012
+                 },
+                 {
+                     "name":  "music-check",
+                     "ref":  "refs/remotes/origin/music-check",
+                     "commit":  "056875c15be85f6297f4e92f2a95e79ba8bfb801",
+                     "path":  ".repo-intel/branches/remote-origin/music-check__056875c15be8/repo-map-full.json",
+                     "bytes":  89244
+                 },
+                 {
+                     "name":  "no-mic-multi-wake",
+                     "ref":  "refs/remotes/origin/no-mic-multi-wake",
+                     "commit":  "c925ec80e9660223bd24e22db3460f928fe8fadd",
+                     "path":  ".repo-intel/branches/remote-origin/no-mic-multi-wake__c925ec80e966/repo-map-full.json",
+                     "bytes":  97310
+                 },
+                 {
+                     "name":  "no-route-openwakeword",
+                     "ref":  "refs/remotes/origin/no-route-openwakeword",
+                     "commit":  "a7dc37849d7e7e0e2c828be4d83d090f66d11e2c",
+                     "path":  ".repo-intel/branches/remote-origin/no-route-openwakeword__a7dc37849d7e/repo-map-full.json",
+                     "bytes":  178884
+                 },
+                 {
+                     "name":  "openwakeword",
+                     "ref":  "refs/remotes/origin/openwakeword",
+                     "commit":  "499cc4c39b5a59183b7122e36ec01547fb6a4e43",
+                     "path":  ".repo-intel/branches/remote-origin/openwakeword__499cc4c39b5a/repo-map-full.json",
+                     "bytes":  178095
+                 },
+                 {
+                     "name":  "oww-func-call-ollama-bkup",
+                     "ref":  "refs/remotes/origin/oww-func-call-ollama-bkup",
+                     "commit":  "d5b20e03ab1a06fb7d58060f7e8991c9e6e00bd7",
+                     "path":  ".repo-intel/branches/remote-origin/oww-func-call-ollama-bkup__d5b20e03ab1a/repo-map-full.json",
+                     "bytes":  194143
+                 },
+                 {
+                     "name":  "oww-substract",
+                     "ref":  "refs/remotes/origin/oww-substract",
+                     "commit":  "4332a9727c21dc2e6068c50a60715a84c4f52591",
+                     "path":  ".repo-intel/branches/remote-origin/oww-substract__4332a9727c21/repo-map-full.json",
+                     "bytes":  164797
+                 },
+                 {
+                     "name":  "refactor-split-modules",
+                     "ref":  "refs/remotes/origin/refactor-split-modules",
+                     "commit":  "0889404b3821e4b74164f0c3eb63c2d19c7057c6",
+                     "path":  ".repo-intel/branches/remote-origin/refactor-split-modules__0889404b3821/repo-map-full.json",
+                     "bytes":  552098
+                 },
+                 {
+                     "name":  "refactor/clean-architecture",
+                     "ref":  "refs/remotes/origin/refactor/clean-architecture",
+                     "commit":  "17998798f289e27491abaa534a674952631e8d3a",
+                     "path":  ".repo-intel/branches/remote-origin/refactor-clean-architecture__17998798f289/repo-map-full.json",
+                     "bytes":  761376
+                 },
+                 {
+                     "name":  "revert-10-codex/sort-redundant-functions-in-voice_commands.py",
+                     "ref":  "refs/remotes/origin/revert-10-codex/sort-redundant-functions-in-voice_commands.py",
+                     "commit":  "afd2939c03504feb9ca5a63c4b623fd9892a570e",
+                     "path":  ".repo-intel/branches/remote-origin/revert-10-codex-sort-redundant-functions-in-voice-commands-py__afd2939c0350/repo-map-full.json",
+                     "bytes":  422985
+                 },
+                 {
+                     "name":  "single-key-f24-router",
+                     "ref":  "refs/remotes/origin/single-key-f24-router",
+                     "commit":  "ab2851ae7d9c09089628f3caaf391be92ea6b106",
+                     "path":  ".repo-intel/branches/remote-origin/single-key-f24-router__ab2851ae7d9c/repo-map-full.json",
+                     "bytes":  550309
+                 },
+                 {
+                     "name":  "spotify-pre-rec-from-nmmw",
+                     "ref":  "refs/remotes/origin/spotify-pre-rec-from-nmmw",
+                     "commit":  "2f55f9ad5503feb34fd3cd2ed3eb9c00c0a46772",
+                     "path":  ".repo-intel/branches/remote-origin/spotify-pre-rec-from-nmmw__2f55f9ad5503/repo-map-full.json",
+                     "bytes":  119101
+                 },
+                 {
+                     "name":  "stt-context-memory-design",
+                     "ref":  "refs/remotes/origin/stt-context-memory-design",
+                     "commit":  "5f222d01a128ad69ac0d986bc08d21ab00b45f2e",
+                     "path":  ".repo-intel/branches/remote-origin/stt-context-memory-design__5f222d01a128/repo-map-full.json",
+                     "bytes":  562978
+                 },
+                 {
+                     "name":  "volume-lease-callback-alt",
+                     "ref":  "refs/remotes/origin/volume-lease-callback-alt",
+                     "commit":  "c1f22655d7afd55b036a41224b21fa0453e55022",
+                     "path":  ".repo-intel/branches/remote-origin/volume-lease-callback-alt__c1f22655d7af/repo-map-full.json",
+                     "bytes":  624291
+                 },
+                 {
+                     "name":  "wake-sensitivity",
+                     "ref":  "refs/remotes/origin/wake-sensitivity",
+                     "commit":  "bc4be40ef1961cc004b432b3f7e37dc299a66465",
+                     "path":  ".repo-intel/branches/remote-origin/wake-sensitivity__bc4be40ef196/repo-map-full.json",
+                     "bytes":  174055
+                 }
+             ]
+}
