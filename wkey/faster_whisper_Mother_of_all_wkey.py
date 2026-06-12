@@ -393,15 +393,16 @@ except AttributeError:
 except Exception as e:
     logging.warning(f"{YELLOW}Failed to apply initial Selenium setting: {e}{RESET}")
 
-# Get the key labels from environment variables, default to 'f24' if not set.
-key_label = os.environ.get("WKEY", "f24").lower()
+# Get the key labels from environment variables, default to 'caps_lock' if not set.
+key_label = os.environ.get("WKEY", "caps_lock").lower()
 SUPPORTED_RECORD_KEYS = {
     'f24': Key.f24,
-    'ctrl_r': Key.ctrl_r
+    'ctrl_r': Key.ctrl_r,
+    'caps_lock': Key.caps_lock,
 }
 if key_label not in SUPPORTED_RECORD_KEYS:
-    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'f24'")
-    key_label = 'f24'
+    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'caps_lock'")
+    key_label = 'caps_lock'
 
 runtime_mode = os.environ.get("WKEY_RUNTIME_MODE", "combined").strip().lower()
 if runtime_mode not in {"combined", "keyboard", "wakeword"}:
@@ -413,7 +414,7 @@ if runtime_mode not in {"combined", "keyboard", "wakeword"}:
 
 record_key_labels = [
     label.strip().lower()
-    for label in os.environ.get("WKEY_RECORD_KEYS", "f24,ctrl_r").split(",")
+    for label in os.environ.get("WKEY_RECORD_KEYS", "f24,caps_lock").split(",")
     if label.strip()
 ]
 RECORD_KEYS = {
@@ -437,6 +438,27 @@ def map_key_to_keyword_index(key):
     if RECORD_KEYS.get('f24') is not None and key == RECORD_KEYS['f24']:
         return 0  # Route directly to execute_command_run_with_tool
     return None  # Default manual (paste) pathway
+
+
+CAPS_LOCK_VK = 0x14
+KEY_PRESS_MESSAGES = {0x0100, 0x0104}
+KEY_RELEASE_MESSAGES = {0x0101, 0x0105}
+
+
+def keyboard_event_filter(msg, data):
+    """Suppress native CapsLock toggling while CapsLock is a record key."""
+    if RECORD_KEYS.get("caps_lock") != Key.caps_lock:
+        return True
+    if getattr(data, "vkCode", None) != CAPS_LOCK_VK:
+        return True
+    try:
+        if msg in KEY_PRESS_MESSAGES:
+            on_press(Key.caps_lock)
+        elif msg in KEY_RELEASE_MESSAGES:
+            on_release(Key.caps_lock)
+    except Exception as e:
+        logging.error(f"Error in keyboard_event_filter: {e}", exc_info=True)
+    return False
 
 keyboard_controller = KeyboardController()
 recording = False
@@ -1850,7 +1872,7 @@ def save_manual_recording_if_configured(
         if not os.path.isdir(target_dir):
             return
 
-        key_label_local = "f24" if keyword_index == 0 else "ctrl_r"
+        key_label_local = "f24" if keyword_index == 0 else "dictation"
         duration_ms = int((len(audio_data) / sample_rate) * 1000)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         base_name = f"manual_{key_label_local}_{timestamp}_{duration_ms}ms.wav"
@@ -2161,7 +2183,11 @@ def start_listener():
     global keyboard_listener
     listener = None
     try:
-        listener = Listener(on_press=on_press, on_release=on_release)
+        listener = Listener(
+            on_press=on_press,
+            on_release=on_release,
+            event_filter=keyboard_event_filter,
+        )
         with keyboard_listener_lock:
             keyboard_listener = listener
         with listener:
@@ -2553,7 +2579,7 @@ def main():
 
     if is_keyboard_runtime_enabled():
         logging.info(
-            f"{CYAN}wkey is active. Hold down {BOLD}{key_label.upper()}{RESET}{CYAN} to start dictating.{RESET}"
+            f"{CYAN}wkey is active. Enabled manual keys: {BOLD}{','.join(RECORD_KEYS.keys()).upper()}{RESET}{CYAN}.{RESET}"
         )
     else:
         logging.info(f"{CYAN}wkey is active in wake-word-only mode.{RESET}")

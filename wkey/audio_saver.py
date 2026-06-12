@@ -59,7 +59,7 @@ def save_manual_recording_if_configured(
         if not os.path.isdir(target_dir):
             return
 
-        key_label_local = "f24" if keyword_index == 0 else "ctrl_r"
+        key_label_local = "f24" if keyword_index == 0 else "dictation"
         duration_ms = int((len(audio_data) / sample_rate) * 1000)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         base_name = f"manual_{key_label_local}_{timestamp}_{duration_ms}ms.wav"

@@ -29,15 +29,16 @@ python .\wkey\faster_whisper_Mother_of_all_wkey_no_f24.py
 Manual keys:
 
 - `F24`: routes transcript to tool-use command execution.
-- `right Ctrl`: routes transcript to clipboard paste.
+- `CapsLock`: routes transcript to clipboard paste by default. Native CapsLock toggling is suppressed while it is enabled as a record key.
+- `right Ctrl`: optional clipboard-paste trigger when explicitly configured.
 
 Wake words are handled by `wkey/wakeword.py` using local OpenWakeWord models under `wkey/openwakeword_models/`.
 
 Optional environment variables:
 
-- `WKEY`: display/default key label, usually `f24` or `ctrl_r`.
+- `WKEY`: display/default key label, usually `caps_lock`, `f24`, or `ctrl_r`. Default: `caps_lock`.
 - `WKEY_RUNTIME_MODE`: `combined`, `keyboard`, or `wakeword`. Default: `combined`.
-- `WKEY_RECORD_KEYS`: comma-separated enabled manual keys, for example `f24,ctrl_r` or `f24`.
+- `WKEY_RECORD_KEYS`: comma-separated enabled manual keys. Default: `f24,caps_lock`. Examples: `f24,ctrl_r`, `f24`.
 
 ## Settings
 

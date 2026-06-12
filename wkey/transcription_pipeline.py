@@ -232,7 +232,7 @@ class TranscriptionPipeline:
                     self.transcript_queue.put((transcript_stripped, 0))
                     continue
                 if keyword_index is None:
-                    self.log.debug("routing ctrl_r transcription for paste")
+                    self.log.debug("routing manual dictation transcription for paste")
                     self.paste_transcript(transcript, self.beep)
                     continue
                 if keyword_index == 1 and "computer" in transcript_lower:

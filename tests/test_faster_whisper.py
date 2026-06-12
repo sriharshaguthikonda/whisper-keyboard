@@ -24,6 +24,57 @@ def test_validate_audio_buffer(fw_module):
     assert fw_module.validate_audio_buffer(good) is True
 
 
+def test_default_manual_record_keys_use_caps_lock(monkeypatch):
+    monkeypatch.delenv("WKEY", raising=False)
+    monkeypatch.delenv("WKEY_RECORD_KEYS", raising=False)
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert mod.key_label == "caps_lock"
+    assert mod.RECORD_KEYS == {
+        "f24": mod.Key.f24,
+        "caps_lock": mod.Key.caps_lock,
+    }
+    assert mod.map_key_to_keyword_index(mod.Key.f24) == 0
+    assert mod.map_key_to_keyword_index(mod.Key.caps_lock) is None
+
+
+def test_right_ctrl_remains_supported_when_configured(monkeypatch):
+    monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert mod.RECORD_KEYS == {
+        "f24": mod.Key.f24,
+        "ctrl_r": mod.Key.ctrl_r,
+    }
+    assert mod.map_key_to_keyword_index(mod.Key.ctrl_r) is None
+
+
+def test_caps_lock_event_filter_suppresses_native_toggle(fw_module, monkeypatch):
+    events = []
+    monkeypatch.setattr(fw_module, "RECORD_KEYS", {"caps_lock": fw_module.Key.caps_lock})
+    monkeypatch.setattr(
+        fw_module,
+        "on_press",
+        lambda key: events.append(("press", key)),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "on_release",
+        lambda key: events.append(("release", key)),
+    )
+
+    data = types.SimpleNamespace(vkCode=fw_module.CAPS_LOCK_VK)
+
+    assert fw_module.keyboard_event_filter(0x0100, data) is False
+    assert fw_module.keyboard_event_filter(0x0101, data) is False
+    assert events == [
+        ("press", fw_module.Key.caps_lock),
+        ("release", fw_module.Key.caps_lock),
+    ]
+
+
 def test_create_wav_buffer(fw_module):
     data = np.zeros(fw_module.sample_rate, dtype=np.float32)
     buf = fw_module.create_wav_buffer(data)
