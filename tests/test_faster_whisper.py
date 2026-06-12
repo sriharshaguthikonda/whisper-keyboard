@@ -91,10 +91,34 @@ def test_save_audio(tmp_path, fw_module):
 
 
 def test_transcribe_pre_recording_buffer(fw_module, monkeypatch):
-    monkeypatch.setattr(fw_module, 'transcribe_pre_recording_buffer_util', lambda *args, **kwargs: 'hello')
+    captured = {}
+
+    def fake_pre_recording(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        return "hello"
+
+    monkeypatch.setattr(fw_module, 'transcribe_pre_recording_buffer_util', fake_pre_recording)
     data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
     text = fw_module.transcribe_pre_recording_buffer(data)
     assert text == 'hello'
+    assert captured["kwargs"]["report_model_failure"] is fw_module.note_audio_stt_model_failure
+    assert captured["kwargs"]["report_rate_limit"] is fw_module.note_audio_stt_rate_limit
+
+
+def test_transcribe_with_groq_async_wrapper_passes_model_callbacks(fw_module, monkeypatch):
+    captured = {}
+
+    async def fake_groq(*args, **kwargs):
+        captured["kwargs"] = kwargs
+        return "hello"
+
+    monkeypatch.setattr(fw_module, 'transcribe_with_groq_async_util', fake_groq)
+
+    result = asyncio.run(fw_module.transcribe_with_groq_async(io.BytesIO(b"audio"), None))
+
+    assert result == "hello"
+    assert captured["kwargs"]["report_model_failure"] is fw_module.note_audio_stt_model_failure
+    assert captured["kwargs"]["report_rate_limit"] is fw_module.note_audio_stt_rate_limit
 
 
 def test_transcribe_with_local_model(fw_module, monkeypatch):

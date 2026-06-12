@@ -63,6 +63,7 @@ try:
     from model_rotation import (
         next_tool_use_model,
         note_tool_use_model_failure,
+        note_tool_use_rate_limit,
         refresh_groq_model_rotators,
     )
     from groq_model_catalog import classify_groq_model_error
@@ -70,6 +71,7 @@ except ModuleNotFoundError:
     from wkey.model_rotation import (
         next_tool_use_model,
         note_tool_use_model_failure,
+        note_tool_use_rate_limit,
         refresh_groq_model_rotators,
     )
     from wkey.groq_model_catalog import classify_groq_model_error
@@ -1773,7 +1775,7 @@ async def execute_command_run_with_tool(
                 4. Only use tools that exactly match the user's intent
                 5. For system controls (volume, media, windows), be very precise in tool selection
                 6. If no exact tool matches the query, do not force a tool selection
-                7. For launching desktop apps, use launch_application(app=...) with a supported app name (cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify, recycle bin).
+                7. For launching desktop apps, use launch_application(app=...) with a supported app name (sound control panel, device manager, disk management, network connections, system properties, date and time, task scheduler, startup folder, recycle bin, services, cmd, powershell, edge, chrome, firefox, calculator, notepad, control panel, word, excel, powerpoint, outlook, paint, spotify).
                 8. If the user says "start/open display fusion" without a profile, call start_display_fusion(profile_name="Default").
 
                 Examples:
@@ -1854,16 +1856,30 @@ async def execute_command_run_with_tool(
                                     tool_model,
                                     classification.reason,
                                 )
-                                try:
-                                    refresh_groq_model_rotators(api_key, force_refresh=True)
-                                except Exception as refresh_error:
-                                    logging.warning(
-                                        "%sGroq model catalog force-refresh failed after %s: %s%s",
-                                        YELLOW,
-                                        classification.reason,
-                                        refresh_error,
-                                        RESET,
-                                    )
+                                if classification.reason.startswith(
+                                    ("model_", "model_or_endpoint")
+                                ):
+                                    try:
+                                        refresh_groq_model_rotators(
+                                            api_key,
+                                            force_refresh=True,
+                                            update_on_error=False,
+                                        )
+                                    except Exception as refresh_error:
+                                        logging.warning(
+                                            "%sGroq model catalog force-refresh failed after %s: %s%s",
+                                            YELLOW,
+                                            classification.reason,
+                                            refresh_error,
+                                            RESET,
+                                        )
+                                if attempt < max_retries - 1:
+                                    continue
+                            if classification.is_rate_limit:
+                                note_tool_use_rate_limit(
+                                    tool_model,
+                                    classification.reason,
+                                )
                                 if attempt < max_retries - 1:
                                     continue
                             raise aiohttp.ClientResponseError(

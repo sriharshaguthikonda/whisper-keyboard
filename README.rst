@@ -60,12 +60,15 @@ Runtime behavior:
 * the catalog is cached in ``wkey/groq_model_catalog_cache.json``;
 * the cache stores model IDs only, never API keys or transcripts;
 * if a model returns a model-specific HTTP 400 or 404, it is quarantined and the next model is tried;
+* if a model returns HTTP 429/rate-limit, it gets a short cooldown instead of bad-model quarantine;
 * if catalog refresh fails, the app uses the cache, then configured defaults.
 
 Optional environment variables:
 
 * ``GROQ_MODEL_CATALOG_TTL_SECONDS``: cache freshness window. Default: ``86400``.
+* ``GROQ_MODEL_CATALOG_BACKGROUND_TIMEOUT_SECONDS``: startup live-refresh timeout. Default: ``4.0``.
 * ``GROQ_BAD_MODEL_COOLDOWN_SECONDS``: bad-model quarantine duration. Default: ``3600``.
+* ``GROQ_RATE_LIMIT_COOLDOWN_SECONDS``: per-model rate-limit cooldown. Default: ``30``.
 
 Audio Recovery
 --------------

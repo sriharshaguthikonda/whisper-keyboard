@@ -29,15 +29,17 @@ import groq
 from groq import Groq
 try:
     from model_rotation import (
+        hydrate_groq_model_rotators,
         next_audio_stt_model,
         note_audio_stt_model_failure,
-        refresh_groq_model_rotators,
+        note_audio_stt_rate_limit,
     )
 except ModuleNotFoundError:
     from wkey.model_rotation import (
+        hydrate_groq_model_rotators,
         next_audio_stt_model,
         note_audio_stt_model_failure,
-        refresh_groq_model_rotators,
+        note_audio_stt_rate_limit,
     )
 import torch
 import logging
@@ -639,7 +641,7 @@ api_key = os.getenv("GROQ_API_KEY")
 global Groq_client
 Groq_client = Groq(api_key=api_key)
 try:
-    refresh_groq_model_rotators(api_key)
+    hydrate_groq_model_rotators(api_key)
 except Exception as e:
     logging.warning("Groq model catalog refresh failed during startup: %s", e)
 
@@ -2058,6 +2060,7 @@ def transcribe_pre_recording_buffer(pre_recording_data, max_retries=3, retry_del
         max_retries=max_retries,
         retry_delay=retry_delay,
         report_model_failure=note_audio_stt_model_failure,
+        report_rate_limit=note_audio_stt_rate_limit,
     )
 
 
@@ -2072,6 +2075,7 @@ async def transcribe_with_groq_async(byte_io, keyword_index, max_retries=3):
         groq_session_holder,
         max_retries=max_retries,
         report_model_failure=note_audio_stt_model_failure,
+        report_rate_limit=note_audio_stt_rate_limit,
     )
 
 

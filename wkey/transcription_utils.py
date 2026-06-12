@@ -23,6 +23,7 @@ def transcribe_pre_recording_buffer(
     retry_delay: int = 2,
     timeout_total: float = 10.0,
     report_model_failure: Optional[Callable[[str, str], None]] = None,
+    report_rate_limit: Optional[Callable[[str, str], None]] = None,
 ):
     """Transcribe a short pre-recording buffer using Groq."""
     if not api_key:
@@ -81,6 +82,8 @@ def transcribe_pre_recording_buffer(
                             )
                             if classification.is_model_error and report_model_failure:
                                 report_model_failure(model_name, classification.reason)
+                            if classification.is_rate_limit and report_rate_limit:
+                                report_rate_limit(model_name, classification.reason)
                         response.raise_for_status()
                         transcription = await response.json()
                         return transcription.get("text", "").lower()
@@ -118,6 +121,7 @@ async def transcribe_with_groq_async(
     groq_session_holder: Dict[str, Optional[aiohttp.ClientSession]],
     max_retries: int = 3,
     report_model_failure: Optional[Callable[[str, str], None]] = None,
+    report_rate_limit: Optional[Callable[[str, str], None]] = None,
 ):
     """Async transcription via Groq API with retry logic."""
     url = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -183,6 +187,8 @@ async def transcribe_with_groq_async(
                         )
                         if classification.is_model_error and report_model_failure:
                             report_model_failure(model_name, classification.reason)
+                        if classification.is_rate_limit and report_rate_limit:
+                            report_rate_limit(model_name, classification.reason)
                     response.raise_for_status()
                     transcription = await response.json()
                     logging.info("transcribe_with_groq_async: Got transcription response")

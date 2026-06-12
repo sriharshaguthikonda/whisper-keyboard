@@ -48,6 +48,16 @@ Recovery:
 - Wake-stream recovery must initialize the PyAudio stream before the wake listener starts.
 - Keyboard release must stop active manual recording even if press/release happens inside debounce time.
 
+## Active Groq Follow-up
+
+Status: implemented 2026-06-13.
+
+- Groq model hydration uses `wkey/groq_model_catalog.py` and `wkey/model_rotation.py` to load cache immediately, then force-refresh `/models` in a bounded background thread.
+- Tool-use ranking is live-catalog-first: `openai/gpt-oss-120b`, `openai/gpt-oss-20b`, `qwen/qwen3-32b`, `meta-llama/llama-4-scout-17b-16e-instruct`, `llama-3.3-70b-versatile`, then `llama-3.1-8b-instant`.
+- Groq STT ranking is `whisper-large-v3-turbo`, then `whisper-large-v3`.
+- `tool_use_failed` and model-specific 400/404 responses quarantine only the failing model; 429 responses use a short per-model cooldown instead of bad-model quarantine.
+- Prompt guards, `groq/compound*`, Orpheus TTS, Whisper STT, and safeguard models are excluded from normal function-tool routing.
+
 ## Open Issues From Repo TODOs
 
 | Issue | Source | Status |

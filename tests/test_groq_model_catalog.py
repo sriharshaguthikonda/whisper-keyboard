@@ -5,6 +5,7 @@ import pytest
 
 from wkey.groq_model_catalog import (
     ModelCatalogResult,
+    build_task_model_groups,
     classify_groq_model_error,
     filter_audio_stt_models,
     filter_tool_use_models,
@@ -74,11 +75,12 @@ def test_list_groq_models_raises_runtime_error_for_http_error(monkeypatch):
         list_groq_models("bad-key")
 
 
-def test_filter_tool_use_models_prefers_configured_available_models():
+def test_filter_tool_use_models_uses_ranked_live_order_over_configured_order():
     catalog = ModelCatalogResult(
         models=(
             "llama-3.3-70b-versatile",
             "openai/gpt-oss-120b",
+            "qwen/qwen3-32b",
             "whisper-large-v3",
         ),
         source="live",
@@ -87,14 +89,18 @@ def test_filter_tool_use_models_prefers_configured_available_models():
 
     resolved = filter_tool_use_models(
         configured_models=(
-            "decommissioned-model",
-            "openai/gpt-oss-120b",
             "llama-3.3-70b-versatile",
+            "qwen/qwen3-32b",
+            "openai/gpt-oss-120b",
         ),
         catalog=catalog,
     )
 
-    assert resolved == ("openai/gpt-oss-120b", "llama-3.3-70b-versatile")
+    assert resolved == (
+        "openai/gpt-oss-120b",
+        "qwen/qwen3-32b",
+        "llama-3.3-70b-versatile",
+    )
 
 
 def test_filter_tool_use_models_uses_catalog_fallback_when_configured_are_missing():
@@ -129,7 +135,37 @@ def test_filter_audio_stt_models_keeps_only_whisper_models():
         catalog=catalog,
     )
 
-    assert resolved == ("whisper-large-v3", "whisper-large-v3-turbo")
+    assert resolved == ("whisper-large-v3-turbo", "whisper-large-v3")
+
+
+def test_live_model_groups_keep_only_ranked_tool_models():
+    live_models = (
+        "allam-2-7b",
+        "canopylabs/orpheus-v1-english",
+        "groq/compound",
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "meta-llama/llama-prompt-guard-2-86m",
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "openai/gpt-oss-safeguard-20b",
+        "qwen/qwen3-32b",
+        "whisper-large-v3",
+        "whisper-large-v3-turbo",
+    )
+
+    tool_models, audio_models = build_task_model_groups(live_models)
+
+    assert tool_models == (
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3-32b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+    )
+    assert audio_models == ("whisper-large-v3-turbo", "whisper-large-v3")
 
 
 def test_filter_models_falls_back_to_configured_when_catalog_unknown():
@@ -159,3 +195,26 @@ def test_classify_groq_model_error_does_not_hide_auth_errors():
     result = classify_groq_model_error(401, '{"error":{"message":"invalid api key"}}')
 
     assert result.is_model_error is False
+
+
+def test_classify_groq_model_error_detects_tool_use_failed_generation():
+    body = (
+        '{"error":{"code":"tool_use_failed",'
+        '"message":"Failed to call a function.",'
+        '"failed_generation":"<function=launch_application {\\"app\\": \\"Device Manager\\"}>"}}'
+    )
+
+    result = classify_groq_model_error(400, body)
+
+    assert result.is_model_error is True
+    assert result.reason == "tool_use_failed_http_400"
+
+
+def test_classify_groq_model_error_marks_rate_limit_without_quarantine():
+    result = classify_groq_model_error(
+        429,
+        '{"error":{"message":"rate limit exceeded"}}',
+    )
+
+    assert result.is_model_error is False
+    assert result.is_rate_limit is True
