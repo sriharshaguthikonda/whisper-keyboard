@@ -173,3 +173,6 @@ train/
 
 # audio files
 *.wav
+
+# runtime locks
+wkey/wkey_runtime.lock

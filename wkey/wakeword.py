@@ -86,6 +86,7 @@ class WakeWordListener:
         should_relax=None,
         wake_stream_lock=None,
         is_recovery_active=None,
+        is_enabled=None,
         log=print,
     ):
         log("Listening for wake words...")
@@ -95,6 +96,9 @@ class WakeWordListener:
             try:
                 if heartbeat:
                     heartbeat()
+                if is_enabled and not is_enabled():
+                    time.sleep(self.relax_sleep)
+                    continue
                 if is_recovery_active and is_recovery_active():
                     if not recovery_wait_logged:
                         log("Wake-word listener waiting for audio recovery to finish")

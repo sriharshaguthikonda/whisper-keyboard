@@ -32,7 +32,8 @@ class SettingsWindow(QWidget):
         self.use_local_cb = QCheckBox("Use local GPU model when available")
         self.use_cpu_cb = QCheckBox("Use local CPU fallback")
         self.use_api_cb = QCheckBox("Fallback to Groq API")
-        self.precheck_cb = QCheckBox("Enable pre-recording keyword check")
+        self.wakeword_cb = QCheckBox("Enable wake-word detection")
+        self.precheck_cb = QCheckBox("Validate detected wake word before command capture")
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
         self.context_memory_cb = QCheckBox("Enable transcript context memory")
 
@@ -83,8 +84,14 @@ class SettingsWindow(QWidget):
         )
         self.layout.addLayout(
             self._build_checkbox_row(
+                self.wakeword_cb,
+                "Turns wake-word listening on or off. Manual CapsLock/F24 controls still work when off.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_checkbox_row(
                 self.precheck_cb,
-                "Check a small pre-buffer for wake word before processing full command audio.",
+                "Checks a short pre-buffer after wake-word detection. This is not the wake-word on/off switch.",
             )
         )
         self.layout.addLayout(
@@ -218,6 +225,7 @@ class SettingsWindow(QWidget):
         self.precheck_cb.setChecked(
             config.get("enable_pre_recording_keyword_check", False)
         )
+        self.wakeword_cb.setChecked(config.get("enable_wakeword_detection", True))
         self.edge_selenium_cb.setChecked(config.get("enable_edge_selenium", True))
         self.context_memory_cb.setChecked(
             config.get("enable_transcript_context_memory", True)
@@ -240,6 +248,7 @@ class SettingsWindow(QWidget):
         config["use_local_gpu"] = self.use_local_cb.isChecked()
         config["use_local_cpu"] = self.use_cpu_cb.isChecked()
         config["fallback_to_groq"] = self.use_api_cb.isChecked()
+        config["enable_wakeword_detection"] = self.wakeword_cb.isChecked()
         config["enable_pre_recording_keyword_check"] = self.precheck_cb.isChecked()
         config["enable_edge_selenium"] = self.edge_selenium_cb.isChecked()
         config["enable_transcript_context_memory"] = self.context_memory_cb.isChecked()

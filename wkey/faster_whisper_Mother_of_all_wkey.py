@@ -94,17 +94,27 @@ from queue import Empty as QueueEmpty
 from contextlib import contextmanager
 import faulthandler
 try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
     from faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 except ModuleNotFoundError:
     from wkey.faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 try:
     from settings_manager import (
+        runtime_mode_for_settings,
         load_settings,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
 except ModuleNotFoundError:
     from wkey.settings_manager import (
+        runtime_mode_for_settings,
         load_settings,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
@@ -404,13 +414,22 @@ if key_label not in SUPPORTED_RECORD_KEYS:
     print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'caps_lock'")
     key_label = 'caps_lock'
 
-runtime_mode = os.environ.get("WKEY_RUNTIME_MODE", "combined").strip().lower()
-if runtime_mode not in {"combined", "keyboard", "wakeword"}:
-    print(
-        f"Warning: WKEY_RUNTIME_MODE '{runtime_mode}' is not supported. "
-        "Defaulting to 'combined'"
-    )
-    runtime_mode = "combined"
+SUPPORTED_RUNTIME_MODES = {"combined", "keyboard", "wakeword"}
+
+
+def _resolve_runtime_mode(settings, env_mode=None):
+    mode = (env_mode or "").strip().lower()
+    if mode:
+        if mode in SUPPORTED_RUNTIME_MODES:
+            return mode
+        print(
+            f"Warning: WKEY_RUNTIME_MODE '{mode}' is not supported. "
+            "Using settings-derived runtime mode."
+        )
+    return runtime_mode_for_settings(settings)
+
+
+runtime_mode = _resolve_runtime_mode(SETTINGS, os.environ.get("WKEY_RUNTIME_MODE"))
 
 record_key_labels = [
     label.strip().lower()
@@ -433,6 +452,10 @@ def is_keyboard_runtime_enabled():
 def is_wakeword_runtime_enabled():
     return runtime_mode in {"combined", "wakeword"}
 
+
+def is_caps_lock_suppression_enabled():
+    return RECORD_KEYS.get("caps_lock") == Key.caps_lock
+
 def map_key_to_keyword_index(key):
     """Return keyword index for a given manual trigger key."""
     if RECORD_KEYS.get('f24') is not None and key == RECORD_KEYS['f24']:
@@ -447,7 +470,7 @@ KEY_RELEASE_MESSAGES = {0x0101, 0x0105}
 
 def keyboard_event_filter(msg, data):
     """Suppress native CapsLock toggling while CapsLock is a record key."""
-    if RECORD_KEYS.get("caps_lock") != Key.caps_lock:
+    if not is_caps_lock_suppression_enabled():
         return True
     if getattr(data, "vkCode", None) != CAPS_LOCK_VK:
         return True
@@ -542,8 +565,11 @@ def get_groq_audio_model():
 settings_watch_handle = None
 
 def apply_settings(new_settings):
-    global SETTINGS, gpu_available, model, model_device, cpu_model_initialized
+    global SETTINGS, runtime_mode, gpu_available, model, model_device, cpu_model_initialized
+    wakeword_was_enabled = is_wakeword_runtime_enabled()
     SETTINGS = new_settings
+    runtime_mode = _resolve_runtime_mode(SETTINGS)
+    wakeword_is_enabled = is_wakeword_runtime_enabled()
 
     want_gpu = SETTINGS.get("use_local_gpu", True)
     want_cpu = SETTINGS.get("use_local_cpu", True)
@@ -573,6 +599,13 @@ def apply_settings(new_settings):
         pass
     except Exception as e:
         logging.warning(f"{YELLOW}Failed to apply Selenium setting update: {e}{RESET}")
+
+    if wakeword_was_enabled and not wakeword_is_enabled:
+        logging.info(f"{YELLOW}Wake-word detection disabled in settings; closing wake stream.{RESET}")
+        _close_wake_stream_for_recovery()
+    elif not wakeword_was_enabled and wakeword_is_enabled:
+        logging.info(f"{GREEN}Wake-word detection enabled in settings.{RESET}")
+        initialize_wake_stream()
 
 def start_settings_watch():
     global settings_watch_handle
@@ -1003,7 +1036,7 @@ def _perform_audio_recovery(reason):
                 logging.warning(
                     f"{YELLOW}Audio recovery: input stream could not be reinitialized{RESET}"
                 )
-            if not initialize_wake_stream():
+            if is_wakeword_runtime_enabled() and not initialize_wake_stream():
                 reinitialize_pyaudio()
                 initialize_wake_stream()
             resume_gap_detector.mark_now()
@@ -1197,6 +1230,9 @@ def initialize_input_stream():
 
 def initialize_wake_stream():
     global wake_stream, p
+    if not is_wakeword_runtime_enabled():
+        logging.info(f"{YELLOW}Wake-word stream initialization skipped; wake-word detection disabled.{RESET}")
+        return False
     with wake_stream_lock:
         try:
             if p is None:
@@ -1959,6 +1995,13 @@ def monitor_microphone_availability():
         recovery_wait_logged = False
         while True:
             touch_heartbeat("microphone monitor")
+
+            if not is_wakeword_runtime_enabled():
+                if is_wake_stream_active():
+                    _close_wake_stream_for_recovery()
+                time.sleep(1)
+                continue
+
             maybe_handle_system_resume("microphone monitor")
 
             if is_audio_recovery_in_progress():
@@ -2021,6 +2064,9 @@ def init_wakeword_listener():
 
 def listen_for_wake_word():
     """Wake-word loop delegated to wakeword module."""
+    while not is_wakeword_runtime_enabled():
+        touch_heartbeat("wakeword listener")
+        time.sleep(1)
     listener = init_wakeword_listener()
     listener.listen(
         get_wake_stream=get_current_wake_stream,
@@ -2035,6 +2081,7 @@ def listen_for_wake_word():
         should_relax=should_relax_resources,
         wake_stream_lock=wake_stream_lock,
         is_recovery_active=is_audio_recovery_in_progress,
+        is_enabled=is_wakeword_runtime_enabled,
         heartbeat=lambda: touch_heartbeat("wakeword listener"),
         log=lambda message: logging.info(message),
     )
@@ -2391,10 +2438,30 @@ def display_pause_status(start: bool = True):
         if _spinner_thread and _spinner_thread.is_alive():
             return  # already running
 
+        if is_wakeword_runtime_enabled():
+            active_message = (
+                f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word... "
+                f"(Ctrl+Alt+Shift+ScrollLock to pause){RESET}"
+            )
+            paused_message = (
+                f"{RED}VOICE RECOGNITION PAUSED (wake words paused, manual key "
+                f"dictation still allowed) - Press Ctrl+Alt+Shift+ScrollLock to "
+                f"resume wake words{RESET}"
+            )
+        else:
+            active_message = (
+                f"{GREEN}Keyboard dictation active - Hold F24 or CapsLock to record. "
+                f"Wake-word detection is off.{RESET}"
+            )
+            paused_message = (
+                f"{RED}WAKE-WORD DETECTION OFF - Manual F24/CapsLock dictation still "
+                f"allowed{RESET}"
+            )
+
         _spinner = make_status_display(
             check_pause_status=check_pause_status,
-            active_message=f"{GREEN}Voice recognition active - Say 'Hey computer' or wake word... (Ctrl+Alt+Shift+ScrollLock to pause){RESET}",
-            paused_message=f"{RED}VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shift+ScrollLock to resume wake words{RESET}",
+            active_message=active_message,
+            paused_message=paused_message,
             override_message=get_transient_status_message,
             spinner_frames=(
                 f"{RED}█{RESET}",
@@ -2560,7 +2627,8 @@ def reset_all_states():
             stream = None
 
         _close_wake_stream_for_recovery()
-        initialize_wake_stream()
+        if is_wakeword_runtime_enabled():
+            initialize_wake_stream()
         request_keyboard_listener_restart("reset_all_states")
 
         global_state["consecutive_failures"] = 0
@@ -2591,6 +2659,18 @@ def main():
         RESET,
     )
     logging.info(
+        "Startup diagnostics: pid=%s runtime_mode=%s wakeword_enabled=%s "
+        "keyboard_enabled=%s enabled_record_keys=%s capslock_suppression=%s",
+        os.getpid(),
+        runtime_mode,
+        is_wakeword_runtime_enabled(),
+        is_keyboard_runtime_enabled(),
+        ",".join(RECORD_KEYS.keys()) or "none",
+        is_caps_lock_suppression_enabled(),
+    )
+    if is_caps_lock_suppression_enabled():
+        logging.info(f"{GREEN}CapsLock native toggle suppression active.{RESET}")
+    logging.info(
         f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
     )
     logging.info(f"{CYAN}Using canonical pause flag path: {FLAG_PATH}{RESET}")
@@ -2613,9 +2693,8 @@ def main():
             initialize_wake_stream()
         start_watchdog()
         start_thread(audio_recovery_worker, "AudioRecovery")
-        if is_wakeword_runtime_enabled():
-            start_thread(listen_for_wake_word, "WakeWordListener")
-            start_thread(monitor_microphone_availability, "MicrophoneMonitor")
+        start_thread(listen_for_wake_word, "WakeWordListener")
+        start_thread(monitor_microphone_availability, "MicrophoneMonitor")
         loop2 = asyncio.new_event_loop()
         start_thread(
             lambda: run_asyncio_in_thread(loop2, clean_transcript()), "CleanTranscript"
@@ -2694,12 +2773,93 @@ def main():
                 f"{RED}Error during cleanup: {str(e)}\n{traceback.format_exc()}{RESET}"
             )
 
+_runtime_lock_handle = None
+RUNTIME_LOCK_PATH = os.path.join(os.path.dirname(__file__), "wkey_runtime.lock")
+
+
+def _try_lock_runtime_file(handle):
+    if msvcrt is not None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        return
+    if fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    raise OSError("No runtime file lock implementation available")
+
+
+def _unlock_runtime_file(handle):
+    if msvcrt is not None:
+        handle.seek(0)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    elif fcntl is not None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _read_runtime_lock_pid(lock_path):
+    try:
+        with open(lock_path, "r", encoding="utf-8") as f:
+            return f.read().strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def acquire_runtime_singleton(lock_path=RUNTIME_LOCK_PATH):
+    global _runtime_lock_handle
+    if _runtime_lock_handle is not None:
+        return True
+
+    handle = open(lock_path, "a+", encoding="utf-8")
+    try:
+        _try_lock_runtime_file(handle)
+    except OSError:
+        existing_pid = _read_runtime_lock_pid(lock_path)
+        handle.close()
+        logging.warning(
+            "%sAnother Whisper Keyboard backend is already running "
+            "(pid=%s lock=%s). Exiting.%s",
+            YELLOW,
+            existing_pid,
+            lock_path,
+            RESET,
+        )
+        return False
+
+    handle.seek(0)
+    handle.truncate()
+    handle.write(str(os.getpid()))
+    handle.flush()
+    _runtime_lock_handle = handle
+    return True
+
+
+def release_runtime_singleton():
+    global _runtime_lock_handle
+    if _runtime_lock_handle is None:
+        return
+    handle = _runtime_lock_handle
+    _runtime_lock_handle = None
+    try:
+        _unlock_runtime_file(handle)
+    except Exception:
+        pass
+    try:
+        handle.close()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
-    while True:
-        try:
-            main()
-        except Exception as e:
-            logging.error(
-                f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}"
-            )
-            time.sleep(5)
+    if not acquire_runtime_singleton():
+        sys.exit(0)
+    try:
+        while True:
+            try:
+                main()
+            except Exception as e:
+                logging.error(
+                    f"{RED}Fatal error: {str(e)}\n{traceback.format_exc()}{RESET}"
+                )
+                time.sleep(5)
+    finally:
+        release_runtime_singleton()

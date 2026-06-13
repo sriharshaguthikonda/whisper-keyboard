@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import json
 import subprocess
 from settings_manager import (
+    build_backend_environment,
     load_settings as settings_load,
     save_settings as settings_save,
     DEFAULT_SETTINGS as TRANSCRIPTION_DEFAULTS,
@@ -299,15 +300,26 @@ class VoicePauseController(QMainWindow):
             "Use Groq API transcription when enabled. Disable to use local models only.",
         )
 
-        self.precheck_cb = QCheckBox("Enable pre-recording keyword check")
+        self.wakeword_cb = QCheckBox("Enable wake-word detection")
+        self.wakeword_cb.setObjectName("settingsCheckbox")
+        self.wakeword_cb.setFont(QFont("Segoe UI", 10))
+        self.wakeword_cb.setToolTip("Listen for configured wake words")
+        self.wakeword_cb.stateChanged.connect(self.save_transcription_settings)
+        self._add_with_info_button(
+            controls_layout,
+            self.wakeword_cb,
+            "Turns wake-word listening on or off. Manual CapsLock/F24 controls still work when off.",
+        )
+
+        self.precheck_cb = QCheckBox("Validate detected wake word before command capture")
         self.precheck_cb.setObjectName("settingsCheckbox")
         self.precheck_cb.setFont(QFont("Segoe UI", 10))
-        self.precheck_cb.setToolTip("Validate wake word in pre-recording buffer before full transcription")
+        self.precheck_cb.setToolTip("Validate audio after a wake word is already detected")
         self.precheck_cb.stateChanged.connect(self.save_transcription_settings)
         self._add_with_info_button(
             controls_layout,
             self.precheck_cb,
-            "Checks a short pre-buffer for wake words before running full command transcription.",
+            "Checks a short pre-buffer after wake-word detection. This is not the wake-word on/off switch.",
         )
 
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
@@ -580,6 +592,9 @@ class VoicePauseController(QMainWindow):
             self.precheck_cb.setChecked(
                 config.get("enable_pre_recording_keyword_check", False)
             )
+            self.wakeword_cb.setChecked(
+                config.get("enable_wakeword_detection", True)
+            )
             self.edge_selenium_cb.setChecked(
                 config.get("enable_edge_selenium", True)
             )
@@ -611,6 +626,7 @@ class VoicePauseController(QMainWindow):
                     "use_local_gpu": self.use_gpu_cb.isChecked(),
                     "use_local_cpu": self.use_cpu_cb.isChecked(),
                     "fallback_to_groq": self.use_groq_cb.isChecked(),
+                    "enable_wakeword_detection": self.wakeword_cb.isChecked(),
                     "enable_pre_recording_keyword_check": self.precheck_cb.isChecked(),
                     "enable_edge_selenium": self.edge_selenium_cb.isChecked(),
                     "enable_transcript_context_memory": self.context_memory_cb.isChecked(),
@@ -769,8 +785,17 @@ class VoicePauseController(QMainWindow):
         try:
             python_path = "c:/Windows_software/openai whisper/openai/Scripts/python.exe"
             script_path = "c:/Windows_software/openai whisper/whisper-keyboard/wkey/faster_whisper_Mother_of_all_wkey.py"
-            os.chdir(os.path.dirname(script_path))
-            subprocess.Popen([python_path, script_path], creationflags=subprocess.CREATE_NEW_CONSOLE)
+            script_dir = os.path.dirname(script_path)
+            config = settings_load(
+                self.transcription_config_file, TRANSCRIPTION_DEFAULTS
+            )
+            env = build_backend_environment(config)
+            subprocess.Popen(
+                [python_path, script_path],
+                creationflags=subprocess.CREATE_NEW_CONSOLE,
+                cwd=script_dir,
+                env=env,
+            )
             self.error_label.setText("Faster Whisper started")
             print(f"Started Faster Whisper at {script_path}")
         except Exception as e:

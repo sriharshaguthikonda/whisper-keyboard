@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
     "use_local_cpu": True,
     "fallback_to_groq": True,
     "enable_edge_selenium": True,
+    "enable_wakeword_detection": True,
     "max_retries": 3,
     "enable_pre_recording_keyword_check": False,
     "enable_transcript_context_memory": True,
@@ -44,6 +45,7 @@ def _validate_settings(settings, defaults):
             "use_local_cpu",
             "fallback_to_groq",
             "enable_edge_selenium",
+            "enable_wakeword_detection",
             "enable_pre_recording_keyword_check",
             "enable_transcript_context_memory",
         ):
@@ -69,6 +71,17 @@ def _validate_settings(settings, defaults):
         else:
             merged[key] = value
     return merged
+
+
+def runtime_mode_for_settings(settings):
+    return "combined" if settings.get("enable_wakeword_detection", True) else "keyboard"
+
+
+def build_backend_environment(settings, base_env=None):
+    env = dict(os.environ if base_env is None else base_env)
+    env["WKEY_RECORD_KEYS"] = "f24,caps_lock"
+    env["WKEY_RUNTIME_MODE"] = runtime_mode_for_settings(settings)
+    return env
 
 
 def load_settings(path, defaults=None):

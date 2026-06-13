@@ -75,6 +75,98 @@ def test_caps_lock_event_filter_suppresses_native_toggle(fw_module, monkeypatch)
     ]
 
 
+def test_start_listener_passes_caps_lock_event_filter(fw_module, monkeypatch):
+    captured = {}
+
+    class FakeListener:
+        def __init__(self, *args, **kwargs):
+            captured["kwargs"] = kwargs
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            pass
+
+        def join(self):
+            return None
+
+    monkeypatch.setattr(fw_module, "Listener", FakeListener)
+
+    fw_module.start_listener()
+
+    assert captured["kwargs"]["event_filter"] is fw_module.keyboard_event_filter
+
+
+def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
+    closed = []
+    monkeypatch.setattr(
+        fw_module,
+        "_close_wake_stream_for_recovery",
+        lambda: closed.append("closed"),
+    )
+
+    settings = dict(fw_module.SETTINGS)
+    settings["enable_wakeword_detection"] = False
+    fw_module.apply_settings(settings)
+
+    assert fw_module.runtime_mode == "keyboard"
+    assert fw_module.is_keyboard_runtime_enabled() is True
+    assert fw_module.is_wakeword_runtime_enabled() is False
+    assert fw_module.RECORD_KEYS["f24"] == fw_module.Key.f24
+    assert fw_module.RECORD_KEYS["caps_lock"] == fw_module.Key.caps_lock
+    assert closed == ["closed"]
+
+
+def test_audio_recovery_does_not_restart_wake_stream_when_disabled(fw_module, monkeypatch):
+    wake_calls = []
+
+    fw_module.runtime_mode = "keyboard"
+    fw_module.audio_recovery_in_progress = False
+    fw_module.last_audio_recovery_ts = 0
+    fw_module.audio_recovery_reasons.clear()
+
+    monkeypatch.setattr(fw_module, "request_keyboard_listener_restart", lambda reason: None)
+    monkeypatch.setattr(fw_module, "handle_resume_event", lambda reason: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(
+        fw_module,
+        "initialize_wake_stream",
+        lambda: wake_calls.append("wake") or True,
+    )
+    monkeypatch.setattr(fw_module, "reinitialize_pyaudio", lambda: None)
+    monkeypatch.setattr(fw_module, "suppress_resume_detection", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "log_volume_lease_state", lambda *a, **k: None)
+
+    assert fw_module._perform_audio_recovery("test") is True
+    assert wake_calls == []
+
+
+def test_runtime_singleton_blocks_when_lock_unavailable(fw_module, monkeypatch, tmp_path):
+    lock_path = tmp_path / "wkey_runtime.lock"
+    lock_path.write_text("12345", encoding="utf-8")
+    fw_module._runtime_lock_handle = None
+    monkeypatch.setattr(
+        fw_module,
+        "_try_lock_runtime_file",
+        lambda handle: (_ for _ in ()).throw(OSError("locked")),
+    )
+
+    assert fw_module.acquire_runtime_singleton(str(lock_path)) is False
+    assert fw_module._runtime_lock_handle is None
+
+
+def test_runtime_singleton_acquire_and_release(fw_module, tmp_path):
+    lock_path = tmp_path / "wkey_runtime.lock"
+    fw_module._runtime_lock_handle = None
+
+    assert fw_module.acquire_runtime_singleton(str(lock_path)) is True
+    fw_module.release_runtime_singleton()
+
+    assert lock_path.read_text(encoding="utf-8") == str(fw_module.os.getpid())
+    assert fw_module._runtime_lock_handle is None
+
+
 def test_create_wav_buffer(fw_module):
     data = np.zeros(fw_module.sample_rate, dtype=np.float32)
     buf = fw_module.create_wav_buffer(data)
