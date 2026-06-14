@@ -8,14 +8,15 @@ and transcription code.
 import os
 
 os.environ.setdefault("WKEY", "f24")
+os.environ.setdefault("WKEY_ALLOW_ENV_OVERRIDES", "1")
 os.environ.setdefault("WKEY_RUNTIME_MODE", "keyboard")
 os.environ.setdefault("WKEY_RECORD_KEYS", "f24")
 
 try:
-    from faster_whisper_Mother_of_all_wkey import main
+    from faster_whisper_Mother_of_all_wkey import run_backend
 except ModuleNotFoundError:
-    from wkey.faster_whisper_Mother_of_all_wkey import main
+    from wkey.faster_whisper_Mother_of_all_wkey import run_backend
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(run_backend())

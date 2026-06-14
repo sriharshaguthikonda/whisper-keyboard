@@ -20,7 +20,7 @@ DEFAULT_SETTINGS = {
     "use_local_cpu": True,
     "fallback_to_groq": True,
     "enable_edge_selenium": True,
-    "enable_wakeword_detection": True,
+    "enable_wakeword_detection": False,
     "max_retries": 3,
     "enable_pre_recording_keyword_check": False,
     "enable_transcript_context_memory": True,
@@ -74,7 +74,7 @@ def _validate_settings(settings, defaults):
 
 
 def runtime_mode_for_settings(settings):
-    return "combined" if settings.get("enable_wakeword_detection", True) else "keyboard"
+    return "combined" if settings.get("enable_wakeword_detection", False) else "keyboard"
 
 
 def build_backend_environment(settings, base_env=None):

@@ -593,7 +593,7 @@ class VoicePauseController(QMainWindow):
                 config.get("enable_pre_recording_keyword_check", False)
             )
             self.wakeword_cb.setChecked(
-                config.get("enable_wakeword_detection", True)
+                config.get("enable_wakeword_detection", False)
             )
             self.edge_selenium_cb.setChecked(
                 config.get("enable_edge_selenium", True)

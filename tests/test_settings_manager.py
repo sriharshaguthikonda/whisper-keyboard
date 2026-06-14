@@ -4,6 +4,7 @@ from wkey.settings_manager import build_backend_environment, runtime_mode_for_se
 def test_runtime_mode_for_wakeword_setting():
     assert runtime_mode_for_settings({"enable_wakeword_detection": True}) == "combined"
     assert runtime_mode_for_settings({"enable_wakeword_detection": False}) == "keyboard"
+    assert runtime_mode_for_settings({}) == "keyboard"
 
 
 def test_backend_environment_forces_manual_keys_and_runtime_mode():

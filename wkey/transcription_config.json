@@ -3,6 +3,7 @@
   "use_local_cpu": true,
   "fallback_to_groq": true,
   "enable_edge_selenium": false,
+  "enable_wakeword_detection": false,
   "max_retries": 3,
   "enable_pre_recording_keyword_check": false,
   "enable_transcript_context_memory": false,

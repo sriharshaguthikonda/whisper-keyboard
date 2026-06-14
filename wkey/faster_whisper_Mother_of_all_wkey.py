@@ -417,25 +417,37 @@ if key_label not in SUPPORTED_RECORD_KEYS:
 SUPPORTED_RUNTIME_MODES = {"combined", "keyboard", "wakeword"}
 
 
+def _env_overrides_enabled():
+    return os.environ.get("WKEY_ALLOW_ENV_OVERRIDES", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def _resolve_runtime_mode(settings, env_mode=None):
     mode = (env_mode or "").strip().lower()
-    if mode:
+    if mode and _env_overrides_enabled():
         if mode in SUPPORTED_RUNTIME_MODES:
             return mode
         print(
             f"Warning: WKEY_RUNTIME_MODE '{mode}' is not supported. "
             "Using settings-derived runtime mode."
         )
+    elif mode:
+        print("Ignoring WKEY_RUNTIME_MODE because WKEY_ALLOW_ENV_OVERRIDES is not enabled.")
     return runtime_mode_for_settings(settings)
 
 
 runtime_mode = _resolve_runtime_mode(SETTINGS, os.environ.get("WKEY_RUNTIME_MODE"))
 
-record_key_labels = [
-    label.strip().lower()
-    for label in os.environ.get("WKEY_RECORD_KEYS", "f24,caps_lock").split(",")
-    if label.strip()
-]
+record_key_source = (
+    os.environ.get("WKEY_RECORD_KEYS", "f24,caps_lock")
+    if _env_overrides_enabled()
+    else "f24,caps_lock"
+)
+record_key_labels = [label.strip().lower() for label in record_key_source.split(",") if label.strip()]
 RECORD_KEYS = {
     label: SUPPORTED_RECORD_KEYS[label]
     for label in record_key_labels
@@ -721,9 +733,15 @@ audio_data_lock = threading.Lock()
 keyword_validation_event = threading.Event()
 keyword_validation_result = None
 KEYWORD_VALIDATION_TIMEOUT = 1.5
+MIN_MANUAL_RECORDING_SECONDS = 0.25
+MANUAL_RECORDING_SUPPRESSION_SECONDS = 2.0
+manual_recording_suppressed_until = 0.0
+manual_recording_suppression_reason = ""
 recording_start_time = 0.0
 recording_session_counter = 0
 active_recording_session_id = 0
+recording_stop_in_progress = False
+deferred_keyboard_listener_restart_reasons = set()
 
 # Resource throttling state
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
@@ -753,6 +771,7 @@ audio_recovery_execution_lock = threading.Lock()
 input_stream_lock = threading.RLock()
 wake_stream_lock = threading.RLock()
 keyboard_listener_lock = threading.Lock()
+manual_recording_suppression_lock = threading.Lock()
 last_audio_recovery_ts = 0.0
 audio_recovery_in_progress = False
 audio_recovery_started_at = 0.0
@@ -778,6 +797,11 @@ def should_relax_resources():
 def is_audio_recovery_in_progress():
     with audio_recovery_state_lock:
         return audio_recovery_in_progress
+
+
+def is_recording_lifecycle_active():
+    with recording_lock:
+        return recording or recording_stop_in_progress
 
 
 def get_audio_recovery_status():
@@ -839,12 +863,60 @@ def _resume_detection_remaining_seconds():
     return max(0.0, remaining)
 
 
-def reset_keyboard_handler_state(reason):
+def suppress_manual_recording(seconds=MANUAL_RECORDING_SUPPRESSION_SECONDS, reason=""):
+    global manual_recording_suppressed_until
+    global manual_recording_suppression_reason
+
+    duration = max(0.0, float(seconds or 0.0))
+    until = time.time() + duration
+    reason = str(reason)
+    with manual_recording_suppression_lock:
+        if until > manual_recording_suppressed_until:
+            manual_recording_suppressed_until = until
+            manual_recording_suppression_reason = reason
+        remaining = max(0.0, manual_recording_suppressed_until - time.time())
+
+    handler = globals().get("keyboard_handler")
+    if handler is not None and hasattr(handler, "suppress_record_keys"):
+        try:
+            handler.suppress_record_keys(duration, reason)
+        except Exception as e:
+            logging.warning(
+                f"{YELLOW}Failed to suppress keyboard record keys ({reason}): {e}{RESET}"
+            )
+
+    logging.info(
+        "manual_recording_suppression_set reason=%s duration=%.2fs remaining=%.2fs",
+        reason,
+        duration,
+        remaining,
+    )
+
+
+def _manual_recording_suppression_remaining():
+    with manual_recording_suppression_lock:
+        remaining = manual_recording_suppressed_until - time.time()
+        reason = manual_recording_suppression_reason
+    return max(0.0, remaining), reason
+
+
+def _recovery_reason_parts(reason):
+    return [part.strip().lower() for part in str(reason).split("|") if part.strip()]
+
+
+def _is_volume_timeout_recovery_reason(reason):
+    parts = _recovery_reason_parts(reason)
+    return bool(parts) and all(part.startswith("volume timeout") for part in parts)
+
+
+def reset_keyboard_handler_state(reason, preserve_rearm=False):
     if keyboard_handler is None:
         return
     try:
-        keyboard_handler.reset_state()
-        logging.info(f"{YELLOW}Keyboard shortcut state reset ({reason}){RESET}")
+        keyboard_handler.reset_state(preserve_rearm=preserve_rearm)
+        logging.info(
+            f"{YELLOW}Keyboard shortcut state reset ({reason}, preserve_rearm={preserve_rearm}){RESET}"
+        )
     except Exception as e:
         logging.error(
             f"{RED}Failed to reset keyboard shortcut state ({reason}): {e}{RESET}",
@@ -853,7 +925,18 @@ def reset_keyboard_handler_state(reason):
 
 
 def request_keyboard_listener_restart(reason):
-    reset_keyboard_handler_state(reason)
+    if is_recording_lifecycle_active():
+        with keyboard_listener_lock:
+            deferred_keyboard_listener_restart_reasons.add(str(reason))
+        logging.info(
+            f"{YELLOW}Keyboard listener restart deferred until recording cleanup finishes ({reason}){RESET}"
+        )
+        return
+    suppress_manual_recording(
+        MANUAL_RECORDING_SUPPRESSION_SECONDS,
+        f"keyboard_listener_restart:{reason}",
+    )
+    reset_keyboard_handler_state(reason, preserve_rearm=True)
     with keyboard_listener_lock:
         listener = keyboard_listener
         can_restart = listener is not None and listener.is_alive()
@@ -872,6 +955,15 @@ def request_keyboard_listener_restart(reason):
             f"{RED}Failed to stop keyboard listener ({reason}): {e}{RESET}",
             exc_info=True,
         )
+
+
+def _flush_deferred_keyboard_listener_restart():
+    with keyboard_listener_lock:
+        if not deferred_keyboard_listener_restart_reasons:
+            return
+        reasons = sorted(deferred_keyboard_listener_restart_reasons)
+        deferred_keyboard_listener_restart_reasons.clear()
+    request_keyboard_listener_restart("deferred:" + "|".join(reasons))
 
 
 def get_current_wake_stream():
@@ -906,8 +998,13 @@ def handle_resume_event(reason="resume"):
     global buffer_index
     global recording
     global active_recording_session_id
+    global recording_stop_in_progress
     global play_pause_pressed
     global keyword_validation_result
+    suppress_manual_recording(
+        MANUAL_RECORDING_SUPPRESSION_SECONDS,
+        f"resume_event:{reason}",
+    )
     log_volume_lease_state(f"resume_event_enter:{reason}", level=logging.INFO)
     resume_cooldown_until = time.time() + RESUME_COOLDOWN_SECONDS
     _drain_queue(audio_buffer_queue)
@@ -916,6 +1013,7 @@ def handle_resume_event(reason="resume"):
     with recording_lock:
         recording = False
         active_recording_session_id = 0
+        recording_stop_in_progress = False
     with audio_data_lock:
         audio_buffer = np.array([], dtype="float32")
     buffer_index = 0
@@ -961,6 +1059,20 @@ def _status_has_overflow(status):
 
 def request_audio_recovery(reason):
     reason = str(reason)
+    if _is_volume_timeout_recovery_reason(reason):
+        logging.warning(
+            f"{YELLOW}Volume timeout recovery handled as volume-only cleanup (reason={reason}){RESET}"
+        )
+        suppress_manual_recording(
+            MANUAL_RECORDING_SUPPRESSION_SECONDS,
+            f"volume_timeout:{reason}",
+        )
+        force_release_volume_ducking(reason, level=logging.WARNING)
+        return
+    if is_recording_lifecycle_active():
+        logging.info(
+            f"{YELLOW}Audio recovery deferred until recording cleanup finishes (reason={reason}){RESET}"
+        )
     if is_audio_recovery_in_progress():
         logging.info(
             f"{YELLOW}Audio recovery already running. Queuing additional reason={reason}{RESET}"
@@ -1008,6 +1120,21 @@ def _close_wake_stream_for_recovery():
 
 def _perform_audio_recovery(reason):
     global last_audio_recovery_ts, audio_recovery_in_progress
+    if _is_volume_timeout_recovery_reason(reason):
+        logging.warning(
+            f"{YELLOW}Skipping audio stream recovery for volume timeout ({reason}){RESET}"
+        )
+        suppress_manual_recording(
+            MANUAL_RECORDING_SUPPRESSION_SECONDS,
+            f"volume_timeout:{reason}",
+        )
+        force_release_volume_ducking(reason, level=logging.WARNING)
+        return True
+    if is_recording_lifecycle_active():
+        logging.info(
+            f"{YELLOW}Audio recovery skipped because recording lifecycle is active (reason={reason}){RESET}"
+        )
+        return False
     with audio_recovery_state_lock:
         if audio_recovery_in_progress:
             logging.info(
@@ -1027,8 +1154,10 @@ def _perform_audio_recovery(reason):
         with audio_recovery_execution_lock:
             logging.warning(f"{YELLOW}Audio recovery start: {reason}{RESET}")
             log_volume_lease_state(f"audio_recovery_start:{reason}", level=logging.WARNING)
-            request_keyboard_listener_restart(f"recovery:{reason}")
-            handle_resume_event(f"recovery:{reason}")
+            suppress_manual_recording(
+                MANUAL_RECORDING_SUPPRESSION_SECONDS,
+                f"audio_recovery:{reason}",
+            )
             _close_input_stream_for_recovery()
             _close_wake_stream_for_recovery()
 
@@ -1043,6 +1172,7 @@ def _perform_audio_recovery(reason):
             suppress_resume_detection(
                 RESUME_DETECTION_SUPPRESSION_SECONDS, f"recovery:{reason}"
             )
+            overflow_burst_tracker.reset()
             log_volume_lease_state(
                 f"audio_recovery_complete:{reason}", level=logging.INFO
             )
@@ -1088,6 +1218,10 @@ def maybe_handle_system_resume(source):
     suppress_resume_detection(
         RESUME_DETECTION_SUPPRESSION_SECONDS, f"system resume:{source}"
     )
+    suppress_manual_recording(
+        MANUAL_RECORDING_SUPPRESSION_SECONDS,
+        f"system resume:{source}",
+    )
     try:
         set_pause_state(False)
         logging.info(f"{GREEN}Auto-resumed voice pause state after system wake{RESET}")
@@ -1116,12 +1250,17 @@ def register_volume_timeout_recovery_hook():
 
     def _on_timeout(timeout_seconds):
         logging.warning(
-            f"{YELLOW}Volume timeout callback received ({timeout_seconds:.1f}s). Scheduling audio recovery.{RESET}"
+            f"{YELLOW}Volume timeout callback received ({timeout_seconds:.1f}s). Releasing volume ducking only.{RESET}"
         )
         log_volume_lease_state(
             f"volume_timeout_callback:{timeout_seconds:.1f}s", level=logging.WARNING
         )
-        request_audio_recovery(f"volume timeout {timeout_seconds:.1f}s")
+        reason = f"volume timeout {timeout_seconds:.1f}s"
+        suppress_manual_recording(
+            MANUAL_RECORDING_SUPPRESSION_SECONDS,
+            reason,
+        )
+        force_release_volume_ducking(reason, level=logging.WARNING)
 
     register_callback(_on_timeout)
     _volume_timeout_hook_registered = True
@@ -1416,6 +1555,19 @@ def check_keywords_in_transcription(pre_recording_data, keyword_index):
 def is_pre_recording_keyword_check_enabled():
     return bool(SETTINGS.get("enable_pre_recording_keyword_check", False))
 
+
+def should_run_pre_recording_keyword_check(keyword_index, candidate_buffer=None):
+    if keyword_index not in (1, 2, 3):
+        return False
+    if not is_wakeword_runtime_enabled():
+        return False
+    if not is_pre_recording_keyword_check_enabled():
+        return False
+    if candidate_buffer is None:
+        candidate_buffer = pre_recording_buffer
+    return bool(candidate_buffer is not None and getattr(candidate_buffer, "size", 0) > 0)
+
+
 def _get_max_recording_seconds():
     return _get_setting_int("max_recording_seconds", 45, minimum=5, maximum=900)
 
@@ -1503,6 +1655,18 @@ def start_recording(keyword_index=None):
             )
             return
 
+        if keyword_index in (None, 0):
+            remaining, suppression_reason = _manual_recording_suppression_remaining()
+            if remaining > 0:
+                logging.info(
+                    "Manual recording request suppressed "
+                    "keyword_index=%s remaining=%.2fs reason=%s",
+                    keyword_index,
+                    remaining,
+                    suppression_reason,
+                )
+                return
+
         # Only block wake-word triggers while paused; manual keys still work
         if keyword_index not in (None, 0) and check_pause_status():
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
@@ -1525,8 +1689,10 @@ def start_recording(keyword_index=None):
 
         current_recording_session_id = None
         with recording_lock:
-            if recording:
-                logging.info(f"{YELLOW}Recording is already in progress.{RESET}")
+            if recording or recording_stop_in_progress:
+                logging.info(
+                    f"{YELLOW}Recording is already in progress or stopping.{RESET}"
+                )
                 return
 
             True_positve_audio = True
@@ -1590,13 +1756,7 @@ def start_recording(keyword_index=None):
             _schedule_recording_timeout(current_recording_session_id, keyword_index)
 
         if keyword_index not in (None, 0) and keyword_index not in RECORD_KEYS.values():
-            if not is_pre_recording_keyword_check_enabled():
-                keyword_validation_result = True
-                keyword_validation_event.set()
-                logging.info(
-                    f"{YELLOW}Pre-recording keyword validation is disabled in settings.{RESET}"
-                )
-            elif pre_recording_buffer is not None and pre_recording_buffer.size > 0:
+            if should_run_pre_recording_keyword_check(keyword_index, pre_recording_buffer):
                 pre_recording_data = np.roll(
                     pre_recording_buffer, -buffer_index, axis=0
                 ).flatten()
@@ -1605,6 +1765,20 @@ def start_recording(keyword_index=None):
                     target=check_keywords_in_transcription,
                     args=(pre_recording_data, keyword_index),
                 ).start()
+            else:
+                keyword_validation_result = True
+                keyword_validation_event.set()
+                logging.info(
+                    "Pre-recording keyword validation skipped "
+                    "keyword_index=%s wakeword_enabled=%s precheck_enabled=%s buffer_available=%s",
+                    keyword_index,
+                    is_wakeword_runtime_enabled(),
+                    is_pre_recording_keyword_check_enabled(),
+                    bool(
+                        pre_recording_buffer is not None
+                        and getattr(pre_recording_buffer, "size", 0) > 0
+                    ),
+                )
 
     except Exception as e:
         logging.error(f"{RED}Error in start_recording: {e}{RESET}", exc_info=True)
@@ -1628,11 +1802,30 @@ def start_recording(keyword_index=None):
 """
 
 def stop_recording(keyword_index):
+    stop_claimed = False
+    claimed_session_id = None
     try:
-        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result, active_recording_session_id
+        global stream, recording, play_pause_pressed, audio_buffer, sample_rate, recording_start_time, True_positve_audio, vad_detector, keyword_validation_result, active_recording_session_id, recording_stop_in_progress
         restore_delay_seconds = _get_volume_restore_delay_for_keyword(keyword_index)
 
-        if not recording:
+        with recording_lock:
+            if not recording:
+                if recording_stop_in_progress:
+                    logging.info(
+                        "duplicate_stop_ignored pid=%s session_id=%s keyword_index=%s",
+                        os.getpid(),
+                        active_recording_session_id,
+                        keyword_index,
+                    )
+                    return
+            else:
+                recording = False
+                recording_stop_in_progress = True
+                claimed_session_id = active_recording_session_id
+                active_recording_session_id = 0
+                stop_claimed = True
+
+        if not stop_claimed:
             snapshot = volume_lease_manager.snapshot_state()
             if (
                 snapshot["lease_count"] > 0
@@ -1658,6 +1851,12 @@ def stop_recording(keyword_index):
             play_pause_pressed = False
             beep(STOP_BEEP)
             return
+        logging.info(
+            "stop_recording_claimed pid=%s session_id=%s keyword_index=%s",
+            os.getpid(),
+            claimed_session_id,
+            keyword_index,
+        )
 
         if keyword_index in (1, 2, 3) and not keyword_validation_event.is_set():
             keyword_validation_event.wait(timeout=KEYWORD_VALIDATION_TIMEOUT)
@@ -1708,6 +1907,27 @@ def stop_recording(keyword_index):
         elif keyword_index == 3:
             stop_delay_threshold = 1
         elif keyword_index in (None, 0):
+            manual_duration_seconds = max(0.0, time.time() - recording_start_time)
+            if manual_duration_seconds < MIN_MANUAL_RECORDING_SECONDS:
+                logging.info(
+                    "Manual recording dropped before transcription: duration=%.3fs "
+                    "minimum=%.3fs; prerecord buffer not queued.",
+                    manual_duration_seconds,
+                    MIN_MANUAL_RECORDING_SECONDS,
+                )
+                _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+                audio_buffer = np.array([], dtype="float32")
+
+                if play_pause_pressed:
+                    _restore_volume_all_async(delay_seconds=restore_delay_seconds)
+                    play_pause_pressed = False
+
+                beep(STOP_BEEP)
+                with recording_lock:
+                    recording = False
+                    active_recording_session_id = 0
+                return
+
             pre_recording_data = np.roll(
                 pre_recording_buffer_f24, -buffer_index, axis=0
             ).flatten()
@@ -1787,6 +2007,15 @@ def stop_recording(keyword_index):
     except Exception as e:
         logging.error(f"{RED}Error in stop_recording: {e}{RESET}", exc_info=True)
         reset_state()
+    finally:
+        if stop_claimed:
+            with recording_lock:
+                recording_stop_in_progress = False
+            _flush_deferred_keyboard_listener_restart()
+            with audio_recovery_reasons_lock:
+                has_pending_recovery = bool(audio_recovery_reasons)
+            if has_pending_recovery:
+                audio_recovery_event.set()
 
 keyboard_handler = None
 
@@ -1830,6 +2059,7 @@ def init_keyboard_handler():
         stop_recording=_stop_recording_async,
         toggle_pause=toggle_pause_state,
         debounce_time=0.5,
+        log=logging,
     )
 
 def on_press(key):
@@ -2024,6 +2254,10 @@ def monitor_microphone_availability():
                 if was_missing:
                     logging.info(
                         f"{GREEN}Microphone detected after outage. Scheduling audio recovery...{RESET}"
+                    )
+                    suppress_manual_recording(
+                        MANUAL_RECORDING_SUPPRESSION_SECONDS,
+                        "microphone restore",
                     )
                     request_keyboard_listener_restart("microphone restore")
                     handle_resume_event("microphone restore")
@@ -2600,11 +2834,12 @@ def monitor_program_health():
 
 def reset_all_states():
     try:
-        global recording, play_pause_pressed, audio_buffer, stream, wake_stream, active_recording_session_id
+        global recording, play_pause_pressed, audio_buffer, stream, wake_stream, active_recording_session_id, recording_stop_in_progress
 
         with recording_lock:
             recording = False
             active_recording_session_id = 0
+            recording_stop_in_progress = False
 
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
@@ -2660,13 +2895,16 @@ def main():
     )
     logging.info(
         "Startup diagnostics: pid=%s runtime_mode=%s wakeword_enabled=%s "
-        "keyboard_enabled=%s enabled_record_keys=%s capslock_suppression=%s",
+        "precheck_enabled=%s keyboard_enabled=%s enabled_record_keys=%s "
+        "capslock_suppression=%s env_overrides_enabled=%s",
         os.getpid(),
         runtime_mode,
         is_wakeword_runtime_enabled(),
+        is_pre_recording_keyword_check_enabled(),
         is_keyboard_runtime_enabled(),
         ",".join(RECORD_KEYS.keys()) or "none",
         is_caps_lock_suppression_enabled(),
+        _env_overrides_enabled(),
     )
     if is_caps_lock_suppression_enabled():
         logging.info(f"{GREEN}CapsLock native toggle suppression active.{RESET}")
@@ -2849,9 +3087,9 @@ def release_runtime_singleton():
         pass
 
 
-if __name__ == "__main__":
+def run_backend():
     if not acquire_runtime_singleton():
-        sys.exit(0)
+        return 0
     try:
         while True:
             try:
@@ -2863,3 +3101,8 @@ if __name__ == "__main__":
                 time.sleep(5)
     finally:
         release_runtime_singleton()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(run_backend())

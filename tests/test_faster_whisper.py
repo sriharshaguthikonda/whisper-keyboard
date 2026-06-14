@@ -27,6 +27,7 @@ def test_validate_audio_buffer(fw_module):
 def test_default_manual_record_keys_use_caps_lock(monkeypatch):
     monkeypatch.delenv("WKEY", raising=False)
     monkeypatch.delenv("WKEY_RECORD_KEYS", raising=False)
+    monkeypatch.delenv("WKEY_ALLOW_ENV_OVERRIDES", raising=False)
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
     mod = importlib.reload(mod)
 
@@ -40,6 +41,7 @@ def test_default_manual_record_keys_use_caps_lock(monkeypatch):
 
 
 def test_right_ctrl_remains_supported_when_configured(monkeypatch):
+    monkeypatch.setenv("WKEY_ALLOW_ENV_OVERRIDES", "1")
     monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
     mod = importlib.reload(mod)
@@ -49,6 +51,20 @@ def test_right_ctrl_remains_supported_when_configured(monkeypatch):
         "ctrl_r": mod.Key.ctrl_r,
     }
     assert mod.map_key_to_keyword_index(mod.Key.ctrl_r) is None
+
+
+def test_stale_env_record_keys_ignored_without_override(monkeypatch):
+    monkeypatch.delenv("WKEY_ALLOW_ENV_OVERRIDES", raising=False)
+    monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
+    monkeypatch.setenv("WKEY_RUNTIME_MODE", "wakeword")
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert mod.RECORD_KEYS == {
+        "f24": mod.Key.f24,
+        "caps_lock": mod.Key.caps_lock,
+    }
+    assert mod.runtime_mode == "keyboard"
 
 
 def test_caps_lock_event_filter_suppresses_native_toggle(fw_module, monkeypatch):
@@ -100,6 +116,7 @@ def test_start_listener_passes_caps_lock_event_filter(fw_module, monkeypatch):
 
 def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
     closed = []
+    fw_module.runtime_mode = "combined"
     monkeypatch.setattr(
         fw_module,
         "_close_wake_stream_for_recovery",
@@ -142,6 +159,204 @@ def test_audio_recovery_does_not_restart_wake_stream_when_disabled(fw_module, mo
     assert wake_calls == []
 
 
+def test_audio_recovery_defers_while_recording(fw_module, monkeypatch):
+    restart_calls = []
+    fw_module.recording = True
+    fw_module.recording_stop_in_progress = False
+    fw_module.audio_recovery_in_progress = False
+    fw_module.last_audio_recovery_ts = 0
+    fw_module.audio_recovery_reasons.clear()
+    monkeypatch.setattr(
+        fw_module,
+        "request_keyboard_listener_restart",
+        lambda reason: restart_calls.append(reason),
+    )
+
+    assert fw_module._perform_audio_recovery("during-recording") is False
+    assert restart_calls == []
+
+
+def test_input_overflow_recovery_is_audio_only(fw_module, monkeypatch):
+    calls = []
+    fw_module.runtime_mode = "keyboard"
+    fw_module.audio_recovery_in_progress = False
+    fw_module.last_audio_recovery_ts = 0
+    fw_module.recording = False
+    fw_module.recording_stop_in_progress = False
+
+    monkeypatch.setattr(
+        fw_module,
+        "request_keyboard_listener_restart",
+        lambda reason: calls.append(("restart", reason)),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "handle_resume_event",
+        lambda reason: calls.append(("resume", reason)),
+    )
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "initialize_wake_stream", lambda: calls.append(("wake", None)) or True)
+    monkeypatch.setattr(fw_module, "reinitialize_pyaudio", lambda: calls.append(("pyaudio", None)))
+    monkeypatch.setattr(fw_module, "suppress_resume_detection", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "log_volume_lease_state", lambda *a, **k: None)
+
+    assert fw_module._perform_audio_recovery("input overflow burst") is True
+
+    assert ("restart", "recovery:input overflow burst") not in calls
+    assert ("resume", "recovery:input overflow burst") not in calls
+    assert ("wake", None) not in calls
+    assert fw_module.manual_recording_suppressed_until > fw_module.time.time()
+
+
+def test_volume_timeout_callback_releases_volume_without_audio_recovery(fw_module, monkeypatch):
+    callbacks = []
+    recoveries = []
+    releases = []
+    monkeypatch.setattr(
+        fw_module.voice_commands_module,
+        "register_volume_timeout_callback",
+        lambda callback: callbacks.append(callback),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "request_audio_recovery",
+        lambda reason: recoveries.append(reason),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "force_release_volume_ducking",
+        lambda reason, level=fw_module.logging.WARNING: releases.append(reason),
+    )
+
+    fw_module._volume_timeout_hook_registered = False
+    fw_module.register_volume_timeout_recovery_hook()
+    callbacks[0](2.0)
+
+    assert recoveries == []
+    assert releases == ["volume timeout 2.0s"]
+    assert fw_module.manual_recording_suppressed_until > fw_module.time.time()
+
+
+def test_system_resume_restarts_listener_once_and_suppresses_manual_keys(fw_module, monkeypatch):
+    calls = []
+
+    class Resumed:
+        def check(self):
+            return True, 30.0
+
+    monkeypatch.setattr(fw_module, "resume_gap_detector", Resumed())
+    monkeypatch.setattr(fw_module, "_resume_detection_remaining_seconds", lambda: 0)
+    monkeypatch.setattr(fw_module, "suppress_resume_detection", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "set_pause_state", lambda value: calls.append(("pause", value)))
+    monkeypatch.setattr(
+        fw_module,
+        "request_keyboard_listener_restart",
+        lambda reason: calls.append(("restart", reason)),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "handle_resume_event",
+        lambda reason: calls.append(("resume", reason)),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "request_audio_recovery",
+        lambda reason: calls.append(("recovery", reason)),
+    )
+
+    fw_module.maybe_handle_system_resume("microphone monitor")
+
+    assert calls == [
+        ("pause", False),
+        ("restart", "system resume:microphone monitor"),
+        ("resume", "system resume:microphone monitor"),
+        ("recovery", "system resume:microphone monitor"),
+    ]
+    assert fw_module.manual_recording_suppressed_until > fw_module.time.time()
+
+
+def test_prerecord_keyword_check_gate_requires_wakeword_runtime_precheck_and_buffer(fw_module):
+    settings = dict(fw_module.SETTINGS)
+    settings["enable_pre_recording_keyword_check"] = True
+    fw_module.SETTINGS = settings
+    data = np.ones((8, 1), dtype=np.float32)
+
+    fw_module.runtime_mode = "keyboard"
+    assert fw_module.should_run_pre_recording_keyword_check(1, data) is False
+
+    fw_module.runtime_mode = "combined"
+    settings["enable_pre_recording_keyword_check"] = False
+    assert fw_module.should_run_pre_recording_keyword_check(1, data) is False
+
+    settings["enable_pre_recording_keyword_check"] = True
+    assert fw_module.should_run_pre_recording_keyword_check(None, data) is False
+    assert fw_module.should_run_pre_recording_keyword_check(0, data) is False
+    assert fw_module.should_run_pre_recording_keyword_check(1, np.array([])) is False
+    assert fw_module.should_run_pre_recording_keyword_check(1, data) is True
+
+
+def test_start_recording_skips_prerecord_stt_when_precheck_disabled(fw_module, monkeypatch):
+    started_targets = []
+    settings = dict(fw_module.SETTINGS)
+    settings["enable_pre_recording_keyword_check"] = False
+    fw_module.SETTINGS = settings
+    fw_module.runtime_mode = "combined"
+    fw_module.something_is_playing = False
+    fw_module.pre_recording_buffer = np.ones((8, 1), dtype=np.float32)
+    fw_module.buffer_index = 0
+
+    class CapturingThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self.target = target
+            started_targets.append(target)
+
+        def start(self):
+            return None
+
+    monkeypatch.setattr(fw_module.threading, "Thread", CapturingThread)
+    monkeypatch.setattr(fw_module, "_schedule_recording_timeout", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "decrease_volume_all", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "check_pause_status", lambda: False)
+
+    fw_module.start_recording(1)
+
+    assert fw_module.check_keywords_in_transcription not in started_targets
+    assert fw_module.keyword_validation_event.is_set()
+
+
+def test_start_recording_runs_prerecord_validation_once_when_enabled(fw_module, monkeypatch):
+    started_targets = []
+    settings = dict(fw_module.SETTINGS)
+    settings["enable_pre_recording_keyword_check"] = True
+    fw_module.SETTINGS = settings
+    fw_module.runtime_mode = "combined"
+    fw_module.something_is_playing = False
+    fw_module.pre_recording_buffer = np.ones((8, 1), dtype=np.float32)
+    fw_module.buffer_index = 0
+
+    class CapturingThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+
+        def start(self):
+            started_targets.append(self.target)
+
+    monkeypatch.setattr(fw_module.threading, "Thread", CapturingThread)
+    monkeypatch.setattr(fw_module, "_schedule_recording_timeout", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "decrease_volume_all", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "check_pause_status", lambda: False)
+
+    fw_module.start_recording(1)
+
+    assert started_targets == [fw_module.check_keywords_in_transcription]
+
+
 def test_runtime_singleton_blocks_when_lock_unavailable(fw_module, monkeypatch, tmp_path):
     lock_path = tmp_path / "wkey_runtime.lock"
     lock_path.write_text("12345", encoding="utf-8")
@@ -165,6 +380,91 @@ def test_runtime_singleton_acquire_and_release(fw_module, tmp_path):
 
     assert lock_path.read_text(encoding="utf-8") == str(fw_module.os.getpid())
     assert fw_module._runtime_lock_handle is None
+
+
+def test_duplicate_manual_stop_is_idempotent(fw_module, monkeypatch):
+    saved = []
+    restored = []
+    monkeypatch.setattr(fw_module, "save_manual_recording_if_configured", lambda *a, **k: saved.append(a))
+    monkeypatch.setattr(fw_module, "_restore_volume_all_async", lambda *a, **k: restored.append(k))
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+
+    fw_module.recording = True
+    fw_module.recording_stop_in_progress = False
+    fw_module.active_recording_session_id = 77
+    fw_module.play_pause_pressed = False
+    fw_module.buffer_index = 0
+    fw_module.pre_recording_buffer_f24 = np.zeros((fw_module.sample_rate, 1), dtype=np.float32)
+    fw_module.audio_buffer = np.ones(5, dtype=np.float32)
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    fw_module.stop_recording(None)
+    fw_module.stop_recording(None)
+
+    queued = []
+    while not fw_module.audio_buffer_queue.empty():
+        queued.append(fw_module.audio_buffer_queue.get())
+
+    assert len(saved) == 1
+    assert len(queued) == 1
+    assert fw_module.recording is False
+    assert fw_module.recording_stop_in_progress is False
+
+
+def test_manual_stop_queues_single_combined_prerecord_and_recording_item(fw_module, monkeypatch):
+    monkeypatch.setattr(fw_module, "save_manual_recording_if_configured", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "_restore_volume_all_async", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+
+    fw_module.recording = True
+    fw_module.recording_stop_in_progress = False
+    fw_module.active_recording_session_id = 88
+    fw_module.play_pause_pressed = False
+    fw_module.buffer_index = 0
+    fw_module.pre_recording_buffer_f24 = np.array(
+        [1.0, 2.0, 3.0], dtype=np.float32
+    ).reshape(-1, 1)
+    fw_module.audio_buffer = np.array([4.0, 5.0], dtype=np.float32)
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    fw_module.stop_recording(None)
+
+    queued_audio, idx = fw_module.audio_buffer_queue.get_nowait()
+    assert idx is None
+    assert np.allclose(queued_audio, [1.0, 2.0, 3.0, 4.0, 5.0])
+    assert fw_module.audio_buffer_queue.empty()
+
+
+def test_manual_stop_drops_immediate_tap_before_transcription(fw_module, monkeypatch):
+    saved = []
+    restored = []
+    monkeypatch.setattr(fw_module, "save_manual_recording_if_configured", lambda *a, **k: saved.append(a))
+    monkeypatch.setattr(fw_module, "_restore_volume_all_async", lambda *a, **k: restored.append(k))
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+
+    fw_module.recording = True
+    fw_module.recording_stop_in_progress = False
+    fw_module.active_recording_session_id = 89
+    fw_module.recording_start_time = fw_module.time.time()
+    fw_module.play_pause_pressed = False
+    fw_module.buffer_index = 0
+    fw_module.pre_recording_buffer_f24 = np.array(
+        [1.0, 2.0, 3.0], dtype=np.float32
+    ).reshape(-1, 1)
+    fw_module.audio_buffer = np.array([], dtype=np.float32)
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    fw_module.stop_recording(None)
+
+    assert saved == []
+    assert fw_module.audio_buffer_queue.empty()
+    assert restored
 
 
 def test_create_wav_buffer(fw_module):

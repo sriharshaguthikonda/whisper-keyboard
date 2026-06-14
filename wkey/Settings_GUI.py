@@ -225,7 +225,7 @@ class SettingsWindow(QWidget):
         self.precheck_cb.setChecked(
             config.get("enable_pre_recording_keyword_check", False)
         )
-        self.wakeword_cb.setChecked(config.get("enable_wakeword_detection", True))
+        self.wakeword_cb.setChecked(config.get("enable_wakeword_detection", False))
         self.edge_selenium_cb.setChecked(config.get("enable_edge_selenium", True))
         self.context_memory_cb.setChecked(
             config.get("enable_transcript_context_memory", True)
