@@ -173,3 +173,42 @@ Verification:
 Questions for user:
 
 - None pending.
+
+
+
+
+
+
+
+## user comments
+
+1. i have already modified the scheduled task to start up as well as to after every hibernation wake up it will kill the existing script and will start it again. so i don't know if that is actually correct modify if it needs to be modified.
+2. update memory system regarding this QUESTION so that it will be injected into your context IN THE REPO nextTIME
+
+
+
+## 2026-06-15 Recovery Simplification
+
+Status: implemented and verified.
+
+Locked decisions:
+
+- Recovery policy moves to external restart.
+- Primary runtime should stop doing in-process hibernate/resume/audio-reconnect recovery.
+- CapsLock/F24 behavior stays.
+- Wake-word code stays available but disabled by default.
+- Scheduled task was already modified by user; discuss task behavior next runtime before changing task automation again.
+
+Current questions for user:
+
+- None pending.
+
+Verification:
+
+- `..\openai\Scripts\python.exe -m pytest tests -q`
+- Result: 76 passed.
+- `git diff --check`
+- Result: clean.
+- Bounded primary-script smoke with `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: process stayed alive for 20s with no stdout/stderr, then bounded smoke process was stopped.
+- Cleanup check: no leftover primary-script process from the smoke run.

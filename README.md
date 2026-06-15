@@ -84,15 +84,15 @@ Optional environment variables:
 - `GROQ_BAD_MODEL_COOLDOWN_SECONDS`: bad-model quarantine duration. Default: `3600`.
 - `GROQ_RATE_LIMIT_COOLDOWN_SECONDS`: per-model rate-limit cooldown. Default: `30`.
 
-## Audio Recovery
+## Recovery Policy
 
-The main runtime includes recovery for hibernate/wake and device churn:
+The main keyboard runtime uses `recovery_policy=external_restart`.
 
-- input-stream restart through `wkey/audio_io.py`;
-- wake-stream restart through `initialize_wake_stream()`;
-- keyboard listener restart after recovery;
-- pre-recording ring buffers for manual and wake-word capture;
-- volume-duck lease recovery through `wkey/volume_lease_manager.py`.
+- hibernate/wake/logon recovery belongs to the Windows scheduled task;
+- input overflow is logged but does not schedule in-process stream recovery;
+- keyboard mode starts no wake-word listener, audio recovery worker, or microphone monitor;
+- wake-word runtime remains available only when settings enable it;
+- volume-duck cleanup remains local through `wkey/volume_lease_manager.py`.
 
 ## Testing
 
