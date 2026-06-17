@@ -29,16 +29,15 @@ python .\wkey\faster_whisper_Mother_of_all_wkey_no_f24.py
 Manual keys:
 
 - `F24`: routes transcript to tool-use command execution.
-- `CapsLock`: routes transcript to clipboard paste by default. Native CapsLock toggling is suppressed while it is enabled as a record key.
-- `right Ctrl`: optional clipboard-paste trigger when explicitly configured.
+- `Left Ctrl`: default clipboard-paste trigger. Release it alone to submit; pressing any other key while held cancels and drops the recording so normal Ctrl shortcuts still work.
 
 Wake words are handled by `wkey/wakeword.py` using local OpenWakeWord models under `wkey/openwakeword_models/`.
 
 Optional environment variables:
 
-- `WKEY`: display/default key label, usually `caps_lock`, `f24`, or `ctrl_r`. Default: `caps_lock`.
+- `WKEY`: display/default key label, usually `ctrl_l` or `f24`. Default: `ctrl_l`.
 - `WKEY_RUNTIME_MODE`: `combined`, `keyboard`, or `wakeword`. Default from settings: `keyboard`.
-- `WKEY_RECORD_KEYS`: comma-separated enabled manual keys. Default: `f24,caps_lock`. Examples: `f24,ctrl_r`, `f24`.
+- `WKEY_RECORD_KEYS`: comma-separated enabled manual keys. Default: `f24,ctrl_l`. Stale `ctrl_r` config is migrated to `ctrl_l`. Example: `f24`.
 - `WKEY_ALLOW_ENV_OVERRIDES`: set to `1` to allow `WKEY_RUNTIME_MODE` and `WKEY_RECORD_KEYS` to override settings/defaults.
 
 ## Settings
@@ -56,9 +55,9 @@ Prerecord and wake-word behavior:
 | Setting state | Runtime behavior |
 | --- | --- |
 | Default settings | Keyboard-only runtime. No wake stream. |
-| Wake-word detection off | No wake stream and no prerecord-only transcription. Manual CapsLock/F24 still works. |
+| Wake-word detection off | No wake stream and no prerecord-only transcription. Manual keyboard triggers still work. |
 | Pre-recording keyword check off | Wake-word prerecord validation is skipped; no prerecord-only STT request is sent. |
-| Manual CapsLock/F24 recording | One transcription request is queued: manual prerecord buffer plus current recording. |
+| Manual keyboard recording | One transcription request is queued: manual prerecord buffer plus current recording. |
 | Very short manual tap | Dropped before transcription so prerecord-only audio is not sent as dictation. |
 | Wake-word detection on and precheck on | Wake-word prerecord buffer is transcribed only for keyword validation before command capture. |
 

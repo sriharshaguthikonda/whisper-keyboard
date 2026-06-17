@@ -107,15 +107,21 @@ except ModuleNotFoundError:
     from wkey.faster_whisper_Mother_of_all_wkey_status_display import make_status_display
 try:
     from settings_manager import (
+        DEFAULT_RECORD_KEYS,
+        record_key_display_text,
         runtime_mode_for_settings,
         load_settings,
+        normalize_record_keys,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
 except ModuleNotFoundError:
     from wkey.settings_manager import (
+        DEFAULT_RECORD_KEYS,
+        record_key_display_text,
         runtime_mode_for_settings,
         load_settings,
+        normalize_record_keys,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
@@ -397,16 +403,15 @@ except AttributeError:
 except Exception as e:
     logging.warning(f"{YELLOW}Failed to apply initial Selenium setting: {e}{RESET}")
 
-# Get the key labels from environment variables, default to 'caps_lock' if not set.
-key_label = os.environ.get("WKEY", "caps_lock").lower()
+# Get the key labels from environment variables, default to Left Ctrl if not set.
+key_label = os.environ.get("WKEY", "ctrl_l").lower()
 SUPPORTED_RECORD_KEYS = {
     'f24': Key.f24,
-    'ctrl_r': Key.ctrl_r,
-    'caps_lock': Key.caps_lock,
+    'ctrl_l': Key.ctrl_l,
 }
 if key_label not in SUPPORTED_RECORD_KEYS:
-    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'caps_lock'")
-    key_label = 'caps_lock'
+    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'ctrl_l'")
+    key_label = 'ctrl_l'
 
 SUPPORTED_RUNTIME_MODES = {"combined", "keyboard", "wakeword"}
 
@@ -436,19 +441,34 @@ def _resolve_runtime_mode(settings, env_mode=None):
 
 runtime_mode = _resolve_runtime_mode(SETTINGS, os.environ.get("WKEY_RUNTIME_MODE"))
 
-record_key_source = (
-    os.environ.get("WKEY_RECORD_KEYS", "f24,caps_lock")
-    if _env_overrides_enabled()
-    else "f24,caps_lock"
-)
-record_key_labels = [label.strip().lower() for label in record_key_source.split(",") if label.strip()]
-RECORD_KEYS = {
-    label: SUPPORTED_RECORD_KEYS[label]
-    for label in record_key_labels
-    if label in SUPPORTED_RECORD_KEYS
-}
-if runtime_mode == "keyboard" and not RECORD_KEYS:
-    RECORD_KEYS = {key_label: SUPPORTED_RECORD_KEYS[key_label]}
+
+def _resolve_record_key_source(settings):
+    if _env_overrides_enabled() and "WKEY_RECORD_KEYS" in os.environ:
+        return normalize_record_keys(
+            os.environ.get("WKEY_RECORD_KEYS", ""),
+            allow_empty=True,
+        )
+    return normalize_record_keys(settings.get("record_keys", DEFAULT_RECORD_KEYS))
+
+
+def _build_record_keys(record_key_source, mode):
+    record_key_labels = [
+        label.strip().lower()
+        for label in record_key_source.split(",")
+        if label.strip()
+    ]
+    keys = {
+        label: SUPPORTED_RECORD_KEYS[label]
+        for label in record_key_labels
+        if label in SUPPORTED_RECORD_KEYS
+    }
+    if mode == "keyboard" and not keys:
+        keys = {key_label: SUPPORTED_RECORD_KEYS[key_label]}
+    return keys
+
+
+record_key_source = _resolve_record_key_source(SETTINGS)
+RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
 
 
 def is_keyboard_runtime_enabled():
@@ -459,35 +479,11 @@ def is_wakeword_runtime_enabled():
     return runtime_mode in {"combined", "wakeword"}
 
 
-def is_caps_lock_suppression_enabled():
-    return RECORD_KEYS.get("caps_lock") == Key.caps_lock
-
 def map_key_to_keyword_index(key):
     """Return keyword index for a given manual trigger key."""
     if RECORD_KEYS.get('f24') is not None and key == RECORD_KEYS['f24']:
         return 0  # Route directly to execute_command_run_with_tool
     return None  # Default manual (paste) pathway
-
-
-CAPS_LOCK_VK = 0x14
-KEY_PRESS_MESSAGES = {0x0100, 0x0104}
-KEY_RELEASE_MESSAGES = {0x0101, 0x0105}
-
-
-def keyboard_event_filter(msg, data):
-    """Suppress native CapsLock toggling while CapsLock is a record key."""
-    if not is_caps_lock_suppression_enabled():
-        return True
-    if getattr(data, "vkCode", None) != CAPS_LOCK_VK:
-        return True
-    try:
-        if msg in KEY_PRESS_MESSAGES:
-            on_press(Key.caps_lock)
-        elif msg in KEY_RELEASE_MESSAGES:
-            on_release(Key.caps_lock)
-    except Exception as e:
-        logging.error(f"Error in keyboard_event_filter: {e}", exc_info=True)
-    return False
 
 keyboard_controller = KeyboardController()
 recording = False
@@ -571,10 +567,16 @@ def get_groq_audio_model():
 settings_watch_handle = None
 
 def apply_settings(new_settings):
-    global SETTINGS, runtime_mode, gpu_available, model, model_device, cpu_model_initialized
+    global SETTINGS, runtime_mode, record_key_source, RECORD_KEYS
+    global gpu_available, model, model_device, cpu_model_initialized
     wakeword_was_enabled = is_wakeword_runtime_enabled()
     SETTINGS = new_settings
     runtime_mode = _resolve_runtime_mode(SETTINGS)
+    record_key_source = _resolve_record_key_source(SETTINGS)
+    RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
+    handler = globals().get("keyboard_handler")
+    if handler is not None:
+        handler.record_keys = set(RECORD_KEYS.values())
     wakeword_is_enabled = is_wakeword_runtime_enabled()
 
     want_gpu = SETTINGS.get("use_local_gpu", True)
@@ -729,8 +731,11 @@ keyword_validation_result = None
 KEYWORD_VALIDATION_TIMEOUT = 1.5
 MIN_MANUAL_RECORDING_SECONDS = 0.25
 MANUAL_RECORDING_SUPPRESSION_SECONDS = 2.0
+MANUAL_RECORDING_CANCEL_PENDING_SECONDS = 1.0
 manual_recording_suppressed_until = 0.0
 manual_recording_suppression_reason = ""
+manual_recording_cancel_pending_until = 0.0
+manual_recording_cancel_pending_reason = ""
 recording_start_time = 0.0
 recording_session_counter = 0
 active_recording_session_id = 0
@@ -757,6 +762,7 @@ input_stream_lock = threading.RLock()
 wake_stream_lock = threading.RLock()
 keyboard_listener_lock = threading.Lock()
 manual_recording_suppression_lock = threading.Lock()
+manual_recording_cancel_lock = threading.Lock()
 keyboard_listener_restart_requested = threading.Event()
 keyboard_listener = None
 
@@ -1403,6 +1409,88 @@ def _cancel_recording_start_if_invalid(recording_session_id, keyword_index, cont
     play_pause_pressed = False
     return True
 
+
+def _is_manual_recording_keyword(keyword_index):
+    return keyword_index in (None, 0)
+
+
+def _mark_manual_recording_cancel_pending(reason):
+    global manual_recording_cancel_pending_until
+    global manual_recording_cancel_pending_reason
+
+    with manual_recording_cancel_lock:
+        manual_recording_cancel_pending_until = (
+            time.time() + MANUAL_RECORDING_CANCEL_PENDING_SECONDS
+        )
+        manual_recording_cancel_pending_reason = str(reason)
+
+
+def _clear_manual_recording_cancel_pending():
+    global manual_recording_cancel_pending_until
+    global manual_recording_cancel_pending_reason
+
+    with manual_recording_cancel_lock:
+        manual_recording_cancel_pending_until = 0.0
+        manual_recording_cancel_pending_reason = ""
+
+
+def _consume_manual_recording_cancel_pending(keyword_index):
+    global manual_recording_cancel_pending_until
+    global manual_recording_cancel_pending_reason
+
+    if not _is_manual_recording_keyword(keyword_index):
+        return False, ""
+    with manual_recording_cancel_lock:
+        remaining = manual_recording_cancel_pending_until - time.time()
+        if remaining <= 0:
+            return False, ""
+        reason = manual_recording_cancel_pending_reason
+        manual_recording_cancel_pending_until = 0.0
+        manual_recording_cancel_pending_reason = ""
+    return True, reason
+
+
+def cancel_recording(keyword_index, reason):
+    global recording, play_pause_pressed, audio_buffer, active_recording_session_id
+    global recording_stop_in_progress
+
+    if not _is_manual_recording_keyword(keyword_index):
+        logging.info(
+            "Ignoring cancel_recording for non-manual keyword_index=%s reason=%s",
+            keyword_index,
+            reason,
+        )
+        return
+
+    reason = str(reason)
+    with recording_lock:
+        was_recording = recording
+        session_id = active_recording_session_id
+        if recording and not recording_stop_in_progress:
+            recording = False
+            active_recording_session_id = 0
+            _clear_manual_recording_cancel_pending()
+        else:
+            _mark_manual_recording_cancel_pending(reason)
+
+    with audio_data_lock:
+        audio_buffer = np.array([], dtype="float32")
+
+    play_pause_pressed = False
+    force_release_volume_ducking(
+        f"cancel_recording:{reason}",
+        level=logging.WARNING,
+    )
+    logging.info(
+        "manual_recording_cancelled keyword_index=%s reason=%s "
+        "was_recording=%s session_id=%s queued_audio=dropped",
+        keyword_index,
+        reason,
+        was_recording,
+        session_id,
+    )
+
+
 def start_recording(keyword_index=None):
     """Start recording audio.
     
@@ -1418,6 +1506,18 @@ def start_recording(keyword_index=None):
             return
 
         if keyword_index in (None, 0):
+            cancel_pending, cancel_reason = _consume_manual_recording_cancel_pending(
+                keyword_index
+            )
+            if cancel_pending:
+                logging.info(
+                    "Manual recording start canceled before activation "
+                    "keyword_index=%s reason=%s",
+                    keyword_index,
+                    cancel_reason,
+                )
+                return
+
             remaining, suppression_reason = _manual_recording_suppression_remaining()
             if remaining > 0:
                 logging.info(
@@ -1774,6 +1874,16 @@ def _start_recording_async(keyword_index):
 def _stop_recording_async(keyword_index):
     threading.Thread(target=stop_recording, args=(keyword_index,)).start()
 
+
+def _cancel_recording_async(keyword_index, reason):
+    threading.Thread(
+        target=cancel_recording,
+        args=(keyword_index, reason),
+        daemon=True,
+        name="ManualRecordingCancel",
+    ).start()
+
+
 def _capture_wake_command(keyword_index, grace_seconds=COMPUTER_WAKE_CAPTURE_GRACE_SECONDS):
     start_recording(keyword_index)
     with recording_lock:
@@ -1806,6 +1916,8 @@ def init_keyboard_handler():
         map_key_to_keyword_index=map_key_to_keyword_index,
         start_recording=_start_recording_async,
         stop_recording=_stop_recording_async,
+        cancel_recording=_cancel_recording_async,
+        cancel_on_chord_keys={Key.ctrl_l},
         toggle_pause=toggle_pause_state,
         debounce_time=0.5,
         log=logging,
@@ -2159,11 +2271,7 @@ def start_listener():
     global keyboard_listener
     listener = None
     try:
-        listener = Listener(
-            on_press=on_press,
-            on_release=on_release,
-            event_filter=keyboard_event_filter,
-        )
+        listener = Listener(on_press=on_press, on_release=on_release)
         with keyboard_listener_lock:
             keyboard_listener = listener
         with listener:
@@ -2213,6 +2321,7 @@ def reset_state():
         active_recording_session_id = 0
         play_pause_pressed = False
         audio_buffer = np.array([], dtype="float32")
+        _clear_manual_recording_cancel_pending()
         force_release_volume_ducking("reset_state", level=logging.WARNING)
         logging.info("State reset completed")
     except Exception as e:
@@ -2378,12 +2487,13 @@ def display_pause_status(start: bool = True):
                 f"resume wake words{RESET}"
             )
         else:
+            manual_keys_text = record_key_display_text(record_key_source)
             active_message = (
-                f"{GREEN}Keyboard dictation active - Hold F24 or CapsLock to record. "
+                f"{GREEN}Keyboard dictation active - Hold {manual_keys_text} to record. "
                 f"Wake-word detection is off.{RESET}"
             )
             paused_message = (
-                f"{RED}WAKE-WORD DETECTION OFF - Manual F24/CapsLock dictation still "
+                f"{RED}WAKE-WORD DETECTION OFF - Manual {manual_keys_text} dictation still "
                 f"allowed{RESET}"
             )
 
@@ -2576,19 +2686,16 @@ def main():
     logging.info(
         "Startup diagnostics: pid=%s runtime_mode=%s wakeword_enabled=%s "
         "precheck_enabled=%s keyboard_enabled=%s enabled_record_keys=%s "
-        "capslock_suppression=%s env_overrides_enabled=%s recovery_policy=%s",
+        "env_overrides_enabled=%s recovery_policy=%s",
         os.getpid(),
         runtime_mode,
         is_wakeword_runtime_enabled(),
         is_pre_recording_keyword_check_enabled(),
         is_keyboard_runtime_enabled(),
         ",".join(RECORD_KEYS.keys()) or "none",
-        is_caps_lock_suppression_enabled(),
         _env_overrides_enabled(),
         RECOVERY_POLICY,
     )
-    if is_caps_lock_suppression_enabled():
-        logging.info(f"{GREEN}CapsLock native toggle suppression active.{RESET}")
     logging.info(
         f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
     )

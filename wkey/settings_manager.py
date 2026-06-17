@@ -15,6 +15,26 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_RECORD_KEYS = "f24,ctrl_l"
+SUPPORTED_RECORD_KEY_LABELS = ("f24", "ctrl_l")
+RECORD_KEY_DISPLAY_NAMES = {
+    "f24": "F24",
+    "ctrl_l": "Left Ctrl",
+}
+RECORD_KEY_ALIASES = {
+    "f24": "f24",
+    "left ctrl": "ctrl_l",
+    "left control": "ctrl_l",
+    "lctrl": "ctrl_l",
+    "ctrl_l": "ctrl_l",
+    "left_ctrl": "ctrl_l",
+    "right ctrl": "ctrl_l",
+    "right control": "ctrl_l",
+    "rctrl": "ctrl_l",
+    "ctrl_r": "ctrl_l",
+    "right_ctrl": "ctrl_l",
+}
+
 DEFAULT_SETTINGS = {
     "use_local_gpu": True,
     "use_local_cpu": True,
@@ -31,7 +51,52 @@ DEFAULT_SETTINGS = {
     "context_max_age_seconds": 180,
     "max_recording_seconds": 45,
     "google_wake_volume_hold_seconds": 2.5,
+    "record_keys": DEFAULT_RECORD_KEYS,
 }
+
+
+def normalize_record_key_label(label):
+    if label is None:
+        return None
+    normalized = str(label).strip().lower().replace("-", " ").replace("_", " ")
+    normalized = " ".join(normalized.split())
+    return RECORD_KEY_ALIASES.get(normalized) or RECORD_KEY_ALIASES.get(
+        normalized.replace(" ", "_")
+    )
+
+
+def normalize_record_keys(value, default=DEFAULT_RECORD_KEYS, allow_empty=False):
+    if value is None:
+        pieces = str(default).split(",")
+    elif isinstance(value, (list, tuple, set)):
+        pieces = value
+    else:
+        pieces = str(value).split(",")
+
+    selected = set()
+    for piece in pieces:
+        label = normalize_record_key_label(piece)
+        if label in SUPPORTED_RECORD_KEY_LABELS:
+            selected.add(label)
+
+    if not selected:
+        if allow_empty:
+            return ""
+        if default in (None, value):
+            return DEFAULT_RECORD_KEYS
+        return normalize_record_keys(default, default=DEFAULT_RECORD_KEYS)
+
+    return ",".join(label for label in SUPPORTED_RECORD_KEY_LABELS if label in selected)
+
+
+def record_key_display_text(record_keys):
+    normalized = normalize_record_keys(record_keys)
+    names = [
+        RECORD_KEY_DISPLAY_NAMES[label]
+        for label in normalized.split(",")
+        if label in RECORD_KEY_DISPLAY_NAMES
+    ]
+    return " or ".join(names) if names else "None"
 
 
 def _validate_settings(settings, defaults):
@@ -68,6 +133,8 @@ def _validate_settings(settings, defaults):
                 merged[key] = max(0.0, float(value))
             except Exception:
                 pass
+        elif key == "record_keys":
+            merged[key] = normalize_record_keys(value)
         else:
             merged[key] = value
     return merged
@@ -79,7 +146,9 @@ def runtime_mode_for_settings(settings):
 
 def build_backend_environment(settings, base_env=None):
     env = dict(os.environ if base_env is None else base_env)
-    env["WKEY_RECORD_KEYS"] = "f24,caps_lock"
+    env["WKEY_RECORD_KEYS"] = normalize_record_keys(
+        settings.get("record_keys", DEFAULT_RECORD_KEYS)
+    )
     env["WKEY_RUNTIME_MODE"] = runtime_mode_for_settings(settings)
     return env
 

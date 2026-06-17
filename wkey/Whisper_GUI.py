@@ -6,8 +6,12 @@ from datetime import datetime, timedelta
 import json
 import subprocess
 from settings_manager import (
+    DEFAULT_RECORD_KEYS,
     build_backend_environment,
     load_settings as settings_load,
+    normalize_record_key_label,
+    normalize_record_keys,
+    record_key_display_text,
     save_settings as settings_save,
     DEFAULT_SETTINGS as TRANSCRIPTION_DEFAULTS,
 )
@@ -18,15 +22,20 @@ except ModuleNotFoundError:
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QCheckBox, QSystemTrayIcon, QMenu, QFrame, QGridLayout, QSizePolicy,
-    QLineEdit, QToolButton, QMessageBox
+    QComboBox, QLineEdit, QToolButton, QMessageBox
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QAction
 
 try:
     import keyboard
 except ImportError:
     keyboard = None
+
+RECORD_KEY_PRESETS = (
+    ("F24 or Left Ctrl", "f24,ctrl_l"),
+    ("F24 only", "f24"),
+)
 
 try:
     import win32con
@@ -36,6 +45,9 @@ except ImportError:
     win32gui = None
 
 class VoicePauseController(QMainWindow):
+    record_key_captured = pyqtSignal(str)
+    record_key_capture_error = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         
@@ -62,6 +74,9 @@ class VoicePauseController(QMainWindow):
         self.config_file = "voice_pause_config.json"
         self.transcription_config_file = "transcription_config.json"
         self._loading_transcription_settings = False
+        self._capturing_record_key = False
+        self.record_key_captured.connect(self._finish_record_key_capture)
+        self.record_key_capture_error.connect(self._record_key_capture_failed)
         
         self.setup_gui()
         self.load_config()
@@ -308,7 +323,7 @@ class VoicePauseController(QMainWindow):
         self._add_with_info_button(
             controls_layout,
             self.wakeword_cb,
-            "Turns wake-word listening on or off. Manual CapsLock/F24 controls still work when off.",
+            "Turns wake-word listening on or off. Manual keyboard controls still work when off.",
         )
 
         self.precheck_cb = QCheckBox("Validate detected wake word before command capture")
@@ -321,6 +336,34 @@ class VoicePauseController(QMainWindow):
             self.precheck_cb,
             "Checks a short pre-buffer after wake-word detection. This is not the wake-word on/off switch.",
         )
+
+        manual_keys_row = QHBoxLayout()
+        manual_keys_row.setSpacing(6)
+        manual_keys_label = QLabel("Manual keys:")
+        manual_keys_label.setFont(QFont("Segoe UI", 10))
+        self.record_keys_combo = QComboBox()
+        self.record_keys_combo.setObjectName("recordKeysCombo")
+        self.record_keys_combo.setFont(QFont("Segoe UI", 10))
+        self.record_keys_combo.setToolTip("Keys that start manual recording")
+        for label, value in RECORD_KEY_PRESETS:
+            self.record_keys_combo.addItem(label, value)
+        self.record_keys_combo.currentIndexChanged.connect(self.save_transcription_settings)
+        self.capture_record_key_btn = QPushButton("Capture")
+        self.capture_record_key_btn.setObjectName("captureRecordKeyButton")
+        self.capture_record_key_btn.setFont(QFont("Segoe UI", 10))
+        self.capture_record_key_btn.setMinimumWidth(82)
+        self.capture_record_key_btn.setToolTip("Capture Left Ctrl or F24")
+        self.capture_record_key_btn.clicked.connect(self.start_record_key_capture)
+        manual_keys_row.addWidget(manual_keys_label)
+        manual_keys_row.addWidget(self.record_keys_combo, 1)
+        manual_keys_row.addWidget(self.capture_record_key_btn)
+        manual_keys_row.addWidget(
+            self._create_info_button(
+                "Left Ctrl records only when released alone. Any Ctrl+key chord "
+                "cancels the recording and keeps the shortcut available."
+            )
+        )
+        controls_layout.addLayout(manual_keys_row)
 
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
         self.edge_selenium_cb.setObjectName("settingsCheckbox")
@@ -601,6 +644,7 @@ class VoicePauseController(QMainWindow):
             self.context_memory_cb.setChecked(
                 config.get("enable_transcript_context_memory", True)
             )
+            self._set_record_keys_combo(config.get("record_keys", DEFAULT_RECORD_KEYS))
             self.max_retries_input.setText(str(config.get("max_retries", 3)))
         except Exception as e:
             print(f"Error loading transcription settings: {e}")
@@ -630,12 +674,74 @@ class VoicePauseController(QMainWindow):
                     "enable_pre_recording_keyword_check": self.precheck_cb.isChecked(),
                     "enable_edge_selenium": self.edge_selenium_cb.isChecked(),
                     "enable_transcript_context_memory": self.context_memory_cb.isChecked(),
+                    "record_keys": self.record_keys_combo.currentData()
+                    or DEFAULT_RECORD_KEYS,
                     "max_retries": max_retries,
                 }
             )
             settings_save(self.transcription_config_file, config)
         except Exception as e:
             print(f"Error saving transcription settings: {e}")
+
+    def _set_record_keys_combo(self, record_keys):
+        normalized = normalize_record_keys(record_keys)
+        for index in range(self.record_keys_combo.count()):
+            if self.record_keys_combo.itemData(index) == normalized:
+                self.record_keys_combo.setCurrentIndex(index)
+                return
+        self.record_keys_combo.setCurrentIndex(0)
+
+    def _record_keys_from_captured_name(self, key_name):
+        label = normalize_record_key_label(key_name)
+        if label is None:
+            return None
+        if label == "f24":
+            return "f24"
+        return normalize_record_keys(["f24", label])
+
+    def start_record_key_capture(self):
+        if self._capturing_record_key:
+            self._capturing_record_key = False
+            self.capture_record_key_btn.setText("Capture")
+            self.error_label.setText("Hotkey capture canceled")
+            return
+        if keyboard is None:
+            self.error_label.setText("Hotkey capture unavailable: keyboard library missing")
+            return
+
+        self._capturing_record_key = True
+        self.capture_record_key_btn.setText("Cancel")
+        self.error_label.setText("Press Left Ctrl or F24")
+        threading.Thread(target=self._capture_record_key_worker, daemon=True).start()
+
+    def _capture_record_key_worker(self):
+        try:
+            while self._capturing_record_key:
+                event = keyboard.read_event(suppress=False)
+                if getattr(event, "event_type", None) == "down":
+                    key_name = getattr(event, "name", "")
+                    self.record_key_captured.emit(key_name)
+                    return
+        except Exception as e:
+            self.record_key_capture_error.emit(str(e))
+
+    def _finish_record_key_capture(self, key_name):
+        if not self._capturing_record_key:
+            return
+        self._capturing_record_key = False
+        self.capture_record_key_btn.setText("Capture")
+        record_keys = self._record_keys_from_captured_name(key_name)
+        if record_keys is None:
+            self.error_label.setText("Unsupported key. Use Left Ctrl or F24.")
+            return
+        self._set_record_keys_combo(record_keys)
+        self.save_transcription_settings()
+        self.error_label.setText(f"Manual keys set: {record_key_display_text(record_keys)}")
+
+    def _record_key_capture_failed(self, error):
+        self._capturing_record_key = False
+        self.capture_record_key_btn.setText("Capture")
+        self.error_label.setText(f"Hotkey capture failed: {error}")
 
     def toggle_pause(self):
         if self.is_paused:

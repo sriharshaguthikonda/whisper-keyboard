@@ -211,4 +211,126 @@ Verification:
 - Result: clean.
 - Bounded primary-script smoke with `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py`
 - Result: process stayed alive for 20s with no stdout/stderr, then bounded smoke process was stopped.
+
+## 2026-06-16 Hotkey Revert And GUI Picker
+
+Status: implemented and verified.
+
+Current plan:
+
+- Preserved current CapsLock implementation on branch `capslock-trigger-experiment`.
+- Changed active branch defaults back from `f24,caps_lock` to `f24,ctrl_r`.
+- Kept CapsLock available as an explicit user-selected option, not default.
+- Added a GUI manual-key setting with presets and a capture button.
+- Added tests for default key behavior, setting normalization, configured CapsLock opt-in, and live `apply_settings` key refresh.
+
+Research so far:
+
+- Public pynput/Windows reports show CapsLock can be unreliable as a global hotkey.
+- Windows suppression for pynput requires `win32_event_filter`; global `suppress=True` is too broad.
+- CapsLock is a toggle key, so it has more stuck-state and repeat-event risk than Right Ctrl.
+
+Questions for user:
+
+- None pending.
+
+Verification:
+
+- `..\openai\Scripts\python.exe -m pytest tests\test_settings_manager.py tests\test_faster_whisper.py::test_default_manual_record_keys_use_right_ctrl tests\test_faster_whisper.py::test_right_ctrl_remains_supported_when_configured tests\test_faster_whisper.py::test_stale_env_record_keys_ignored_without_override tests\test_faster_whisper.py::test_caps_lock_event_filter_suppresses_native_toggle tests\test_faster_whisper.py::test_start_listener_passes_caps_lock_event_filter -q`
+- Result: 9 passed.
+- `..\openai\Scripts\python.exe -m pytest tests -q`
+- Result: 79 passed.
+- `..\openai\Scripts\python.exe -m py_compile wkey\Whisper_GUI.py wkey\Settings_GUI.py wkey\settings_manager.py wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: clean.
+- `git diff --check`
+- Result: clean.
+- Bounded primary-script smoke with `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: ran for 20 seconds, stopped by PID, no stdout/stderr, PID gone.
+- Cleanup check: no matching primary-script Python process remains.
 - Cleanup check: no leftover primary-script process from the smoke run.
+
+
+
+
+
+## user comments
+1. make memories!
+
+
+## 2026-06-17 PowerToys CapsLock To Right Ctrl Repeat
+
+Status: implemented and verified.
+
+Current finding:
+
+- User remapped physical CapsLock to Right Ctrl in PowerToys.
+- Live log shows `pressed_keys=Key.caps_lock,Key.ctrl_r` while configured manual keys are `F24 or Right Ctrl`.
+- CapsLock suppression was not the main active default path, because default `RECORD_KEYS` no longer includes CapsLock.
+- Root cause in handler: repeated key-down events for an already-held record key could become eligible again after `record_rearm_delay` without requiring a release. PowerToys remap exposes this because held CapsLock can emit repeated `ctrl_r` events while raw CapsLock also appears in pressed state.
+
+Implementation:
+
+- Added regression test that held Right Ctrl repeats do not restart recording after rearm delay until release occurs.
+- Added regression test that unconfigured CapsLock is not tracked when only Right Ctrl is a record key.
+- `KeyboardShortcutHandler` now tracks only app-relevant keys and ignores already-held record-key repeats as `press_ignored_repeat`.
+- `start_listener()` now attaches CapsLock `event_filter` only when CapsLock is explicitly configured as a record key.
+
+Verification so far:
+
+- `..\openai\Scripts\python.exe -m pytest tests\test_keyboard_shortcuts.py::test_held_record_key_repeats_do_not_restart_after_rearm_delay tests\test_keyboard_shortcuts.py::test_unconfigured_caps_lock_is_not_tracked_with_right_ctrl_record_key -q`
+- Red result before code: 2 failed.
+- Green result after code: 2 passed.
+- `..\openai\Scripts\python.exe -m pytest tests\test_keyboard_shortcuts.py tests\test_faster_whisper.py::test_start_listener_omits_caps_lock_event_filter_when_caps_lock_disabled tests\test_faster_whisper.py::test_start_listener_passes_caps_lock_event_filter_when_caps_lock_enabled -q`
+- Result: 10 passed.
+- `..\openai\Scripts\python.exe -m pytest tests\test_keyboard_shortcuts.py tests\test_settings_manager.py tests\test_faster_whisper.py::test_default_manual_record_keys_use_right_ctrl tests\test_faster_whisper.py::test_apply_settings_updates_manual_record_keys tests\test_faster_whisper.py::test_caps_lock_event_filter_suppresses_native_toggle tests\test_faster_whisper.py::test_start_listener_omits_caps_lock_event_filter_when_caps_lock_disabled tests\test_faster_whisper.py::test_start_listener_passes_caps_lock_event_filter_when_caps_lock_enabled -q`
+- Result: 17 passed.
+- `..\openai\Scripts\python.exe -m pytest tests -q`
+- Result: 82 passed.
+- `..\openai\Scripts\python.exe -m py_compile wkey\keyboard_shortcuts.py wkey\faster_whisper_Mother_of_all_wkey.py wkey\Whisper_GUI.py wkey\Settings_GUI.py wkey\settings_manager.py`
+- Result: clean.
+- `git diff --check`
+- Result: clean.
+- Bounded primary-script smoke with `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: stayed alive for 20 seconds, stopped by own PID, no stdout/stderr, no leftover primary-script Python process.
+- First Start-Process smoke harness returned exit code 1 with no stdout/stderr; direct captured Process harness showed the script itself runs cleanly.
+
+Questions for user:
+
+- None pending.
+2. you are supposed to remove those remnants of code from the caps lock related work from this branch. why are you so incompetent? see if there are any remnants of the previous caps lock related code and get rid of that from this branch
+
+## 2026-06-18 Left Ctrl Chord-Safe Dictation Trigger
+
+Status: implemented and verified.
+
+Decision:
+
+- Default manual keys are `f24,ctrl_l`.
+- Left Ctrl submits dictation only when released without any other key press.
+- If any other key is pressed while Left Ctrl is held, recording cancels immediately and audio is dropped.
+- Stale `ctrl_r` config is migrated to `ctrl_l`.
+- CapsLock is removed from active supported/default/manual GUI paths on this branch.
+
+Verification so far:
+
+- Red focused tests first: 10 failed for missing Left Ctrl default, missing cancel callback, missing pending cancel guard, and old `ctrl_r` defaults.
+- Green focused tests after implementation:
+  `..\openai\Scripts\python.exe -m pytest tests\test_keyboard_shortcuts.py tests\test_settings_manager.py tests\test_faster_whisper.py::test_default_manual_record_keys_use_left_ctrl tests\test_faster_whisper.py::test_stale_right_ctrl_config_maps_to_left_ctrl tests\test_faster_whisper.py::test_stale_env_record_keys_ignored_without_override tests\test_faster_whisper.py::test_start_listener_uses_plain_key_callbacks tests\test_faster_whisper.py::test_wakeword_setting_off_keeps_manual_keys tests\test_faster_whisper.py::test_apply_settings_updates_manual_record_keys tests\test_faster_whisper.py::test_pending_manual_cancel_blocks_late_start -q`
+- Result: 20 passed.
+- Focused full hotkey/settings/runtime suite:
+  `..\openai\Scripts\python.exe -m pytest tests\test_keyboard_shortcuts.py tests\test_settings_manager.py tests\test_faster_whisper.py -q`
+- Result: 45 passed.
+- Full suite:
+  `..\openai\Scripts\python.exe -m pytest tests -q`
+- Result: 82 passed.
+- Compile:
+  `..\openai\Scripts\python.exe -m py_compile wkey\keyboard_shortcuts.py wkey\settings_manager.py wkey\Whisper_GUI.py wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: clean.
+- `git diff --check`
+- Result: clean.
+- Bounded primary-script smoke with `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py`
+- Result: stayed alive for 20 seconds, stopped by own PID, no stdout/stderr, no leftover process.
+
+Questions for user:
+
+- None pending.

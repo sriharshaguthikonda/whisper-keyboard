@@ -24,23 +24,23 @@ def test_validate_audio_buffer(fw_module):
     assert fw_module.validate_audio_buffer(good) is True
 
 
-def test_default_manual_record_keys_use_caps_lock(monkeypatch):
+def test_default_manual_record_keys_use_left_ctrl(monkeypatch):
     monkeypatch.delenv("WKEY", raising=False)
     monkeypatch.delenv("WKEY_RECORD_KEYS", raising=False)
     monkeypatch.delenv("WKEY_ALLOW_ENV_OVERRIDES", raising=False)
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
     mod = importlib.reload(mod)
 
-    assert mod.key_label == "caps_lock"
+    assert mod.key_label == "ctrl_l"
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "caps_lock": mod.Key.caps_lock,
+        "ctrl_l": mod.Key.ctrl_l,
     }
     assert mod.map_key_to_keyword_index(mod.Key.f24) == 0
-    assert mod.map_key_to_keyword_index(mod.Key.caps_lock) is None
+    assert mod.map_key_to_keyword_index(mod.Key.ctrl_l) is None
 
 
-def test_right_ctrl_remains_supported_when_configured(monkeypatch):
+def test_stale_right_ctrl_config_maps_to_left_ctrl(monkeypatch):
     monkeypatch.setenv("WKEY_ALLOW_ENV_OVERRIDES", "1")
     monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
@@ -48,9 +48,9 @@ def test_right_ctrl_remains_supported_when_configured(monkeypatch):
 
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "ctrl_r": mod.Key.ctrl_r,
+        "ctrl_l": mod.Key.ctrl_l,
     }
-    assert mod.map_key_to_keyword_index(mod.Key.ctrl_r) is None
+    assert mod.map_key_to_keyword_index(mod.Key.ctrl_l) is None
 
 
 def test_stale_env_record_keys_ignored_without_override(monkeypatch):
@@ -62,36 +62,12 @@ def test_stale_env_record_keys_ignored_without_override(monkeypatch):
 
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "caps_lock": mod.Key.caps_lock,
+        "ctrl_l": mod.Key.ctrl_l,
     }
     assert mod.runtime_mode == "keyboard"
 
 
-def test_caps_lock_event_filter_suppresses_native_toggle(fw_module, monkeypatch):
-    events = []
-    monkeypatch.setattr(fw_module, "RECORD_KEYS", {"caps_lock": fw_module.Key.caps_lock})
-    monkeypatch.setattr(
-        fw_module,
-        "on_press",
-        lambda key: events.append(("press", key)),
-    )
-    monkeypatch.setattr(
-        fw_module,
-        "on_release",
-        lambda key: events.append(("release", key)),
-    )
-
-    data = types.SimpleNamespace(vkCode=fw_module.CAPS_LOCK_VK)
-
-    assert fw_module.keyboard_event_filter(0x0100, data) is False
-    assert fw_module.keyboard_event_filter(0x0101, data) is False
-    assert events == [
-        ("press", fw_module.Key.caps_lock),
-        ("release", fw_module.Key.caps_lock),
-    ]
-
-
-def test_start_listener_passes_caps_lock_event_filter(fw_module, monkeypatch):
+def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
     captured = {}
 
     class FakeListener:
@@ -108,10 +84,15 @@ def test_start_listener_passes_caps_lock_event_filter(fw_module, monkeypatch):
             return None
 
     monkeypatch.setattr(fw_module, "Listener", FakeListener)
+    monkeypatch.setattr(
+        fw_module,
+        "RECORD_KEYS",
+        {"f24": fw_module.Key.f24, "ctrl_l": fw_module.Key.ctrl_l},
+    )
 
     fw_module.start_listener()
 
-    assert captured["kwargs"]["event_filter"] is fw_module.keyboard_event_filter
+    assert "event_filter" not in captured["kwargs"]
 
 
 def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
@@ -131,8 +112,49 @@ def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
     assert fw_module.is_keyboard_runtime_enabled() is True
     assert fw_module.is_wakeword_runtime_enabled() is False
     assert fw_module.RECORD_KEYS["f24"] == fw_module.Key.f24
-    assert fw_module.RECORD_KEYS["caps_lock"] == fw_module.Key.caps_lock
+    assert fw_module.RECORD_KEYS["ctrl_l"] == fw_module.Key.ctrl_l
     assert closed == ["closed"]
+
+
+def test_apply_settings_updates_manual_record_keys(fw_module):
+    settings = dict(fw_module.SETTINGS)
+    settings["record_keys"] = "f24,ctrl_r"
+    fw_module.apply_settings(settings)
+
+    assert fw_module.RECORD_KEYS == {
+        "f24": fw_module.Key.f24,
+        "ctrl_l": fw_module.Key.ctrl_l,
+    }
+
+
+def test_pending_manual_cancel_blocks_late_start(fw_module, monkeypatch):
+    initialized = []
+    releases = []
+    fw_module.recording = False
+    fw_module.recording_stop_in_progress = False
+    fw_module.active_recording_session_id = 0
+
+    monkeypatch.setattr(
+        fw_module,
+        "initialize_input_stream",
+        lambda: initialized.append(True) or True,
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "force_release_volume_ducking",
+        lambda reason, level=fw_module.logging.WARNING: releases.append(reason),
+    )
+    monkeypatch.setattr(fw_module, "decrease_volume_all", lambda: None)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "check_pause_status", lambda: False)
+
+    fw_module.cancel_recording(None, "chord:c")
+    fw_module.start_recording(None)
+
+    assert initialized == []
+    assert fw_module.recording is False
+    assert fw_module.active_recording_session_id == 0
+    assert "cancel_recording:chord:c" in releases
 
 
 def test_input_overflow_logs_without_scheduling_recovery(fw_module, monkeypatch):

@@ -85,7 +85,7 @@ class SettingsWindow(QWidget):
         self.layout.addLayout(
             self._build_checkbox_row(
                 self.wakeword_cb,
-                "Turns wake-word listening on or off. Manual CapsLock/F24 controls still work when off.",
+                "Turns wake-word listening on or off. Manual keyboard controls still work when off.",
             )
         )
         self.layout.addLayout(

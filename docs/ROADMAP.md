@@ -16,8 +16,7 @@ Settings:
 Activation surfaces:
 
 - Manual `F24`: command/tool-use route.
-- Manual `caps_lock`: default dictation/paste route.
-- Manual `ctrl_r`: optional dictation/paste route.
+- Manual `ctrl_l`: default dictation/paste route; release alone submits, any chord cancels and drops audio.
 - Wake words: OpenWakeWord route through `wkey/wakeword.py`.
 
 Runtime modes:
