@@ -1,3 +1,4 @@
+mod engine;
 mod protocol;
 mod triggers;
 mod win_hook;
@@ -10,11 +11,16 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use engine::{PythonEngine, PythonEngineConfig};
+use protocol::EngineCommandMessage;
 use triggers::{TriggerDecision, TriggerEvent, TriggerStateMachine};
 use win_hook::HookKeyEvent;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--engine-smoke") {
+        return run_engine_smoke();
+    }
     if args.iter().any(|arg| arg == "--diagnose-keys") {
         return run_key_diagnostic(parse_seconds(&args)?);
     }
@@ -67,6 +73,20 @@ fn run_key_diagnostic(seconds: u64) -> Result<()> {
         .join()
         .map_err(|_| anyhow::anyhow!("keyboard hook thread panicked"))??;
     println!("diagnostic_complete decisions={decision_count}");
+    Ok(())
+}
+
+fn run_engine_smoke() -> Result<()> {
+    let config = PythonEngineConfig::for_repo(env::current_dir()?)?;
+    let mut engine = PythonEngine::spawn(config)?;
+
+    engine.send(&EngineCommandMessage::status("status-1"))?;
+    let status = engine.recv_event_timeout(Duration::from_secs(180))?;
+    println!("engine_event {status:?}");
+
+    if let Some(shutdown) = engine.shutdown()? {
+        println!("engine_event {shutdown:?}");
+    }
     Ok(())
 }
 

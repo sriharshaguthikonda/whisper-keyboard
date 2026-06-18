@@ -149,6 +149,47 @@ def test_broker_input_owner_skips_python_listener_in_main(fw_module, monkeypatch
     assert "ProcessAudio" in started
 
 
+def test_broker_stdio_mode_skips_console_status_thread(fw_module, monkeypatch):
+    calls = []
+    started = []
+    fw_module.runtime_mode = "keyboard"
+
+    monkeypatch.setenv("WKEY_INPUT_OWNER", "broker")
+    monkeypatch.setenv("WKEY_BROKER_CONTROL", "stdio")
+    monkeypatch.setattr(fw_module, "register_volume_timeout_recovery_hook", lambda: None)
+    monkeypatch.setattr(fw_module, "init_keyboard_handler", lambda: None)
+    monkeypatch.setattr(fw_module, "start_settings_watch", lambda: None)
+    monkeypatch.setattr(fw_module, "init_wakeword_listener", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_wake_stream", lambda: None)
+    monkeypatch.setattr(fw_module, "start_watchdog", lambda: None)
+    monkeypatch.setattr(fw_module, "run_asyncio_in_thread", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "clean_transcript", lambda: None)
+    monkeypatch.setattr(fw_module, "process_audio_async", lambda: None)
+    monkeypatch.setattr(fw_module, "start_broker_control_stdio_thread", lambda: started.append("broker"))
+    monkeypatch.setattr(fw_module.voice_commands_module, "is_selenium_enabled", lambda: False, raising=False)
+    monkeypatch.setattr(
+        fw_module.threading,
+        "Thread",
+        lambda *a, **k: calls.append(k.get("target")) or types.SimpleNamespace(start=lambda: None),
+    )
+    monkeypatch.setattr(fw_module, "wait_for_microphone", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "start_listener", lambda: None)
+    monkeypatch.setattr(fw_module, "start_thread", lambda target, name: started.append(name))
+    monkeypatch.setattr(fw_module, "cleanup", lambda: None)
+    monkeypatch.setattr(
+        fw_module.time,
+        "sleep",
+        lambda seconds: (_ for _ in ()).throw(SystemExit()),
+    )
+
+    with pytest.raises(SystemExit):
+        fw_module.main()
+
+    assert "broker" in started
+    assert fw_module.display_pause_status not in calls
+
+
 def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
     closed = []
     fw_module.runtime_mode = "combined"

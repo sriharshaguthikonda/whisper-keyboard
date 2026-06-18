@@ -2813,7 +2813,10 @@ def main():
             logging.info(
                 f"{YELLOW}Edge/Selenium browser automation disabled in settings. Skipping WebDriver startup.{RESET}"
             )
-        threading.Thread(target=display_pause_status, daemon=True).start()
+        if is_broker_control_stdio_enabled():
+            logging.info("Broker stdio mode active. Skipping console status display.")
+        else:
+            threading.Thread(target=display_pause_status, daemon=True).start()
 
         while not broker_control_shutdown_requested.is_set():
             touch_heartbeat("main loop")
