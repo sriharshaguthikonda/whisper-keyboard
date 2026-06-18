@@ -483,3 +483,19 @@ Implementation progress:
   - Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 92 passed.
   - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
 - Next task: Rust low-level hook diagnostic.
+
+Question 3:
+
+Manual hook diagnostic needs physical key input.
+
+When you are at the keyboard, answer `rerun diagnostic` here and I will run:
+
+`cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 30`
+
+During that 30-second window, press:
+
+- F24 if available.
+- Left Ctrl tap.
+- Hold D+F for more than 0.2s, then release.
+
+Expected: broker prints decision lines only, not raw key streams. `D+F` should only emit after the hold threshold. Normal typing is not suppressed in this diagnostic mode.
