@@ -326,7 +326,7 @@ git commit -m "feat: scaffold Rust hotkey broker state machine"
 **Interfaces:**
 - Produces: `run_keyboard_hook(sender: Sender<KeyEvent>) -> anyhow::Result<()>`.
 
-- [ ] **Step 1: Add `windows` crate features**
+- [x] **Step 1: Add `windows` crate features**
 
 Use:
 
@@ -339,7 +339,7 @@ windows = { version = "0.62", features = [
 ] }
 ```
 
-- [ ] **Step 2: Implement diagnostic CLI**
+- [x] **Step 2: Implement diagnostic CLI**
 
 Command:
 
@@ -359,7 +359,7 @@ Expected:
 - `D+F` only emits diagnostic decision after hold threshold;
 - normal typing is not suppressed in diagnostic mode.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add native/wkey-broker

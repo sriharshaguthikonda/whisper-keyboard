@@ -499,3 +499,13 @@ During that 30-second window, press:
 - Hold D+F for more than 0.2s, then release.
 
 Expected: broker prints decision lines only, not raw key streams. `D+F` should only emit after the hold threshold. Normal typing is not suppressed in this diagnostic mode.
+
+Task 4 automated hook diagnostic code complete: `ee476ff feat: add Rust keyboard hook diagnostic`.
+
+Task 4 verification so far:
+
+- Cargo tests: `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 6 passed.
+- Non-interactive hook smoke: `cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 1` -> hook installed and exited, `decisions=0`.
+- Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 92 passed.
+- Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+- Pending: physical 30-second key diagnostic from Question 3.
