@@ -267,7 +267,7 @@ git commit -m "feat: add broker stdio mode to Python engine"
 **Interfaces:**
 - Produces Rust `EngineCommand`, `TriggerEvent`, `TriggerDecision`, `TriggerStateMachine`.
 
-- [ ] **Step 1: Add failing Rust tests in `triggers.rs`**
+- [x] **Step 1: Add failing Rust tests in `triggers.rs`**
 
 Cover:
 
@@ -282,7 +282,7 @@ left_ctrl_chord_cancels()
 
 Use default `D+F` hold threshold `180ms`.
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 ```powershell
 cargo test --manifest-path native\wkey-broker\Cargo.toml
@@ -290,7 +290,7 @@ cargo test --manifest-path native\wkey-broker\Cargo.toml
 
 Expected: scaffold/tests missing or failing.
 
-- [ ] **Step 3: Implement pure state machine**
+- [x] **Step 3: Implement pure state machine**
 
 Rules:
 
@@ -299,7 +299,7 @@ Rules:
 - `D+F` diagnostic route is `dictation` only after both keys are held for at least `180ms`.
 - Diagnostic mode emits decisions but does not claim suppression.
 
-- [ ] **Step 4: Run Rust tests**
+- [x] **Step 4: Run Rust tests**
 
 ```powershell
 cargo test --manifest-path native\wkey-broker\Cargo.toml
@@ -307,7 +307,7 @@ cargo test --manifest-path native\wkey-broker\Cargo.toml
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add native/wkey-broker

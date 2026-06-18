@@ -476,4 +476,10 @@ Implementation progress:
   - Compile: `..\openai\Scripts\python.exe -m py_compile wkey\broker_control.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
   - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
   - Broker stdio smoke: `WKEY_BROKER_CONTROL=stdio` and `WKEY_INPUT_OWNER=broker` returned `status` and `shutdown` `WKEY_CONTROL_EVENT` lines, exit 0, no leftover Python process.
-- Next task: Rust broker scaffold and pure trigger state.
+- Task 3 Rust broker scaffold and pure trigger state complete: `edeb325 feat: scaffold Rust hotkey broker state machine`.
+- Task 3 verification:
+  - Red Rust test first: 5 trigger assertions failed against the stub state machine.
+  - Green Rust test: `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 6 passed.
+  - Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 92 passed.
+  - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+- Next task: Rust low-level hook diagnostic.
