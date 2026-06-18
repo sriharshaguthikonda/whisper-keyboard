@@ -13,7 +13,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use engine::{PythonEngine, PythonEngineConfig};
 use protocol::{EngineCommandMessage, EngineEvent};
-use triggers::{TriggerDecision, TriggerEvent, TriggerStateMachine};
+use triggers::{DfDiagnosticCounters, TriggerDecision, TriggerEvent, TriggerStateMachine};
 use win_hook::HookKeyEvent;
 
 fn main() -> Result<()> {
@@ -51,6 +51,7 @@ fn run_key_diagnostic(seconds: u64) -> Result<()> {
     let (sender, receiver) = mpsc::channel::<HookKeyEvent>();
     let hook_thread = thread::spawn(move || win_hook::run_keyboard_hook_for(sender, duration));
     let mut state = TriggerStateMachine::default();
+    let mut counters = DfDiagnosticCounters::default();
     let mut decision_count = 0usize;
 
     println!("diagnostic_start seconds={seconds}");
@@ -62,11 +63,15 @@ fn run_key_diagnostic(seconds: u64) -> Result<()> {
                 } else {
                     TriggerEvent::release(event.key, started_at.elapsed())
                 };
-                decision_count += print_decisions(state.handle_event(trigger_event));
+                let decisions = state.handle_event(trigger_event);
+                counters.note(trigger_event, &decisions);
+                decision_count += print_decisions(decisions);
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                decision_count +=
-                    print_decisions(state.handle_event(TriggerEvent::tick(started_at.elapsed())));
+                let trigger_event = TriggerEvent::tick(started_at.elapsed());
+                let decisions = state.handle_event(trigger_event);
+                counters.note(trigger_event, &decisions);
+                decision_count += print_decisions(decisions);
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -75,6 +80,7 @@ fn run_key_diagnostic(seconds: u64) -> Result<()> {
     hook_thread
         .join()
         .map_err(|_| anyhow::anyhow!("keyboard hook thread panicked"))??;
+    println!("diagnostic_report {}", counters.report_line());
     println!("diagnostic_complete decisions={decision_count}");
     Ok(())
 }

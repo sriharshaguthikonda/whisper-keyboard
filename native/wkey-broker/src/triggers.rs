@@ -208,18 +208,120 @@ impl TriggerStateMachine {
         if matches!(key, BrokerKey::D | BrokerKey::F) {
             return;
         }
-        if self.df_started && !self.df_cancelled {
+        let candidate_active = self.d_down_at.is_some() && self.f_down_at.is_some();
+        if (self.df_started || candidate_active) && !self.df_cancelled {
             self.df_cancelled = true;
-            decisions.push(engine(EngineCommand::cancel(
-                EngineRoute::Dictation,
-                "df_other_key",
-            )));
+            if self.df_started {
+                decisions.push(engine(EngineCommand::cancel(
+                    EngineRoute::Dictation,
+                    "df_other_key",
+                )));
+            }
         }
     }
 }
 
 fn engine(command: EngineCommand) -> TriggerDecision {
     TriggerDecision::Engine(command)
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DfDiagnosticCounters {
+    pub df_candidates: u64,
+    pub canceled_candidates: u64,
+    pub quick_rolls_below_threshold: u64,
+    pub other_key_interruptions: u64,
+    pub active_trigger_decisions: u64,
+    d_down: bool,
+    f_down: bool,
+    candidate_active: bool,
+    candidate_started: bool,
+    candidate_interrupted: bool,
+}
+
+impl DfDiagnosticCounters {
+    pub fn note(&mut self, event: TriggerEvent, decisions: &[TriggerDecision]) {
+        match event.kind {
+            TriggerEventKind::Press(BrokerKey::D) => {
+                self.d_down = true;
+                self.maybe_start_candidate();
+            }
+            TriggerEventKind::Press(BrokerKey::F) => {
+                self.f_down = true;
+                self.maybe_start_candidate();
+            }
+            TriggerEventKind::Press(_) => {
+                if self.candidate_active {
+                    self.other_key_interruptions += 1;
+                    if !self.candidate_started && !self.candidate_interrupted {
+                        self.canceled_candidates += 1;
+                        self.candidate_interrupted = true;
+                    }
+                }
+            }
+            TriggerEventKind::Release(BrokerKey::D) => {
+                self.d_down = false;
+                self.finish_candidate_if_needed();
+            }
+            TriggerEventKind::Release(BrokerKey::F) => {
+                self.f_down = false;
+                self.finish_candidate_if_needed();
+            }
+            TriggerEventKind::Release(_) | TriggerEventKind::Tick => {}
+        }
+
+        for decision in decisions {
+            self.active_trigger_decisions += 1;
+            match decision {
+                TriggerDecision::Engine(EngineCommand::Start {
+                    route: EngineRoute::Dictation,
+                }) if self.candidate_active => {
+                    self.candidate_started = true;
+                }
+                TriggerDecision::Engine(EngineCommand::Cancel {
+                    route: EngineRoute::Dictation,
+                    reason,
+                }) if reason == "df_other_key" => {
+                    if !self.candidate_interrupted {
+                        self.canceled_candidates += 1;
+                        self.candidate_interrupted = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn report_line(&self) -> String {
+        format!(
+            "df_candidates={} canceled_candidates={} quick_rolls_below_threshold={} other_key_interruptions={} active_trigger_decisions={}",
+            self.df_candidates,
+            self.canceled_candidates,
+            self.quick_rolls_below_threshold,
+            self.other_key_interruptions,
+            self.active_trigger_decisions,
+        )
+    }
+
+    fn maybe_start_candidate(&mut self) {
+        if self.d_down && self.f_down && !self.candidate_active {
+            self.df_candidates += 1;
+            self.candidate_active = true;
+            self.candidate_started = false;
+            self.candidate_interrupted = false;
+        }
+    }
+
+    fn finish_candidate_if_needed(&mut self) {
+        if self.candidate_active && (!self.d_down || !self.f_down) {
+            if !self.candidate_started && !self.candidate_interrupted {
+                self.quick_rolls_below_threshold += 1;
+            }
+            self.candidate_active = false;
+            self.candidate_started = false;
+            self.candidate_interrupted = false;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -313,6 +415,73 @@ mod tests {
             state.handle_event(TriggerEvent::release(BrokerKey::D, ms(220))),
             Vec::<TriggerDecision>::new()
         );
+    }
+
+    #[test]
+    fn df_other_key_before_threshold_cancels_candidate() {
+        let mut state = TriggerStateMachine::default();
+
+        state.handle_event(TriggerEvent::press(BrokerKey::D, ms(0)));
+        state.handle_event(TriggerEvent::press(BrokerKey::F, ms(0)));
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::Other(0x43), ms(50))),
+            Vec::<TriggerDecision>::new()
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::tick(ms(180))),
+            Vec::<TriggerDecision>::new()
+        );
+    }
+
+    #[test]
+    fn df_diagnostic_counters_track_quick_roll() {
+        let mut counters = DfDiagnosticCounters::default();
+
+        counters.note(
+            TriggerEvent::press(BrokerKey::D, ms(0)),
+            &Vec::<TriggerDecision>::new(),
+        );
+        counters.note(
+            TriggerEvent::press(BrokerKey::F, ms(20)),
+            &Vec::<TriggerDecision>::new(),
+        );
+        counters.note(
+            TriggerEvent::release(BrokerKey::D, ms(80)),
+            &Vec::<TriggerDecision>::new(),
+        );
+
+        assert_eq!(counters.df_candidates, 1);
+        assert_eq!(counters.quick_rolls_below_threshold, 1);
+    }
+
+    #[test]
+    fn df_diagnostic_counters_track_cancelled_active_trigger() {
+        let mut counters = DfDiagnosticCounters::default();
+
+        counters.note(
+            TriggerEvent::press(BrokerKey::D, ms(0)),
+            &Vec::<TriggerDecision>::new(),
+        );
+        counters.note(
+            TriggerEvent::press(BrokerKey::F, ms(0)),
+            &Vec::<TriggerDecision>::new(),
+        );
+        counters.note(
+            TriggerEvent::tick(ms(180)),
+            &engine(EngineCommand::start(EngineRoute::Dictation)),
+        );
+        counters.note(
+            TriggerEvent::press(BrokerKey::Other(0x43), ms(200)),
+            &engine(EngineCommand::cancel(
+                EngineRoute::Dictation,
+                "df_other_key",
+            )),
+        );
+
+        assert_eq!(counters.df_candidates, 1);
+        assert_eq!(counters.canceled_candidates, 1);
+        assert_eq!(counters.other_key_interruptions, 1);
+        assert_eq!(counters.active_trigger_decisions, 2);
     }
 
     #[test]
