@@ -470,7 +470,7 @@ git commit -m "feat: smoke broker-managed Python runtime"
 **Interfaces:**
 - Produces: diagnostic report format in Q&A/roadmap.
 
-- [ ] **Step 1: Add diagnostic counters**
+- [x] **Step 1: Add diagnostic counters**
 
 Track:
 

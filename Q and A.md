@@ -533,3 +533,22 @@ Task 6 verification:
 - Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 93 passed.
 - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
 - Next task: D+F diagnostic decision gate. This still needs the physical key diagnostic from Question 3.
+
+Task 7 diagnostic counter implementation complete: `102aefe feat: add d-f hotkey diagnostic counters`.
+
+Task 7 verification so far:
+
+- Red Rust tests first: missing `DfDiagnosticCounters`.
+- Cargo tests: `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 11 passed.
+- No-input diagnostic smoke: `cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 1` -> report printed zero counts.
+- Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 93 passed.
+- Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+- Pending before D+F decision: physical 5-minute diagnostic run and decision note.
+
+Question 4:
+
+When ready, answer `run 5min diagnostic` here. I will run:
+
+`cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 300`
+
+During that run, use the computer normally and intentionally try a few D+F holds. The output report will only contain counts: candidates, quick rolls, interruptions, cancellations, and trigger decisions.
