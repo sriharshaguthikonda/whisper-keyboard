@@ -334,3 +334,127 @@ Verification so far:
 Questions for user:
 
 - None pending.
+
+
+
+
+
+## 2026-06-18 Native Hotkey Broker Planning
+
+Status: brainstorming and scope design. No code implementation yet.
+
+Current finding:
+
+- Current repo root is `C:\Windows_software\openai whisper\whisper-keyboard`; parent folder is not git.
+- Branch is `refactor/clean-architecture` at `03edf96 feat: use left ctrl chord-safe dictation trigger`.
+- Existing modified files before this planning work: `wkey/voice_pause_config.json` and `wkey/voice_pause_flag.txt` runtime state/config.
+- Current Python hotkey path is `pynput.Listener` in `wkey/faster_whisper_Mother_of_all_wkey.py`, routed through `wkey/keyboard_shortcuts.py`.
+- Current Python GUI already owns tray/settings in `wkey/Whisper_GUI.py`.
+- No Rust/C++ scaffold exists yet.
+- Public-safe prior-art check for "Windows native tray hotkey broker for Python speech-to-text engine using IPC start stop recording" found nothing close in checked GitHub/PyPI/Hacker News sources; weak evidence only.
+
+Initial direction:
+
+- Good idea: native broker owns Windows keyboard hook/state/reset, Python owns audio capture, Groq/Faster-Whisper, transcript cleaning, and paste/command routing.
+- Good idea: narrow IPC contract: `start_recording(route)`, `stop_recording(route)`, `cancel_recording(reason)`, `pause/resume/status` later.
+- Good idea: keep wake-word path in Python until manual hotkey reliability is solved.
+- Bad idea: full rewrite of audio/STT/paste into Rust/C++ now.
+- Bad idea: broker and Python both listening to manual hotkeys long term.
+- Bad idea: tray/config UI first if it delays proving hook reliability and IPC.
+- Bad idea: logging raw transcripts/audio/key streams through broker. Broker logs event types and state only.
+
+Question 1:
+
+Which first milestone should we optimize for?
+
+1. Recommended: Python IPC seam first. Add a tested local command surface around existing `start/stop/cancel` behavior, keep current Python hotkeys active, then native broker talks to stable contract.
+2. Native hook spike first. Build Rust/C++ hook proof-of-life that logs `start/stop/cancel` decisions, but does not control Python yet.
+3. Tray skeleton first. Build native tray process early, then add hook and IPC behind it.
+
+Answer here. I will keep working from the latest answer in this file.
+
+
+
+
+## user comments
+
+1. what ever you think is best do commit by commit!
+
+Decision from Question 1:
+
+- Use recommended path: Python IPC/control seam first.
+- Default native language: Rust, because this machine has `rustc 1.94.0` and `cargo 1.94.0`; `cl` and `cmake` are not on PATH.
+- C++ remains fallback only if Rust/Win32 hook implementation hits a hard blocker.
+
+Approaches considered:
+
+1. Recommended: Rust broker supervises Python child over JSONL stdio.
+   - Broker owns hook state, starts Python engine, sends command events over stdin, reads status events from stdout/stderr/logs.
+   - No localhost port, no raw key stream, easy scheduled-task migration later.
+   - Current Python hotkeys stay default until broker path passes smoke.
+2. Rust broker connects to already-running Python over localhost TCP.
+   - Easier manual attach/detach, but creates local control port and auth/token complexity.
+   - Worse operational fit unless broker and Python must be independently restarted.
+3. C++ Win32 broker.
+   - Strongest direct Win32 control, but local toolchain is not ready on PATH and commit velocity will be worse.
+
+Recommended design:
+
+- Phase 0: docs/spec/roadmap only.
+- Phase 1: Python engine control seam:
+  - Add command dispatcher for `start`, `stop`, `cancel`, `status`, and `shutdown`.
+  - Route commands to existing `start_recording`, `stop_recording`, `cancel_recording` async wrappers.
+  - Add a stdio JSONL transport behind an explicit flag, leaving current Python hotkeys unchanged by default.
+- Phase 2: Rust hook proof:
+  - Add Rust workspace/crate for a console broker.
+  - Implement Windows low-level keyboard hook using direct Win32 APIs via Rust `windows` crate, not a combo-hotkey-only abstraction.
+  - Emit state decisions only: `start`, `stop`, `cancel`, `reset`, `heartbeat`.
+- Phase 3: Rust broker controls Python engine:
+  - Broker starts Python in stdio-control mode.
+  - Left Ctrl release-alone sends `start/stop` lifecycle; Ctrl+key sends `cancel`.
+  - F24 sends command route.
+  - Python `pynput` manual listener disabled only in this broker-managed mode.
+- Phase 4: tray/supervision:
+  - Add tray icon/status after command path is reliable.
+  - Scheduled task migrates from Python script to broker only after broker smoke tests pass.
+
+Question 2:
+
+Approve this design direction for the written spec + roadmap/phase-plan update?
+
+Answer here. If you want changes, write the change under this question.
+
+
+
+## user comments
+
+1. what ever you think is best do commit by commit!
+2. update full plans first and then start implement phase by phase
+3. do it in seperate work flow
+4. after that i am thinking d + f as the hotkey insted of left ctrl it is activating all the time!
+
+Decision from user comments:
+
+- Full plans first, then implementation phase by phase.
+- Use separate workflow: keep native broker work as a separate planned workflow from the current Python hotkey fixes.
+- Plan must be commit-by-commit.
+- Treat `D+F` as a serious candidate because Left Ctrl is too noisy.
+
+Hotkey recommendation:
+
+- Do not hardcode Left Ctrl into the broker design.
+- Do not make `D+F` permanent default until broker has a diagnostic mode; ordinary-letter chords can fire while typing and can damage normal text input if suppressed poorly.
+- Plan trigger profiles:
+  - `f24`: command route.
+  - `left_ctrl_release_alone`: legacy/current dictation profile, available but not assumed as final.
+  - `d_f_hold`: experimental home-row dictation profile with hold threshold and cancel/replay rules.
+- Broker phase must include key-event diagnostics before switching default trigger.
+- Written spec/roadmap/phase plan will reflect this.
+5. do it in seperate work tree
+
+Worktree decision:
+
+- Native broker work is now in separate worktree `C:\Windows_software\openai whisper\whisper-keyboard-native-hotkey-broker`.
+- Branch is `native-hotkey-broker`.
+- Original checkout remains `C:\Windows_software\openai whisper\whisper-keyboard` on `refactor/clean-architecture`.
+- Continue this workflow from the Q&A file in the native broker worktree.

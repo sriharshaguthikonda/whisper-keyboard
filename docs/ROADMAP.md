@@ -48,6 +48,43 @@ Recovery:
 - Wake-stream recovery must initialize the PyAudio stream before the wake listener starts.
 - Keyboard release must stop active manual recording even if press/release happens inside debounce time.
 
+## Planned Native Hotkey Broker Workflow
+
+Status: planned 2026-06-18.
+
+Goal: move fragile Windows keyboard hook ownership out of Python while keeping Python as the transcription engine.
+
+Design docs:
+
+- `docs/superpowers/specs/2026-06-18-native-hotkey-broker-design.md`
+- `docs/superpowers/plans/2026-06-18-native-hotkey-broker.md`
+
+Architecture:
+
+- Rust broker first; C++ only if Rust low-level Win32 hook work hits a hard blocker.
+- Python keeps audio capture, Groq/Faster-Whisper fallback, transcript cleanup, paste, command routing, wake-word path, and settings.
+- Broker controls Python through JSONL over child-process stdio.
+- Python manual `pynput` listener is disabled only when `WKEY_INPUT_OWNER=broker`.
+- Existing Python hotkeys stay default until broker-managed smoke passes.
+
+Trigger policy:
+
+- `F24`: command/tool-use route.
+- `left_ctrl_release_alone`: current fallback profile, not assumed final.
+- `D+F`: experimental dictation profile; must run diagnostic mode before becoming default.
+
+Phase order:
+
+1. Planning docs and roadmap.
+2. Python broker command dispatcher.
+3. Python stdio control mode.
+4. Rust broker scaffold and pure trigger-state tests.
+5. Rust low-level keyboard hook diagnostic.
+6. Rust broker starts/controls Python engine.
+7. Broker-managed runtime smoke.
+8. `D+F` diagnostic decision.
+9. Tray/supervision and scheduled-task migration docs.
+
 ## Active Groq Follow-up
 
 Status: implemented 2026-06-13.
