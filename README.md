@@ -40,6 +40,27 @@ Optional environment variables:
 - `WKEY_RECORD_KEYS`: comma-separated enabled manual keys. Default: `f24,ctrl_l`. Stale `ctrl_r` config is migrated to `ctrl_l`. Example: `f24`.
 - `WKEY_ALLOW_ENV_OVERRIDES`: set to `1` to allow `WKEY_RUNTIME_MODE` and `WKEY_RECORD_KEYS` to override settings/defaults.
 
+## Native Broker Prototype
+
+The Rust broker lives under `native/wkey-broker`.
+
+Useful smoke commands from the repo root:
+
+```powershell
+cargo run --manifest-path native\wkey-broker\Cargo.toml -- --engine-smoke
+cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20
+cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 30
+```
+
+- `--engine-smoke` starts the Python engine in stdio-control mode, requests status, and shuts it down.
+- `--broker-smoke` keeps the broker-managed Python child alive for the requested seconds, verifies Python's own keyboard listener is disabled, then shuts down.
+- `--diagnose-keys` installs the low-level Windows keyboard hook and prints broker decisions only; it does not suppress normal typing.
+
+Broker-managed Python uses:
+
+- `WKEY_BROKER_CONTROL=stdio`
+- `WKEY_INPUT_OWNER=broker`
+
 ## Settings
 
 Settings live in `wkey/transcription_config.json` and are managed by:

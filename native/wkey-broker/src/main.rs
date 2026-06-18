@@ -12,12 +12,15 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use engine::{PythonEngine, PythonEngineConfig};
-use protocol::EngineCommandMessage;
+use protocol::{EngineCommandMessage, EngineEvent};
 use triggers::{TriggerDecision, TriggerEvent, TriggerStateMachine};
 use win_hook::HookKeyEvent;
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--broker-smoke") {
+        return run_broker_smoke(parse_seconds(&args)?);
+    }
     if args.iter().any(|arg| arg == "--engine-smoke") {
         return run_engine_smoke();
     }
@@ -80,14 +83,52 @@ fn run_engine_smoke() -> Result<()> {
     let config = PythonEngineConfig::for_repo(env::current_dir()?)?;
     let mut engine = PythonEngine::spawn(config)?;
 
-    engine.send(&EngineCommandMessage::status("status-1"))?;
-    let status = engine.recv_event_timeout(Duration::from_secs(180))?;
+    let status = request_status(&mut engine, "status-1")?;
     println!("engine_event {status:?}");
 
     if let Some(shutdown) = engine.shutdown()? {
         println!("engine_event {shutdown:?}");
     }
     Ok(())
+}
+
+fn run_broker_smoke(seconds: u64) -> Result<()> {
+    let config = PythonEngineConfig::for_repo(env::current_dir()?)?;
+    let mut engine = PythonEngine::spawn(config)?;
+    let duration = Duration::from_secs(seconds);
+
+    let startup = request_status(&mut engine, "startup-status")?;
+    ensure_python_listener_disabled(&startup)?;
+    println!("broker_smoke_startup {startup:?}");
+
+    thread::sleep(duration);
+    let runtime = request_status(&mut engine, "runtime-status")?;
+    ensure_python_listener_disabled(&runtime)?;
+    println!("broker_smoke_runtime {runtime:?}");
+
+    if let Some(shutdown) = engine.shutdown()? {
+        println!("broker_smoke_shutdown {shutdown:?}");
+    }
+    Ok(())
+}
+
+fn request_status(engine: &mut PythonEngine, id: &str) -> Result<EngineEvent> {
+    engine.send(&EngineCommandMessage::status(id))?;
+    engine.recv_event_timeout(Duration::from_secs(180))
+}
+
+fn ensure_python_listener_disabled(event: &EngineEvent) -> Result<()> {
+    let disabled = event
+        .status
+        .as_ref()
+        .and_then(|status| status.get("python_keyboard_listener_enabled"))
+        .and_then(|value| value.as_bool())
+        == Some(false);
+    if disabled {
+        Ok(())
+    } else {
+        bail!("broker-managed Python listener is not disabled: {event:?}");
+    }
 }
 
 fn print_decisions(decisions: Vec<TriggerDecision>) -> usize {

@@ -187,6 +187,8 @@ def test_broker_stdio_mode_skips_console_status_thread(fw_module, monkeypatch):
         fw_module.main()
 
     assert "broker" in started
+    assert "CleanTranscript" in started
+    assert "ProcessAudio" in started
     assert fw_module.display_pause_status not in calls
 
 
