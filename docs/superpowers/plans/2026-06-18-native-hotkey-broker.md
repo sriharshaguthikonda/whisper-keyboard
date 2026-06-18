@@ -378,7 +378,7 @@ git commit -m "feat: add Rust keyboard hook diagnostic"
 **Interfaces:**
 - Produces: `PythonEngine::spawn(config)`, `PythonEngine::send(command)`, `PythonEngine::shutdown()`.
 
-- [ ] **Step 1: Add protocol round-trip tests**
+- [x] **Step 1: Add protocol round-trip tests**
 
 Test JSON emitted by Rust matches Python schema:
 
@@ -386,7 +386,7 @@ Test JSON emitted by Rust matches Python schema:
 {"id":"1","command":"start","route":"dictation"}
 ```
 
-- [ ] **Step 2: Implement child process launch**
+- [x] **Step 2: Implement child process launch**
 
 Broker launches:
 
@@ -401,7 +401,7 @@ WKEY_BROKER_CONTROL=stdio
 WKEY_INPUT_OWNER=broker
 ```
 
-- [ ] **Step 3: Add broker smoke command**
+- [x] **Step 3: Add broker smoke command**
 
 Command:
 
@@ -411,7 +411,7 @@ cargo run --manifest-path native\wkey-broker\Cargo.toml -- --engine-smoke
 
 Expected: starts Python, sends `status`, receives or logs `WKEY_CONTROL_EVENT`, shuts child down.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add native/wkey-broker

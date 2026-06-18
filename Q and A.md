@@ -509,3 +509,16 @@ Task 4 verification so far:
 - Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 92 passed.
 - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
 - Pending: physical 30-second key diagnostic from Question 3.
+
+Task 5 Rust broker supervises Python engine complete: `5648ff5 feat: let Rust broker supervise Python engine`.
+
+Task 5 verification:
+
+- Red protocol test first: missing `EngineCommandMessage`.
+- Protocol/Cargo tests: `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 8 passed.
+- Engine smoke: `cargo run --manifest-path native\wkey-broker\Cargo.toml -- --engine-smoke` -> received `status`, received `shutdown`, Python exited cleanly, `python_keyboard_listener_enabled=false`.
+- Regression found/fixed: broker stdio mode skipped console status display to prevent fatal Python shutdown from daemon stdout writes.
+- Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 93 passed.
+- Compile: `..\openai\Scripts\python.exe -m py_compile wkey\broker_control.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
+- Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+- Next task: broker-managed runtime smoke.
