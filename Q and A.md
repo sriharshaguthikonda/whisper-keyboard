@@ -552,3 +552,21 @@ When ready, answer `run 5min diagnostic` here. I will run:
 `cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 300`
 
 During that run, use the computer normally and intentionally try a few D+F holds. The output report will only contain counts: candidates, quick rolls, interruptions, cancellations, and trigger decisions.
+
+
+yes go ahead and run and ....it. when done tell me how to start this
+
+Startup answer:
+
+- Normal start remains `C:\Windows_software\openai whisper\Whisper.bat`.
+- Scheduled task `Whisper` already runs that bat on boot and after power resume, with `MultipleInstancesPolicy=StopExisting`.
+- That bat starts `C:\Windows_software\openai whisper\whisper-keyboard\wkey\faster_whisper_Mother_of_all_wkey.py`.
+- Once this branch is moved into the main `whisper-keyboard` folder, the normal bat and scheduled task will use this branch.
+- Do not migrate the scheduled task to the Rust broker yet. Broker tray/supervision and scheduled-task migration are still planned work.
+
+Experimental broker commands:
+
+```powershell
+cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20
+cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 300
+```
