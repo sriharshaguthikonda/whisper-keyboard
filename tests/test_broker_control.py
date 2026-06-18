@@ -1,3 +1,4 @@
+import io
 import json
 
 from wkey.broker_control import (
@@ -7,6 +8,7 @@ from wkey.broker_control import (
     dispatch_command,
     format_event,
     parse_command_line,
+    run_control_stdio,
 )
 
 
@@ -100,3 +102,35 @@ def test_format_event_prefixes_compact_json_line():
     assert payload["event"] == "status"
     assert payload["ok"] is True
     assert payload["status"] == {"recording": False}
+
+
+def test_run_control_stdio_dispatches_jsonl_until_shutdown():
+    calls = []
+    input_stream = io.StringIO(
+        "\n".join(
+            [
+                '{"id":"1","command":"start","route":"command"}',
+                "{not-json",
+                '{"id":"2","command":"status"}',
+                '{"id":"3","command":"shutdown"}',
+            ]
+        )
+        + "\n"
+    )
+    output_stream = io.StringIO()
+
+    run_control_stdio(input_stream, output_stream, _deps(calls))
+
+    assert calls == [("start", 0), ("shutdown", None)]
+    lines = output_stream.getvalue().splitlines()
+    payloads = [
+        json.loads(line.removeprefix(EVENT_PREFIX))
+        for line in lines
+    ]
+    assert [payload["event"] for payload in payloads] == [
+        "command",
+        "parse_error",
+        "status",
+        "command",
+    ]
+    assert all(line.startswith(EVENT_PREFIX) for line in lines)

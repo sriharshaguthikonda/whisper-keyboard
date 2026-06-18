@@ -67,6 +67,23 @@ def test_stale_env_record_keys_ignored_without_override(monkeypatch):
     assert mod.runtime_mode == "keyboard"
 
 
+def test_broker_input_owner_disables_python_keyboard_listener(monkeypatch):
+    monkeypatch.setenv("WKEY_INPUT_OWNER", "broker")
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert mod.is_keyboard_runtime_enabled() is True
+    assert mod.is_python_keyboard_listener_enabled() is False
+
+
+def test_python_input_owner_keeps_keyboard_listener(monkeypatch):
+    monkeypatch.delenv("WKEY_INPUT_OWNER", raising=False)
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert mod.is_python_keyboard_listener_enabled() is True
+
+
 def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
     captured = {}
 
@@ -93,6 +110,43 @@ def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
     fw_module.start_listener()
 
     assert "event_filter" not in captured["kwargs"]
+
+
+def test_broker_input_owner_skips_python_listener_in_main(fw_module, monkeypatch):
+    calls = []
+    started = []
+    fw_module.runtime_mode = "keyboard"
+
+    monkeypatch.setenv("WKEY_INPUT_OWNER", "broker")
+    monkeypatch.delenv("WKEY_BROKER_CONTROL", raising=False)
+    monkeypatch.setattr(fw_module, "register_volume_timeout_recovery_hook", lambda: None)
+    monkeypatch.setattr(fw_module, "init_keyboard_handler", lambda: None)
+    monkeypatch.setattr(fw_module, "start_settings_watch", lambda: None)
+    monkeypatch.setattr(fw_module, "init_wakeword_listener", lambda: calls.append("init_wake"))
+    monkeypatch.setattr(fw_module, "initialize_wake_stream", lambda: calls.append("wake_stream"))
+    monkeypatch.setattr(fw_module, "start_watchdog", lambda: None)
+    monkeypatch.setattr(fw_module, "run_asyncio_in_thread", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "clean_transcript", lambda: None)
+    monkeypatch.setattr(fw_module, "process_audio_async", lambda: None)
+    monkeypatch.setattr(fw_module.voice_commands_module, "is_selenium_enabled", lambda: False, raising=False)
+    monkeypatch.setattr(fw_module.threading, "Thread", lambda *a, **k: types.SimpleNamespace(start=lambda: None))
+    monkeypatch.setattr(fw_module, "wait_for_microphone", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "start_listener", lambda: calls.append("listener"))
+    monkeypatch.setattr(fw_module, "start_thread", lambda target, name: started.append(name))
+    monkeypatch.setattr(fw_module, "cleanup", lambda: None)
+    monkeypatch.setattr(
+        fw_module.time,
+        "sleep",
+        lambda seconds: (_ for _ in ()).throw(SystemExit()),
+    )
+
+    with pytest.raises(SystemExit):
+        fw_module.main()
+
+    assert "listener" not in calls
+    assert "CleanTranscript" in started
+    assert "ProcessAudio" in started
 
 
 def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):

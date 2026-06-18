@@ -130,6 +130,10 @@ try:
 except ModuleNotFoundError:
     from wkey.keyboard_shortcuts import KeyboardShortcutHandler
 try:
+    from broker_control import BrokerRuntimeDeps, run_control_stdio
+except ModuleNotFoundError:
+    from wkey.broker_control import BrokerRuntimeDeps, run_control_stdio
+try:
     from wakeword import WakeWordListener
 except ModuleNotFoundError:
     from wkey.wakeword import WakeWordListener
@@ -473,6 +477,15 @@ RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
 
 def is_keyboard_runtime_enabled():
     return runtime_mode in {"combined", "keyboard"} and bool(RECORD_KEYS)
+
+
+def is_broker_control_stdio_enabled():
+    return os.environ.get("WKEY_BROKER_CONTROL", "").strip().lower() == "stdio"
+
+
+def is_python_keyboard_listener_enabled():
+    input_owner = os.environ.get("WKEY_INPUT_OWNER", "python").strip().lower()
+    return is_keyboard_runtime_enabled() and input_owner != "broker"
 
 
 def is_wakeword_runtime_enabled():
@@ -1867,6 +1880,7 @@ def stop_recording(keyword_index):
             _flush_deferred_keyboard_listener_restart()
 
 keyboard_handler = None
+broker_control_shutdown_requested = threading.Event()
 
 def _start_recording_async(keyword_index):
     threading.Thread(target=start_recording, args=(keyword_index,)).start()
@@ -1882,6 +1896,43 @@ def _cancel_recording_async(keyword_index, reason):
         daemon=True,
         name="ManualRecordingCancel",
     ).start()
+
+
+def get_broker_control_status():
+    with recording_lock:
+        is_recording = recording
+        stop_in_progress = recording_stop_in_progress
+        session_id = active_recording_session_id
+    return {
+        "recording": is_recording,
+        "recording_stop_in_progress": stop_in_progress,
+        "active_recording_session_id": session_id,
+        "runtime_mode": runtime_mode,
+        "keyboard_runtime_enabled": is_keyboard_runtime_enabled(),
+        "python_keyboard_listener_enabled": is_python_keyboard_listener_enabled(),
+    }
+
+
+def request_broker_control_shutdown():
+    broker_control_shutdown_requested.set()
+
+
+def start_broker_control_stdio_thread(input_stream=None, output_stream=None):
+    deps = BrokerRuntimeDeps(
+        start=_start_recording_async,
+        stop=_stop_recording_async,
+        cancel=_cancel_recording_async,
+        status=get_broker_control_status,
+        shutdown=request_broker_control_shutdown,
+    )
+    thread = threading.Thread(
+        target=run_control_stdio,
+        args=(input_stream or sys.stdin, output_stream or sys.stdout, deps),
+        daemon=True,
+        name="BrokerControlStdio",
+    )
+    thread.start()
+    return thread
 
 
 def _capture_wake_command(keyword_index, grace_seconds=COMPUTER_WAKE_CAPTURE_GRACE_SECONDS):
@@ -2685,13 +2736,15 @@ def main():
     )
     logging.info(
         "Startup diagnostics: pid=%s runtime_mode=%s wakeword_enabled=%s "
-        "precheck_enabled=%s keyboard_enabled=%s enabled_record_keys=%s "
+        "precheck_enabled=%s keyboard_runtime_enabled=%s "
+        "python_keyboard_listener_enabled=%s enabled_record_keys=%s "
         "env_overrides_enabled=%s recovery_policy=%s",
         os.getpid(),
         runtime_mode,
         is_wakeword_runtime_enabled(),
         is_pre_recording_keyword_check_enabled(),
         is_keyboard_runtime_enabled(),
+        is_python_keyboard_listener_enabled(),
         ",".join(RECORD_KEYS.keys()) or "none",
         _env_overrides_enabled(),
         RECOVERY_POLICY,
@@ -2711,7 +2764,7 @@ def main():
 
     try:
         register_volume_timeout_recovery_hook()
-        if is_keyboard_runtime_enabled():
+        if is_python_keyboard_listener_enabled():
             init_keyboard_handler()
         start_settings_watch()
         started_background_threads = []
@@ -2719,6 +2772,10 @@ def main():
         def start_runtime_thread(target, name):
             started_background_threads.append(name)
             return start_thread(target, name)
+
+        if is_broker_control_stdio_enabled():
+            start_broker_control_stdio_thread()
+            started_background_threads.append("BrokerControlStdio")
 
         if is_wakeword_runtime_enabled():
             init_wakeword_listener()
@@ -2758,7 +2815,7 @@ def main():
             )
         threading.Thread(target=display_pause_status, daemon=True).start()
 
-        while True:
+        while not broker_control_shutdown_requested.is_set():
             touch_heartbeat("main loop")
             wait_for_microphone()
             if not initialize_input_stream():
@@ -2766,7 +2823,7 @@ def main():
                 continue
 
             try:
-                if is_keyboard_runtime_enabled():
+                if is_python_keyboard_listener_enabled():
                     start_listener()
                 else:
                     time.sleep(1)
@@ -2778,6 +2835,7 @@ def main():
                 keyboard_listener_restart_requested.clear()
                 _close_input_stream_for_recovery()
             time.sleep(2)
+        logging.info("Broker control shutdown requested. Exiting main loop.")
 
     except Exception as e:
         logging.error(
@@ -2879,7 +2937,7 @@ def run_backend():
     if not acquire_runtime_singleton():
         return 0
     try:
-        while True:
+        while not broker_control_shutdown_requested.is_set():
             try:
                 main()
             except Exception as e:

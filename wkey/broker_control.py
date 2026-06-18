@@ -123,6 +123,21 @@ def format_event(event: BrokerEvent) -> str:
     return EVENT_PREFIX + json.dumps(payload, separators=(",", ":"), sort_keys=True)
 
 
+def run_control_stdio(input_stream, output_stream, deps: BrokerRuntimeDeps) -> None:
+    for raw_line in input_stream:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        command = parse_command_line(line)
+        event = dispatch_command(command, deps)
+        output_stream.write(format_event(event) + "\n")
+        output_stream.flush()
+
+        if command.command == "shutdown" and event.ok:
+            break
+
+
 def _parse_error(message: str, command_id: str | None = None) -> BrokerCommand:
     return BrokerCommand(
         id=command_id,
