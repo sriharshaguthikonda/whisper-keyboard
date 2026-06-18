@@ -431,18 +431,18 @@ git commit -m "feat: let Rust broker supervise Python engine"
 **Interfaces:**
 - Produces: documented broker-managed launch command.
 
-- [ ] **Step 1: Write regression test**
+- [x] **Step 1: Write regression test**
 
 Assert broker mode starts no Python `pynput` listener but still starts audio/transcription worker setup.
 
-- [ ] **Step 2: Run focused tests**
+- [x] **Step 2: Run focused tests**
 
 ```powershell
 ..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py tests\test_faster_whisper.py -q
 cargo test --manifest-path native\wkey-broker\Cargo.toml
 ```
 
-- [ ] **Step 3: Run broker-managed smoke**
+- [x] **Step 3: Run broker-managed smoke**
 
 ```powershell
 cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20
@@ -450,7 +450,7 @@ cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seco
 
 Expected: Python child starts, broker stays alive, no duplicate Python listener, child exits cleanly after smoke.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```powershell
 git add wkey/faster_whisper_Mother_of_all_wkey.py tests/test_faster_whisper.py native/wkey-broker README.md

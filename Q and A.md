@@ -522,3 +522,14 @@ Task 5 verification:
 - Compile: `..\openai\Scripts\python.exe -m py_compile wkey\broker_control.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
 - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
 - Next task: broker-managed runtime smoke.
+
+Task 6 broker-managed runtime smoke complete: `fbae33f feat: smoke broker-managed Python runtime`.
+
+Task 6 verification:
+
+- Focused regression: broker stdio mode starts broker/control workers, starts transcript/audio worker threads, skips Python listener, and skips console status display -> passed.
+- Cargo tests: `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 8 passed.
+- Broker runtime smoke: `cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20` -> startup status ok, runtime status ok, `python_keyboard_listener_enabled=false`, shutdown ok.
+- Full Python suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 93 passed.
+- Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+- Next task: D+F diagnostic decision gate. This still needs the physical key diagnostic from Question 3.
