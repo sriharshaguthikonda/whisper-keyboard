@@ -46,7 +46,7 @@
 **Interfaces:**
 - Produces: agreed design and phase plan.
 
-- [ ] **Step 1: Verify docs are staged only with planning files**
+- [x] **Step 1: Verify docs are staged only with planning files**
 
 Run:
 
@@ -56,7 +56,7 @@ git status --short
 
 Expected: planning docs and `Q and A.md` are changed; runtime state files may remain modified but must not be staged.
 
-- [ ] **Step 2: Run whitespace check**
+- [x] **Step 2: Run whitespace check**
 
 Run:
 
@@ -66,7 +66,7 @@ git diff --check -- docs "Q and A.md"
 
 Expected: no whitespace errors.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```powershell
 git add docs/ROADMAP.md docs/superpowers/specs/2026-06-18-native-hotkey-broker-design.md docs/superpowers/plans/2026-06-18-native-hotkey-broker.md "Q and A.md"
@@ -85,7 +85,7 @@ git commit -m "docs: plan native hotkey broker workflow"
 - Produces: `BrokerRuntimeDeps`, `parse_command_line(line: str) -> BrokerCommand`, `format_event(event: BrokerEvent) -> str`, `dispatch_command(command: BrokerCommand, deps: BrokerRuntimeDeps) -> BrokerEvent`.
 - Consumes later: Rust broker sends commands matching this schema.
 
-- [ ] **Step 1: Write failing parser and dispatcher tests**
+- [x] **Step 1: Write failing parser and dispatcher tests**
 
 Add tests for:
 
@@ -115,7 +115,7 @@ def test_dispatch_start_dictation_calls_start_with_none():
 
 Also test `route="command"` maps to keyword index `0`, unknown commands return `ok=False`, and malformed JSON returns parse error event.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 ```powershell
 ..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py -q
@@ -123,7 +123,7 @@ Also test `route="command"` maps to keyword index `0`, unknown commands return `
 
 Expected: import or symbol failures.
 
-- [ ] **Step 3: Implement `wkey/broker_control.py`**
+- [x] **Step 3: Implement `wkey/broker_control.py`**
 
 Implement dataclasses:
 
@@ -154,7 +154,7 @@ ROUTE_KEYWORD_INDEX = {"dictation": None, "command": 0}
 EVENT_PREFIX = "WKEY_CONTROL_EVENT "
 ```
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 ```powershell
 ..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py -q
@@ -162,7 +162,7 @@ EVENT_PREFIX = "WKEY_CONTROL_EVENT "
 
 Expected: pass.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```powershell
 git add wkey/broker_control.py tests/test_broker_control.py

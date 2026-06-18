@@ -458,3 +458,13 @@ Worktree decision:
 - Branch is `native-hotkey-broker`.
 - Original checkout remains `C:\Windows_software\openai whisper\whisper-keyboard` on `refactor/clean-architecture`.
 - Continue this workflow from the Q&A file in the native broker worktree.
+
+Implementation progress:
+
+- Task 0 planning commit complete: `d4bd371 docs: plan native hotkey broker workflow`.
+- Task 1 Python broker command dispatcher complete: `2061e46 feat: add Python broker command dispatcher`.
+- Task 1 verification:
+  - Red test first: missing `wkey.broker_control`.
+  - Focused green test: `..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py -q` -> 6 passed.
+  - Required primary-script smoke: corrected quoted-path harness, script stayed alive for 20 seconds, stopped by PID, no leftover Python primary-script process.
+- Next task: Python stdio control mode.
