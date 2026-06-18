@@ -181,7 +181,7 @@ git commit -m "feat: add Python broker command dispatcher"
 **Interfaces:**
 - Produces: `is_broker_control_stdio_enabled()`, `is_python_keyboard_listener_enabled()`, `start_broker_control_stdio_thread()`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Add tests:
 
@@ -200,7 +200,7 @@ def test_python_input_owner_keeps_keyboard_listener(monkeypatch):
 
 Add stdio loop unit test using `io.StringIO` input and output.
 
-- [ ] **Step 2: Run tests to verify failure**
+- [x] **Step 2: Run tests to verify failure**
 
 ```powershell
 ..\openai\Scripts\python.exe -m pytest tests\test_faster_whisper.py::test_broker_input_owner_disables_python_keyboard_listener tests\test_broker_control.py -q
@@ -208,7 +208,7 @@ Add stdio loop unit test using `io.StringIO` input and output.
 
 Expected: missing functions.
 
-- [ ] **Step 3: Wire broker stdio mode**
+- [x] **Step 3: Wire broker stdio mode**
 
 Add import fallback for `broker_control`.
 
@@ -229,7 +229,7 @@ Main loop must call `start_listener()` only when `is_python_keyboard_listener_en
 
 Start a daemon stdin-control thread when `is_broker_control_stdio_enabled()` is true.
 
-- [ ] **Step 4: Run focused tests**
+- [x] **Step 4: Run focused tests**
 
 ```powershell
 ..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py tests\test_faster_whisper.py -q
@@ -237,7 +237,7 @@ Start a daemon stdin-control thread when `is_broker_control_stdio_enabled()` is 
 
 Expected: pass.
 
-- [ ] **Step 5: Run required smoke**
+- [x] **Step 5: Run required smoke**
 
 ```powershell
 $proc = Start-Process -FilePath '..\openai\Scripts\python.exe' -ArgumentList 'wkey\faster_whisper_Mother_of_all_wkey.py' -WorkingDirectory 'C:\Windows_software\openai whisper\whisper-keyboard' -PassThru -WindowStyle Hidden
@@ -247,7 +247,7 @@ if (-not $proc.HasExited) { Stop-Process -Id $proc.Id -Force }
 
 Expected: process stays alive until stopped; no leftover primary-script process.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add wkey/faster_whisper_Mother_of_all_wkey.py tests/test_faster_whisper.py tests/test_broker_control.py

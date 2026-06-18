@@ -467,4 +467,13 @@ Implementation progress:
   - Red test first: missing `wkey.broker_control`.
   - Focused green test: `..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py -q` -> 6 passed.
   - Required primary-script smoke: corrected quoted-path harness, script stayed alive for 20 seconds, stopped by PID, no leftover Python primary-script process.
-- Next task: Python stdio control mode.
+- Task 2 Python stdio control mode complete: `475356c feat: add broker stdio mode to Python engine`.
+- Task 2 verification:
+  - Red test first: missing `run_control_stdio`.
+  - Focused green test: broker/control and listener-ownership tests -> 10 passed.
+  - Runtime/broker suite: `..\openai\Scripts\python.exe -m pytest tests\test_broker_control.py tests\test_faster_whisper.py -q` -> 42 passed.
+  - Full suite: `..\openai\Scripts\python.exe -m pytest tests -q` -> 92 passed.
+  - Compile: `..\openai\Scripts\python.exe -m py_compile wkey\broker_control.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
+  - Required primary-script smoke: stayed alive for 20 seconds, stopped by PID, no stdout/stderr, no leftover Python process.
+  - Broker stdio smoke: `WKEY_BROKER_CONTROL=stdio` and `WKEY_INPUT_OWNER=broker` returned `status` and `shutdown` `WKEY_CONTROL_EVENT` lines, exit 0, no leftover Python process.
+- Next task: Rust broker scaffold and pure trigger state.
