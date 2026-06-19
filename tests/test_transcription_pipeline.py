@@ -118,6 +118,7 @@ def test_manual_dictation_filters_audio_before_transcription(monkeypatch):
     transcript_queue = queue.Queue()
     pasted = []
     groq_wav_sizes = []
+    status_updates = []
     fake_filter = FakeSpeakerFilter()
     global_state = _base_global_state()
 
@@ -146,6 +147,7 @@ def test_manual_dictation_filters_audio_before_transcription(monkeypatch):
         beep=lambda *_: None,
         global_state=global_state,
         speaker_filter_getter=lambda: fake_filter,
+        speaker_filter_status_writer=lambda status: status_updates.append(status),
     )
 
     _run_one_pipeline_cycle(monkeypatch, pipeline)
@@ -157,6 +159,8 @@ def test_manual_dictation_filters_audio_before_transcription(monkeypatch):
     assert pasted == ["filtered text"]
     assert global_state["last_speaker_filter"]["decision"] == "filtered"
     assert global_state["last_speaker_filter"]["accepted_seconds"] == 1.0
+    assert status_updates[-1]["decision"] == "filtered"
+    assert status_updates[-1]["rejected_seconds"] == 1.0
 
 
 def test_rejected_manual_dictation_does_not_transcribe_or_paste(monkeypatch):

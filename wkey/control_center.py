@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -20,6 +21,7 @@ from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -56,7 +58,13 @@ try:
     )
     from .pause_control import set_pause_state, toggle_pause_state
     from .pause_flag_path import get_pause_flag_path
-    from .settings_manager import DEFAULT_SETTINGS, load_settings, normalize_hotkey_profiles, save_settings
+    from .settings_manager import (
+        DEFAULT_SETTINGS,
+        SPEAKER_FILTER_MODES,
+        load_settings,
+        normalize_hotkey_profiles,
+        save_settings,
+    )
 except ImportError:
     from backend_process import (
         BACKEND_SCRIPT_NAME,
@@ -78,7 +86,13 @@ except ImportError:
     )
     from pause_control import set_pause_state, toggle_pause_state
     from pause_flag_path import get_pause_flag_path
-    from settings_manager import DEFAULT_SETTINGS, load_settings, normalize_hotkey_profiles, save_settings
+    from settings_manager import (
+        DEFAULT_SETTINGS,
+        SPEAKER_FILTER_MODES,
+        load_settings,
+        normalize_hotkey_profiles,
+        save_settings,
+    )
 
 
 SECTION_NAMES = (
@@ -147,6 +161,7 @@ class WhisperControlCenter(QMainWindow):
         self.section_buttons: dict[str, QListWidgetItem] = {}
         self.hotkey_widgets: dict[str, dict[str, object]] = {}
         self.setting_widgets: dict[str, object] = {}
+        self.speaker_filter_status_path = REPO_ROOT / "wkey" / "speaker_filter_status.json"
 
         self.setWindowTitle("Whisper Keyboard Control Center")
         self.setMinimumSize(960, 640)
@@ -244,7 +259,7 @@ class WhisperControlCenter(QMainWindow):
             QPushButton#primary { background: #2f80ed; color: white; border-color: #2f80ed; }
             QPushButton#danger { background: #c62828; color: white; border-color: #c62828; }
             QTextEdit { background: #0f1720; color: #e5edf5; border: 1px solid #273445; border-radius: 5px; }
-            QSpinBox, QDoubleSpinBox, QComboBox { min-height: 30px; background: white; border: 1px solid #bcc7d3; border-radius: 4px; padding: 3px 6px; }
+            QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit { min-height: 30px; background: white; border: 1px solid #bcc7d3; border-radius: 4px; padding: 3px 6px; }
             """
         )
 
@@ -266,7 +281,7 @@ class WhisperControlCenter(QMainWindow):
             QPushButton#primary { background: #1f6feb; color: white; border-color: #1f6feb; }
             QPushButton#danger { background: #b42318; color: white; border-color: #b42318; }
             QTextEdit { background: #0b1218; color: #e5edf5; border: 1px solid #2f4153; border-radius: 5px; }
-            QSpinBox, QDoubleSpinBox, QComboBox { min-height: 30px; background: #111820; color: #e5edf5; border: 1px solid #3a4d61; border-radius: 4px; padding: 3px 6px; }
+            QSpinBox, QDoubleSpinBox, QComboBox, QLineEdit { min-height: 30px; background: #111820; color: #e5edf5; border: 1px solid #3a4d61; border-radius: 4px; padding: 3px 6px; }
             QCheckBox { spacing: 8px; }
             """
         )
@@ -434,6 +449,54 @@ class WhisperControlCenter(QMainWindow):
             row += 1
         layout.addWidget(advanced_group)
 
+        speaker_group = QGroupBox("Target Speaker Filter")
+        speaker_layout = QGridLayout(speaker_group)
+        speaker_enabled = QCheckBox("Enable for dictation")
+        self.setting_widgets["speaker_filter_enabled"] = speaker_enabled
+        speaker_layout.addWidget(speaker_enabled, 0, 0, 1, 2)
+
+        mode_combo = QComboBox()
+        for mode in SPEAKER_FILTER_MODES:
+            mode_combo.addItem(mode.replace("_", " ").title(), mode)
+        self.setting_widgets["speaker_filter_mode"] = mode_combo
+        self.speaker_filter_mode_combo = mode_combo
+        speaker_layout.addWidget(QLabel("Mode"), 1, 0)
+        speaker_layout.addWidget(mode_combo, 1, 1)
+
+        threshold = QDoubleSpinBox()
+        threshold.setDecimals(2)
+        threshold.setSingleStep(0.01)
+        threshold.setRange(0.0, 1.0)
+        self.setting_widgets["speaker_filter_threshold"] = threshold
+        speaker_layout.addWidget(QLabel("Custom threshold"), 2, 0)
+        speaker_layout.addWidget(threshold, 2, 1)
+
+        path_fields = (
+            ("speaker_filter_profile_path", "Profile path"),
+            ("speaker_filter_enrollment_dir", "Enrollment folder"),
+            ("speaker_filter_negative_dir", "Negative folder"),
+        )
+        for offset, (key, label_text) in enumerate(path_fields, start=3):
+            field = QLineEdit()
+            self.setting_widgets[key] = field
+            speaker_layout.addWidget(QLabel(label_text), offset, 0)
+            speaker_layout.addWidget(field, offset, 1)
+
+        status_row = 6
+        self.speaker_filter_profile_status_label = QLabel("-")
+        self.speaker_filter_threshold_status_label = QLabel("-")
+        self.speaker_filter_last_decision_label = QLabel("-")
+        self.speaker_filter_last_duration_label = QLabel("-")
+        speaker_layout.addWidget(QLabel("Profile"), status_row, 0)
+        speaker_layout.addWidget(self.speaker_filter_profile_status_label, status_row, 1)
+        speaker_layout.addWidget(QLabel("Effective threshold"), status_row + 1, 0)
+        speaker_layout.addWidget(self.speaker_filter_threshold_status_label, status_row + 1, 1)
+        speaker_layout.addWidget(QLabel("Last decision"), status_row + 2, 0)
+        speaker_layout.addWidget(self.speaker_filter_last_decision_label, status_row + 2, 1)
+        speaker_layout.addWidget(QLabel("Last duration"), status_row + 3, 0)
+        speaker_layout.addWidget(self.speaker_filter_last_duration_label, status_row + 3, 1)
+        layout.addWidget(speaker_group)
+
         actions = QHBoxLayout()
         save = QPushButton("Save Settings")
         save.setObjectName("primary")
@@ -540,11 +603,16 @@ class WhisperControlCenter(QMainWindow):
         for key, widget in self.setting_widgets.items():
             if isinstance(widget, QCheckBox):
                 values[key] = widget.isChecked()
+            elif isinstance(widget, QComboBox):
+                values[key] = widget.currentData() or widget.currentText()
+            elif isinstance(widget, QLineEdit):
+                values[key] = widget.text()
             elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
                 values[key] = widget.value()
         values["hotkey_profiles"] = self._collect_hotkey_profiles()
         values["ui_theme"] = self.theme_combo.currentData()
         values["minimize_to_tray"] = self.minimize_to_tray_check.isChecked()
+        values["speaker_filter_apply_to"] = "dictation"
         return values
 
     def _load_widgets_from_settings(self):
@@ -564,6 +632,11 @@ class WhisperControlCenter(QMainWindow):
             value = self.settings.get(key, DEFAULT_SETTINGS.get(key))
             if isinstance(widget, QCheckBox):
                 widget.setChecked(bool(value))
+            elif isinstance(widget, QComboBox):
+                index = widget.findData(value)
+                widget.setCurrentIndex(index if index >= 0 else 0)
+            elif isinstance(widget, QLineEdit):
+                widget.setText(str(value or ""))
             elif isinstance(widget, QSpinBox):
                 widget.setValue(int(value))
             elif isinstance(widget, QDoubleSpinBox):
@@ -600,6 +673,64 @@ class WhisperControlCenter(QMainWindow):
             "enabled" if self.settings.get("enable_transcript_context_memory") else "disabled"
         )
         self.voice_groq_label.setText(snapshot["providers"]["groq"])
+        self._refresh_speaker_filter_status(snapshot["speaker_filter"])
+
+    def _resolve_configured_path(self, value):
+        path = Path(str(value or ""))
+        if path.is_absolute():
+            return path
+        return REPO_ROOT / path
+
+    def _read_json_file(self, path):
+        try:
+            with Path(path).open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
+    def _effective_speaker_filter_threshold(self, speaker_settings, profile_path):
+        mode = speaker_settings["mode"]
+        if mode == "custom":
+            return float(speaker_settings["threshold"])
+        profile = self._read_json_file(profile_path)
+        thresholds = profile.get("thresholds") if isinstance(profile, dict) else None
+        if isinstance(thresholds, dict) and mode in thresholds:
+            try:
+                return float(thresholds[mode])
+            except Exception:
+                pass
+        return float(speaker_settings["threshold"])
+
+    def _refresh_speaker_filter_status(self, speaker_settings):
+        enabled = bool(speaker_settings["enabled"])
+        profile_path = self._resolve_configured_path(speaker_settings["profile_path"])
+        profile_loaded = profile_path.exists()
+        if not enabled:
+            self.speaker_filter_profile_status_label.setText("disabled")
+        else:
+            self.speaker_filter_profile_status_label.setText(
+                "loaded" if profile_loaded else "missing"
+            )
+
+        threshold = self._effective_speaker_filter_threshold(
+            speaker_settings, profile_path
+        )
+        self.speaker_filter_threshold_status_label.setText(
+            f"{speaker_settings['mode']} / {threshold:.2f}"
+        )
+
+        status = self._read_json_file(self.speaker_filter_status_path)
+        decision = str(status.get("decision") or "-")
+        accepted = status.get("accepted_seconds")
+        rejected = status.get("rejected_seconds")
+        self.speaker_filter_last_decision_label.setText(decision)
+        if accepted is None or rejected is None:
+            self.speaker_filter_last_duration_label.setText("-")
+        else:
+            self.speaker_filter_last_duration_label.setText(
+                f"accepted {float(accepted):.2f}s / rejected {float(rejected):.2f}s"
+            )
 
     def save_hotkeys(self):
         self.settings = apply_settings_values(

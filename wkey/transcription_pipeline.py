@@ -38,6 +38,7 @@ class TranscriptionPipeline:
         groq_failures_before_cpu=DEFAULT_GROQ_FAILURES_BEFORE_CPU,
         record_transcript_context=None,
         speaker_filter_getter=None,
+        speaker_filter_status_writer=None,
     ):
         self.audio_buffer_queue = audio_buffer_queue
         self.transcript_queue = transcript_queue
@@ -59,6 +60,7 @@ class TranscriptionPipeline:
         self.groq_failures_before_cpu = groq_failures_before_cpu
         self.record_transcript_context = record_transcript_context
         self.speaker_filter_getter = speaker_filter_getter
+        self.speaker_filter_status_writer = speaker_filter_status_writer
         self.global_state.setdefault("transcribe_inflight", False)
         self.global_state.setdefault("last_transcribe_activity", time.time())
 
@@ -371,6 +373,13 @@ class TranscriptionPipeline:
             "profile_loaded": bool(profile_loaded),
             "updated_at": time.time(),
         }
+        if self.speaker_filter_status_writer is not None:
+            try:
+                self.speaker_filter_status_writer(
+                    self.global_state["last_speaker_filter"]
+                )
+            except Exception as exc:
+                self.log.warning("Speaker filter status write failed: %s", exc)
 
     def _beep_speaker_filter_reject(self):
         try:

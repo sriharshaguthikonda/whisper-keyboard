@@ -1,5 +1,6 @@
 import importlib
 import io
+import json
 import types
 import numpy as np
 import pytest
@@ -768,6 +769,26 @@ def test_transcription_pipeline_receives_target_speaker_filter_getter(fw_module)
     pipeline = fw_module.init_transcription_pipeline()
 
     assert pipeline.speaker_filter_getter is fw_module.get_target_speaker_filter
+    assert pipeline.speaker_filter_status_writer is fw_module.write_target_speaker_status
+
+
+def test_target_speaker_status_writer_outputs_json(fw_module, tmp_path):
+    status_path = tmp_path / "speaker_filter_status.json"
+    fw_module.SPEAKER_FILTER_STATUS_PATH = str(status_path)
+
+    fw_module.write_target_speaker_status(
+        {
+            "decision": "filtered",
+            "accepted_seconds": 1.0,
+            "rejected_seconds": 0.5,
+        }
+    )
+
+    assert json.loads(status_path.read_text(encoding="utf-8")) == {
+        "decision": "filtered",
+        "accepted_seconds": 1.0,
+        "rejected_seconds": 0.5,
+    }
 
 
 def test_reset_state(fw_module, monkeypatch):

@@ -615,6 +615,16 @@ def get_target_speaker_filter():
     speaker_filter_cache["filter"] = speaker_filter
     return speaker_filter
 
+def write_target_speaker_status(status):
+    try:
+        payload = dict(status or {})
+        temp_path = f"{SPEAKER_FILTER_STATUS_PATH}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=True)
+        os.replace(temp_path, SPEAKER_FILTER_STATUS_PATH)
+    except Exception as exc:
+        logging.warning("Failed to write speaker filter status: %s", exc)
+
 settings_watch_handle = None
 
 def apply_settings(new_settings):
@@ -767,6 +777,9 @@ wake_stream = None
 wakeword_listener = None
 transcription_pipeline = None
 speaker_filter_cache = {"key": None, "filter": None}
+SPEAKER_FILTER_STATUS_PATH = os.path.join(
+    os.path.dirname(__file__), "speaker_filter_status.json"
+)
 
 # Define beep sounds
 START_BEEP = (2080, 100)
@@ -2308,6 +2321,7 @@ def init_transcription_pipeline():
             error_color_suffix=RESET,
             record_transcript_context=_record_recent_transcript,
             speaker_filter_getter=get_target_speaker_filter,
+            speaker_filter_status_writer=write_target_speaker_status,
         )
     return transcription_pipeline
 
