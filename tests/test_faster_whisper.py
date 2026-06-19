@@ -721,6 +721,55 @@ def test_get_transcript_with_retries(fw_module, monkeypatch):
     assert calls == ['remote', 'remote']
 
 
+def test_target_speaker_filter_factory_uses_settings_and_cache(fw_module, monkeypatch):
+    calls = []
+
+    class FakeFilter:
+        pass
+
+    def fake_create_filter_from_settings(settings, logger=None):
+        calls.append((dict(settings), logger))
+        return FakeFilter()
+
+    monkeypatch.setattr(
+        fw_module, "create_filter_from_settings", fake_create_filter_from_settings
+    )
+    fw_module.SETTINGS.update(
+        {
+            "speaker_filter_enabled": True,
+            "speaker_filter_mode": "balanced",
+            "speaker_filter_threshold": 0.81,
+            "speaker_filter_profile_path": "I:/profiles/harsha.json",
+            "speaker_filter_apply_to": "dictation",
+        }
+    )
+
+    first = fw_module.get_target_speaker_filter()
+    second = fw_module.get_target_speaker_filter()
+
+    assert first is second
+    assert len(calls) == 1
+    assert calls[0][0]["speaker_filter_mode"] == "balanced"
+    assert calls[0][0]["speaker_filter_threshold"] == 0.81
+
+    fw_module.SETTINGS["speaker_filter_threshold"] = 0.7
+    third = fw_module.get_target_speaker_filter()
+
+    assert third is not first
+    assert len(calls) == 2
+
+    fw_module.SETTINGS["speaker_filter_enabled"] = False
+    assert fw_module.get_target_speaker_filter() is None
+
+
+def test_transcription_pipeline_receives_target_speaker_filter_getter(fw_module):
+    fw_module.transcription_pipeline = None
+
+    pipeline = fw_module.init_transcription_pipeline()
+
+    assert pipeline.speaker_filter_getter is fw_module.get_target_speaker_filter
+
+
 def test_reset_state(fw_module, monkeypatch):
     monkeypatch.setattr(fw_module, 'restore_volume_all', lambda: None)
     fw_module.recording = True

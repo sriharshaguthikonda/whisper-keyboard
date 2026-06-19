@@ -364,3 +364,16 @@ class TargetSpeakerFilter:
             return 0.0
         return round(samples / float(sample_rate), 6)
 
+
+def create_filter_from_settings(
+    settings: dict[str, Any], logger: logging.Logger | None = None
+) -> TargetSpeakerFilter | None:
+    if not settings.get("speaker_filter_enabled", False):
+        return None
+    return TargetSpeakerFilter.from_profile_path(
+        settings.get("speaker_filter_profile_path"),
+        embedder=SpeechBrainEcapaEmbedder(),
+        mode=str(settings.get("speaker_filter_mode", "analysis")),
+        threshold=float(settings.get("speaker_filter_threshold", 0.72)),
+        logger=logger or logging.getLogger(__name__),
+    )
