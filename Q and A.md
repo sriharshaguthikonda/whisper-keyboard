@@ -718,3 +718,7 @@ Progress:
 - Committed `d00622f feat: expose speaker filter controls`.
 - Control Center verification: UI/status tests passed, full suite passed at 126 tests, touched modules compiled, headless Control Center speaker-filter smoke passed, `git diff --check` clean, and bounded primary-script smoke passed.
 - Final feature verification before merge: `..\openai\Scripts\python.exe -m pytest tests -q` passed at 126 tests; py_compile passed for `speaker_filter.py`, `speaker_filter_calibrate.py`, `transcription_pipeline.py`, `settings_manager.py`, `control_center.py`, and `faster_whisper_Mother_of_all_wkey.py`; `git diff --check` passed; real calibration smoke on one `I:\Record_only_by_harsha` WAV and one `I:\Record_others_16k_wav` WAV wrote temp profile/report successfully; bounded primary-script smoke passed with no leftover process.
+- Feature branch `target-speaker-paste-filter` pushed to origin.
+- Merged into `native-hotkey-broker` and pushed to origin.
+- Post-merge verification in main checkout passed after temporarily stashing/restoring pre-existing runtime config dirt: 126 tests passed, py_compile passed, merge-commit `git diff --check` passed, and bounded primary-script smoke passed with no leftover process.
+- Removed worktree `C:\Windows_software\openai whisper\whisper-keyboard-speaker-filter`.

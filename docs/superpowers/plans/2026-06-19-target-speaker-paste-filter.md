@@ -103,7 +103,7 @@
 - [x] Run `git diff --check`.
 - [x] Run bounded primary-script smoke.
 - [x] Run small calibration smoke if I: drive folders are present.
-- [ ] Push `target-speaker-paste-filter`.
-- [ ] Merge into `native-hotkey-broker`.
-- [ ] Push `native-hotkey-broker`.
-- [ ] Remove `C:\Windows_software\openai whisper\whisper-keyboard-speaker-filter`.
+- [x] Push `target-speaker-paste-filter`.
+- [x] Merge into `native-hotkey-broker`.
+- [x] Push `native-hotkey-broker`.
+- [x] Remove `C:\Windows_software\openai whisper\whisper-keyboard-speaker-filter`.
