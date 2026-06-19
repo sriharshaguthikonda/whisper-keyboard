@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RECORD_KEYS = "f24,ctrl_r"
 SUPPORTED_RECORD_KEY_LABELS = ("f24", "f23", "ctrl_l", "ctrl_r")
+SPEAKER_FILTER_MODES = ("analysis", "conservative", "balanced", "permissive", "custom")
+DEFAULT_SPEAKER_FILTER_PROFILE_PATH = "wkey/speaker_filter_profile.json"
+DEFAULT_SPEAKER_FILTER_ENROLLMENT_DIR = r"I:\Record_only_by_harsha"
+DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR = r"I:\Record_others_16k_wav"
 RECORD_KEY_DISPLAY_NAMES = {
     "f24": "F24",
     "f23": "F23",
@@ -120,6 +124,13 @@ DEFAULT_SETTINGS = {
     "hotkey_profiles": copy.deepcopy(DEFAULT_HOTKEY_PROFILES),
     "ui_theme": "system",
     "minimize_to_tray": True,
+    "speaker_filter_enabled": False,
+    "speaker_filter_mode": "analysis",
+    "speaker_filter_threshold": 0.72,
+    "speaker_filter_profile_path": DEFAULT_SPEAKER_FILTER_PROFILE_PATH,
+    "speaker_filter_enrollment_dir": DEFAULT_SPEAKER_FILTER_ENROLLMENT_DIR,
+    "speaker_filter_negative_dir": DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR,
+    "speaker_filter_apply_to": "dictation",
 }
 
 
@@ -180,6 +191,29 @@ def _normalize_profile_trigger(trigger):
     if value in {"rightctrl", "rightcontrol", "rctrl"}:
         return "ctrl_r"
     return value
+
+
+def _normalize_speaker_filter_mode(value):
+    mode = str(value or "analysis").strip().lower()
+    return mode if mode in SPEAKER_FILTER_MODES else "analysis"
+
+
+def _normalize_speaker_filter_threshold(value):
+    try:
+        threshold = float(value)
+    except Exception:
+        threshold = DEFAULT_SETTINGS["speaker_filter_threshold"]
+    return max(0.0, min(1.0, threshold))
+
+
+def _normalize_nonempty_path(value, default):
+    text = str(value or "").strip()
+    return text or default
+
+
+def _normalize_speaker_filter_apply_to(value):
+    _ = value
+    return "dictation"
 
 
 def normalize_hotkey_profiles(value, record_keys=None):
@@ -313,6 +347,26 @@ def _validate_settings(settings, defaults):
             )
         elif key == "minimize_to_tray":
             merged[key] = _coerce_bool(value, True)
+        elif key == "speaker_filter_enabled":
+            merged[key] = _coerce_bool(value, False)
+        elif key == "speaker_filter_mode":
+            merged[key] = _normalize_speaker_filter_mode(value)
+        elif key == "speaker_filter_threshold":
+            merged[key] = _normalize_speaker_filter_threshold(value)
+        elif key == "speaker_filter_profile_path":
+            merged[key] = _normalize_nonempty_path(
+                value, DEFAULT_SPEAKER_FILTER_PROFILE_PATH
+            )
+        elif key == "speaker_filter_enrollment_dir":
+            merged[key] = _normalize_nonempty_path(
+                value, DEFAULT_SPEAKER_FILTER_ENROLLMENT_DIR
+            )
+        elif key == "speaker_filter_negative_dir":
+            merged[key] = _normalize_nonempty_path(
+                value, DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR
+            )
+        elif key == "speaker_filter_apply_to":
+            merged[key] = _normalize_speaker_filter_apply_to(value)
         else:
             merged[key] = value
 
