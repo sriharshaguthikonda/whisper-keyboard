@@ -28,10 +28,10 @@
 
 **Deliverable:** New speaker-filter settings normalize, clamp, and appear in UI snapshots.
 
-- [ ] Write failing settings/state tests.
-- [ ] Implement defaults and normalization.
-- [ ] Run focused settings/state tests.
-- [ ] Commit: `feat: add speaker filter settings`
+- [x] Write failing settings/state tests.
+- [x] Implement defaults and normalization.
+- [x] Run focused settings/state tests.
+- [x] Commit: `feat: add speaker filter settings`
 
 ### Task 2: Speaker Filter Core
 
@@ -41,11 +41,11 @@
 
 **Deliverable:** Deterministic fake-embedding tests cover accept, reject, mixed audio, analysis mode, and missing profile behavior.
 
-- [ ] Write failing core tests.
-- [ ] Implement filter result/data model, profile loading, chunk scoring, and filtering.
-- [ ] Add ECAPA backend with lazy import.
-- [ ] Run focused core tests.
-- [ ] Commit: `feat: add target speaker audio filter`
+- [x] Write failing core tests.
+- [x] Implement filter result/data model, profile loading, chunk scoring, and filtering.
+- [x] Add ECAPA backend with lazy import.
+- [x] Run focused core tests.
+- [x] Commit: `feat: add target speaker audio filter`
 
 ### Task 3: Manual Dictation Pipeline Integration
 
@@ -57,11 +57,11 @@
 
 **Deliverable:** Manual dictation audio is filtered before STT; F24 and wake-word paths bypass it.
 
-- [ ] Write failing pipeline tests.
-- [ ] Inject speaker filter into `TranscriptionPipeline`.
-- [ ] Wire backend runtime factory from settings.
-- [ ] Run focused pipeline/runtime tests.
-- [ ] Commit: `feat: filter manual dictation by speaker`
+- [x] Write failing pipeline tests.
+- [x] Inject speaker filter into `TranscriptionPipeline`.
+- [x] Wire backend runtime factory from settings.
+- [x] Run focused pipeline/runtime tests.
+- [x] Commit: `feat: filter manual dictation by speaker`
 
 ### Task 4: Calibration CLI
 
@@ -72,11 +72,11 @@
 
 **Deliverable:** CLI writes local profile/report from positive and negative folders and ignored output paths.
 
-- [ ] Write failing calibration tests using temp WAVs and fake embedding backend.
-- [ ] Implement calibration sampling, threshold suggestion, profile/report writing.
-- [ ] Add gitignore entries for generated profiles/reports.
-- [ ] Run focused calibration tests.
-- [ ] Commit: `feat: calibrate target speaker profile`
+- [x] Write failing calibration tests using temp WAVs and fake embedding backend.
+- [x] Implement calibration sampling, threshold suggestion, profile/report writing.
+- [x] Add gitignore entries for generated profiles/reports.
+- [x] Run focused calibration tests.
+- [x] Commit: `feat: calibrate target speaker profile`
 
 ### Task 5: Control Center Controls
 
@@ -87,10 +87,10 @@
 
 **Deliverable:** Control Center exposes enable/mode/threshold/profile/corpus/status fields while preserving System/Dark/Light themes.
 
-- [ ] Write failing UI-state tests.
-- [ ] Add settings controls and status labels.
-- [ ] Run state tests and headless Control Center smoke.
-- [ ] Commit: `feat: expose speaker filter controls`
+- [x] Write failing UI-state tests.
+- [x] Add settings controls and status labels.
+- [x] Run state tests and headless Control Center smoke.
+- [x] Commit: `feat: expose speaker filter controls`
 
 ### Task 6: Final Verification And Merge
 
@@ -98,11 +98,11 @@
 
 **Deliverable:** Verified feature branch pushed, merged to `native-hotkey-broker`, worktree removed.
 
-- [ ] Run `..\openai\Scripts\python.exe -m pytest tests -q`.
-- [ ] Run py_compile for touched runtime modules.
-- [ ] Run `git diff --check`.
-- [ ] Run bounded primary-script smoke.
-- [ ] Run small calibration smoke if I: drive folders are present.
+- [x] Run `..\openai\Scripts\python.exe -m pytest tests -q`.
+- [x] Run py_compile for touched runtime modules.
+- [x] Run `git diff --check`.
+- [x] Run bounded primary-script smoke.
+- [x] Run small calibration smoke if I: drive folders are present.
 - [ ] Push `target-speaker-paste-filter`.
 - [ ] Merge into `native-hotkey-broker`.
 - [ ] Push `native-hotkey-broker`.

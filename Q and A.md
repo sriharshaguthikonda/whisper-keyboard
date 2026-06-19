@@ -671,7 +671,7 @@ Memory:
 
 ## 2026-06-19 Target-Speaker Paste Filter
 
-Status: implementation started in separate worktree.
+Status: implementation in progress in separate worktree.
 
 Worktree:
 
@@ -705,3 +705,16 @@ Docs:
 Current questions for user:
 
 - None pending.
+
+Progress:
+
+- Committed `6a39705 feat: add speaker filter settings`.
+- Committed `300bb91 feat: add target speaker audio filter`.
+- Core filter verification: `tests/test_speaker_filter.py` passed, full suite passed at 115 tests, `wkey/speaker_filter.py` compiled, `git diff --check` clean, and bounded primary-script smoke passed after fixing command quoting.
+- Committed `3c91611 feat: filter manual dictation by speaker`.
+- Pipeline integration verification: focused pipeline/runtime tests passed, full suite passed at 121 tests, touched modules compiled, `git diff --check` clean, and bounded primary-script smoke passed.
+- Committed `8232efe feat: calibrate target speaker profile`.
+- Calibration verification: temp-WAV calibration tests passed, full suite passed at 123 tests, calibration modules compiled, `git diff --check` clean, and bounded primary-script smoke passed.
+- Committed `d00622f feat: expose speaker filter controls`.
+- Control Center verification: UI/status tests passed, full suite passed at 126 tests, touched modules compiled, headless Control Center speaker-filter smoke passed, `git diff --check` clean, and bounded primary-script smoke passed.
+- Final feature verification before merge: `..\openai\Scripts\python.exe -m pytest tests -q` passed at 126 tests; py_compile passed for `speaker_filter.py`, `speaker_filter_calibrate.py`, `transcription_pipeline.py`, `settings_manager.py`, `control_center.py`, and `faster_whisper_Mother_of_all_wkey.py`; `git diff --check` passed; real calibration smoke on one `I:\Record_only_by_harsha` WAV and one `I:\Record_others_16k_wav` WAV wrote temp profile/report successfully; bounded primary-script smoke passed with no leftover process.
