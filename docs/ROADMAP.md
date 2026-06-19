@@ -118,6 +118,37 @@ Backend management:
 - Rust broker launch remains diagnostic/experimental.
 - Windows scheduled-task migration remains future broker/tray work.
 
+## Target-Speaker Paste Filter
+
+Status: planned 2026-06-19; implementation in branch `target-speaker-paste-filter`.
+
+Goal: prevent nearby speakers from being pasted during manual dictation by filtering the audio to Harsha-matching chunks before transcription.
+
+Design docs:
+
+- `docs/superpowers/specs/2026-06-19-target-speaker-paste-filter-design.md`
+- `docs/superpowers/plans/2026-06-19-target-speaker-paste-filter.md`
+
+Architecture:
+
+- V1 uses target-speaker verification over VAD chunks, not full diarization.
+- SpeechBrain ECAPA is the default speaker embedding backend because it is already installed locally.
+- Positive enrollment defaults to `I:\Record_only_by_harsha`.
+- Negative calibration defaults to `I:\Record_others_16k_wav`.
+- Generated speaker profiles and calibration reports remain local ignored runtime artifacts.
+
+Runtime policy:
+
+- Apply only to manual dictation/paste (`keyword_index is None`) in v1.
+- F24 command/tool-use and wake-word command routes bypass the filter.
+- `analysis` mode logs scores without changing audio.
+- `conservative`, `balanced`, `permissive`, and `custom` modes are adjustable in settings.
+
+Future work:
+
+- Full diarization plus word-timestamp alignment if v1 proves useful but overlapping speakers remain a problem.
+- Source separation only after diarization/verification is not enough.
+
 ## Active Groq Follow-up
 
 Status: implemented 2026-06-13.
