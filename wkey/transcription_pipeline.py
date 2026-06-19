@@ -37,6 +37,8 @@ class TranscriptionPipeline:
         error_color_suffix="",
         groq_failures_before_cpu=DEFAULT_GROQ_FAILURES_BEFORE_CPU,
         record_transcript_context=None,
+        speaker_filter_getter=None,
+        speaker_filter_status_writer=None,
     ):
         self.audio_buffer_queue = audio_buffer_queue
         self.transcript_queue = transcript_queue
@@ -57,6 +59,8 @@ class TranscriptionPipeline:
         self.groq_failure_streak = 0
         self.groq_failures_before_cpu = groq_failures_before_cpu
         self.record_transcript_context = record_transcript_context
+        self.speaker_filter_getter = speaker_filter_getter
+        self.speaker_filter_status_writer = speaker_filter_status_writer
         self.global_state.setdefault("transcribe_inflight", False)
         self.global_state.setdefault("last_transcribe_activity", time.time())
 
@@ -77,15 +81,6 @@ class TranscriptionPipeline:
                 if not self.validate_audio_buffer(audio_buffer_for_processing):
                     self.global_state["consecutive_failures"] += 1
                     continue
-
-                self.log.debug("process_audio_async: creating WAV buffer")
-                byte_io = io.BytesIO()
-                wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
-                byte_io.seek(0)
-                self.log.debug(
-                    "process_audio_async: WAV buffer ready, size=%d bytes",
-                    byte_io.getbuffer().nbytes,
-                )
 
                 transcript = None
                 groq_success = False
@@ -111,9 +106,34 @@ class TranscriptionPipeline:
                     audio_buffer_for_processing = audio_buffer_for_processing[
                         -max_samples:
                     ]
-                    byte_io = io.BytesIO()
-                    wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
-                    byte_io.seek(0)
+
+                if (
+                    keyword_index is None
+                    and current_settings.get("speaker_filter_enabled", False)
+                    and current_settings.get("speaker_filter_apply_to", "dictation")
+                    == "dictation"
+                ):
+                    filter_result = self._apply_speaker_filter(
+                        audio_buffer_for_processing
+                    )
+                    if filter_result is None:
+                        continue
+                    audio_buffer_for_processing = filter_result.audio
+                    if len(audio_buffer_for_processing) == 0:
+                        self.log.warning(
+                            "Speaker filter rejected manual dictation audio; paste skipped."
+                        )
+                        self._beep_speaker_filter_reject()
+                        continue
+
+                self.log.debug("process_audio_async: creating WAV buffer")
+                byte_io = io.BytesIO()
+                wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
+                byte_io.seek(0)
+                self.log.debug(
+                    "process_audio_async: WAV buffer ready, size=%d bytes",
+                    byte_io.getbuffer().nbytes,
+                )
 
                 if use_groq:
                     try:
@@ -291,3 +311,80 @@ class TranscriptionPipeline:
                     await asyncio.sleep(1)
             finally:
                 self.global_state["is_processing"] = False
+
+    def _apply_speaker_filter(self, audio_buffer):
+        try:
+            speaker_filter = (
+                self.speaker_filter_getter() if self.speaker_filter_getter else None
+            )
+        except Exception as exc:
+            self.log.error("Speaker filter unavailable: %s", exc, exc_info=True)
+            self._record_speaker_filter_status(
+                decision="filter_unavailable",
+                accepted_seconds=0.0,
+                rejected_seconds=len(audio_buffer) / float(self.sample_rate),
+                scores=[],
+                threshold=None,
+                profile_loaded=False,
+            )
+            self._beep_speaker_filter_reject()
+            return None
+
+        if speaker_filter is None:
+            self.log.error("Speaker filter enabled but no filter is configured")
+            self._record_speaker_filter_status(
+                decision="filter_unavailable",
+                accepted_seconds=0.0,
+                rejected_seconds=len(audio_buffer) / float(self.sample_rate),
+                scores=[],
+                threshold=None,
+                profile_loaded=False,
+            )
+            self._beep_speaker_filter_reject()
+            return None
+
+        result = speaker_filter.filter_audio(audio_buffer, self.sample_rate)
+        self._record_speaker_filter_status(
+            decision=result.decision,
+            accepted_seconds=result.accepted_seconds,
+            rejected_seconds=result.rejected_seconds,
+            scores=result.scores,
+            threshold=getattr(result, "threshold", None),
+            profile_loaded=getattr(result, "profile_loaded", False),
+        )
+        return result
+
+    def _record_speaker_filter_status(
+        self,
+        *,
+        decision,
+        accepted_seconds,
+        rejected_seconds,
+        scores,
+        threshold,
+        profile_loaded,
+    ):
+        self.global_state["last_speaker_filter"] = {
+            "decision": decision,
+            "accepted_seconds": round(float(accepted_seconds), 3),
+            "rejected_seconds": round(float(rejected_seconds), 3),
+            "scores": list(scores or []),
+            "threshold": threshold,
+            "profile_loaded": bool(profile_loaded),
+            "updated_at": time.time(),
+        }
+        if self.speaker_filter_status_writer is not None:
+            try:
+                self.speaker_filter_status_writer(
+                    self.global_state["last_speaker_filter"]
+                )
+            except Exception as exc:
+                self.log.warning("Speaker filter status write failed: %s", exc)
+
+    def _beep_speaker_filter_reject(self):
+        try:
+            self.beep(650, 180)
+        except TypeError:
+            self.beep()
+        except Exception:
+            pass

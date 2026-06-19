@@ -79,3 +79,50 @@ def test_apply_settings_values_persists_theme_and_tray_preferences():
 
     assert fallback["ui_theme"] == "system"
     assert fallback["minimize_to_tray"] is True
+
+
+def test_apply_settings_values_persists_speaker_filter_controls():
+    updated = apply_settings_values(
+        {},
+        {
+            "speaker_filter_enabled": True,
+            "speaker_filter_mode": "balanced",
+            "speaker_filter_threshold": "0.83",
+            "speaker_filter_profile_path": " I:/profiles/harsha.json ",
+            "speaker_filter_enrollment_dir": " I:/Record_only_by_harsha ",
+            "speaker_filter_negative_dir": " I:/Record_others_16k_wav ",
+            "speaker_filter_apply_to": "all",
+        },
+    )
+
+    assert updated["speaker_filter_enabled"] is True
+    assert updated["speaker_filter_mode"] == "balanced"
+    assert updated["speaker_filter_threshold"] == 0.83
+    assert updated["speaker_filter_profile_path"] == "I:/profiles/harsha.json"
+    assert updated["speaker_filter_enrollment_dir"] == "I:/Record_only_by_harsha"
+    assert updated["speaker_filter_negative_dir"] == "I:/Record_others_16k_wav"
+    assert updated["speaker_filter_apply_to"] == "dictation"
+
+
+def test_settings_snapshot_includes_speaker_filter_state():
+    snapshot = build_settings_snapshot(
+        {
+            "speaker_filter_enabled": True,
+            "speaker_filter_mode": "custom",
+            "speaker_filter_threshold": 0.91,
+            "speaker_filter_profile_path": "I:/profiles/harsha.json",
+            "speaker_filter_enrollment_dir": "I:/Record_only_by_harsha",
+            "speaker_filter_negative_dir": "I:/Record_others_16k_wav",
+        },
+        env={},
+    )
+
+    assert snapshot["speaker_filter"] == {
+        "enabled": True,
+        "mode": "custom",
+        "threshold": 0.91,
+        "profile_path": "I:/profiles/harsha.json",
+        "enrollment_dir": "I:/Record_only_by_harsha",
+        "negative_dir": "I:/Record_others_16k_wav",
+        "apply_to": "dictation",
+    }

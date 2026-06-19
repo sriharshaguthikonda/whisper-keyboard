@@ -176,3 +176,9 @@ train/
 
 # runtime locks
 wkey/wkey_runtime.lock
+
+# target-speaker filter runtime artifacts
+wkey/speaker_filter_profile.json
+wkey/speaker_filter_calibration_report.json
+wkey/speaker_filter_status.json
+wkey/speaker_filter_profiles/

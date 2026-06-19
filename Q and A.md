@@ -668,3 +668,53 @@ Memory:
 
 ## user comments
 1. see other polished applications of this type and see what improvemtns can we make that gives us significant benefits
+
+## 2026-06-19 Target-Speaker Paste Filter
+
+Status: implementation in progress in separate worktree.
+
+Worktree:
+
+- `C:\Windows_software\openai whisper\whisper-keyboard-speaker-filter`
+- Branch: `target-speaker-paste-filter`
+- Base branch: `native-hotkey-broker` at `55b9a74 feat: add whisper control center`
+
+Decision:
+
+- V1 uses target-speaker verification, not full diarization.
+- SpeechBrain ECAPA is the default backend because it is already installed in the project venv.
+- `pyannote.audio` is not installed, so full diarization stays v2.
+- Apply live filtering only to manual dictation/paste route (`keyword_index is None`).
+- F24 command and wake-word command routes bypass the filter.
+- User requested the behavior must be adjustable in settings.
+
+Planned settings:
+
+- Enable speaker filter.
+- Mode: analysis, conservative, balanced, permissive, custom.
+- Custom threshold.
+- Profile path.
+- Positive enrollment folder: `I:\Record_only_by_harsha`.
+- Negative calibration folder: `I:\Record_others_16k_wav`.
+
+Docs:
+
+- Spec: `docs/superpowers/specs/2026-06-19-target-speaker-paste-filter-design.md`
+- Plan: `docs/superpowers/plans/2026-06-19-target-speaker-paste-filter.md`
+
+Current questions for user:
+
+- None pending.
+
+Progress:
+
+- Committed `6a39705 feat: add speaker filter settings`.
+- Committed `300bb91 feat: add target speaker audio filter`.
+- Core filter verification: `tests/test_speaker_filter.py` passed, full suite passed at 115 tests, `wkey/speaker_filter.py` compiled, `git diff --check` clean, and bounded primary-script smoke passed after fixing command quoting.
+- Committed `3c91611 feat: filter manual dictation by speaker`.
+- Pipeline integration verification: focused pipeline/runtime tests passed, full suite passed at 121 tests, touched modules compiled, `git diff --check` clean, and bounded primary-script smoke passed.
+- Committed `8232efe feat: calibrate target speaker profile`.
+- Calibration verification: temp-WAV calibration tests passed, full suite passed at 123 tests, calibration modules compiled, `git diff --check` clean, and bounded primary-script smoke passed.
+- Committed `d00622f feat: expose speaker filter controls`.
+- Control Center verification: UI/status tests passed, full suite passed at 126 tests, touched modules compiled, headless Control Center speaker-filter smoke passed, `git diff --check` clean, and bounded primary-script smoke passed.
+- Final feature verification before merge: `..\openai\Scripts\python.exe -m pytest tests -q` passed at 126 tests; py_compile passed for `speaker_filter.py`, `speaker_filter_calibrate.py`, `transcription_pipeline.py`, `settings_manager.py`, `control_center.py`, and `faster_whisper_Mother_of_all_wkey.py`; `git diff --check` passed; real calibration smoke on one `I:\Record_only_by_harsha` WAV and one `I:\Record_others_16k_wav` WAV wrote temp profile/report successfully; bounded primary-script smoke passed with no leftover process.

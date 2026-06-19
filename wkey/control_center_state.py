@@ -9,6 +9,7 @@ from typing import Mapping
 try:
     from .settings_manager import (
         DEFAULT_SETTINGS,
+        SPEAKER_FILTER_MODES,
         normalize_hotkey_profiles,
         normalize_record_keys,
         record_key_display_text,
@@ -18,6 +19,7 @@ try:
 except ImportError:
     from settings_manager import (
         DEFAULT_SETTINGS,
+        SPEAKER_FILTER_MODES,
         normalize_hotkey_profiles,
         normalize_record_keys,
         record_key_display_text,
@@ -34,6 +36,12 @@ BOOLEAN_SETTING_FIELDS = (
     "enable_wakeword_detection",
     "enable_pre_recording_keyword_check",
     "enable_transcript_context_memory",
+)
+
+SPEAKER_FILTER_PATH_FIELDS = (
+    "speaker_filter_profile_path",
+    "speaker_filter_enrollment_dir",
+    "speaker_filter_negative_dir",
 )
 
 INTEGER_SETTING_LIMITS = {
@@ -67,6 +75,11 @@ def _normalize_theme_mode(value):
     return mode if mode in THEME_MODES else "system"
 
 
+def _normalize_speaker_filter_mode(value):
+    mode = str(value or "analysis").strip().lower()
+    return mode if mode in SPEAKER_FILTER_MODES else "analysis"
+
+
 def _clamp_int(value, minimum, maximum):
     try:
         parsed = int(value)
@@ -81,6 +94,11 @@ def _clamp_float(value, minimum, maximum):
     except Exception:
         parsed = minimum
     return max(minimum, min(maximum, parsed))
+
+
+def _normalize_path(value, default):
+    text = str(value or "").strip()
+    return text or default
 
 
 def provider_status(env: Mapping[str, str] | None = None):
@@ -116,6 +134,28 @@ def apply_settings_values(settings: Mapping[str, object], values: Mapping[str, o
     if "minimize_to_tray" in values:
         updated["minimize_to_tray"] = _coerce_bool(values["minimize_to_tray"])
 
+    if "speaker_filter_enabled" in values:
+        updated["speaker_filter_enabled"] = _coerce_bool(
+            values["speaker_filter_enabled"]
+        )
+
+    if "speaker_filter_mode" in values:
+        updated["speaker_filter_mode"] = _normalize_speaker_filter_mode(
+            values["speaker_filter_mode"]
+        )
+
+    if "speaker_filter_threshold" in values:
+        updated["speaker_filter_threshold"] = _clamp_float(
+            values["speaker_filter_threshold"], 0.0, 1.0
+        )
+
+    for key in SPEAKER_FILTER_PATH_FIELDS:
+        if key in values:
+            updated[key] = _normalize_path(values[key], DEFAULT_SETTINGS[key])
+
+    if "speaker_filter_apply_to" in values:
+        updated["speaker_filter_apply_to"] = "dictation"
+
     profile_source = values.get("hotkey_profiles", updated.get("hotkey_profiles"))
     updated["hotkey_profiles"] = normalize_hotkey_profiles(
         profile_source, record_keys=updated.get("record_keys")
@@ -139,4 +179,13 @@ def build_settings_snapshot(settings: Mapping[str, object], env=None):
             if key in normalized
         },
         "providers": provider_status(env),
+        "speaker_filter": {
+            "enabled": normalized["speaker_filter_enabled"],
+            "mode": normalized["speaker_filter_mode"],
+            "threshold": normalized["speaker_filter_threshold"],
+            "profile_path": normalized["speaker_filter_profile_path"],
+            "enrollment_dir": normalized["speaker_filter_enrollment_dir"],
+            "negative_dir": normalized["speaker_filter_negative_dir"],
+            "apply_to": normalized["speaker_filter_apply_to"],
+        },
     }

@@ -174,6 +174,10 @@ try:
 except ModuleNotFoundError:
     from wkey.transcription_pipeline import TranscriptionPipeline, run_asyncio_in_thread
 try:
+    from speaker_filter import create_filter_from_settings
+except ModuleNotFoundError:
+    from wkey.speaker_filter import create_filter_from_settings
+try:
     from context_memory import (
         add_recent_transcript,
         build_stt_prompt,
@@ -586,6 +590,41 @@ else:
 def get_groq_audio_model():
     return next_audio_stt_model()
 
+def _speaker_filter_cache_key(settings):
+    enabled = bool(settings.get("speaker_filter_enabled", False))
+    if not enabled:
+        return (False,)
+    return (
+        True,
+        str(settings.get("speaker_filter_mode", "analysis")),
+        float(settings.get("speaker_filter_threshold", 0.72)),
+        str(settings.get("speaker_filter_profile_path", "")),
+        str(settings.get("speaker_filter_apply_to", "dictation")),
+    )
+
+def get_target_speaker_filter():
+    key = _speaker_filter_cache_key(SETTINGS)
+    if key == (False,):
+        speaker_filter_cache["key"] = key
+        speaker_filter_cache["filter"] = None
+        return None
+    if speaker_filter_cache.get("key") == key:
+        return speaker_filter_cache.get("filter")
+    speaker_filter = create_filter_from_settings(SETTINGS, logger=logging)
+    speaker_filter_cache["key"] = key
+    speaker_filter_cache["filter"] = speaker_filter
+    return speaker_filter
+
+def write_target_speaker_status(status):
+    try:
+        payload = dict(status or {})
+        temp_path = f"{SPEAKER_FILTER_STATUS_PATH}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=True)
+        os.replace(temp_path, SPEAKER_FILTER_STATUS_PATH)
+    except Exception as exc:
+        logging.warning("Failed to write speaker filter status: %s", exc)
+
 settings_watch_handle = None
 
 def apply_settings(new_settings):
@@ -737,6 +776,10 @@ p = pyaudio.PyAudio()
 wake_stream = None
 wakeword_listener = None
 transcription_pipeline = None
+speaker_filter_cache = {"key": None, "filter": None}
+SPEAKER_FILTER_STATUS_PATH = os.path.join(
+    os.path.dirname(__file__), "speaker_filter_status.json"
+)
 
 # Define beep sounds
 START_BEEP = (2080, 100)
@@ -2277,6 +2320,8 @@ def init_transcription_pipeline():
             error_color_prefix=RED,
             error_color_suffix=RESET,
             record_transcript_context=_record_recent_transcript,
+            speaker_filter_getter=get_target_speaker_filter,
+            speaker_filter_status_writer=write_target_speaker_status,
         )
     return transcription_pipeline
 

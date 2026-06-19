@@ -1,5 +1,6 @@
 import importlib
 import io
+import json
 import types
 import numpy as np
 import pytest
@@ -719,6 +720,75 @@ def test_get_transcript_with_retries(fw_module, monkeypatch):
     result = asyncio.run(fw_module.get_transcript_with_retries(byte_io, 1, max_retries=3))
     assert result == 'remote text'
     assert calls == ['remote', 'remote']
+
+
+def test_target_speaker_filter_factory_uses_settings_and_cache(fw_module, monkeypatch):
+    calls = []
+
+    class FakeFilter:
+        pass
+
+    def fake_create_filter_from_settings(settings, logger=None):
+        calls.append((dict(settings), logger))
+        return FakeFilter()
+
+    monkeypatch.setattr(
+        fw_module, "create_filter_from_settings", fake_create_filter_from_settings
+    )
+    fw_module.SETTINGS.update(
+        {
+            "speaker_filter_enabled": True,
+            "speaker_filter_mode": "balanced",
+            "speaker_filter_threshold": 0.81,
+            "speaker_filter_profile_path": "I:/profiles/harsha.json",
+            "speaker_filter_apply_to": "dictation",
+        }
+    )
+
+    first = fw_module.get_target_speaker_filter()
+    second = fw_module.get_target_speaker_filter()
+
+    assert first is second
+    assert len(calls) == 1
+    assert calls[0][0]["speaker_filter_mode"] == "balanced"
+    assert calls[0][0]["speaker_filter_threshold"] == 0.81
+
+    fw_module.SETTINGS["speaker_filter_threshold"] = 0.7
+    third = fw_module.get_target_speaker_filter()
+
+    assert third is not first
+    assert len(calls) == 2
+
+    fw_module.SETTINGS["speaker_filter_enabled"] = False
+    assert fw_module.get_target_speaker_filter() is None
+
+
+def test_transcription_pipeline_receives_target_speaker_filter_getter(fw_module):
+    fw_module.transcription_pipeline = None
+
+    pipeline = fw_module.init_transcription_pipeline()
+
+    assert pipeline.speaker_filter_getter is fw_module.get_target_speaker_filter
+    assert pipeline.speaker_filter_status_writer is fw_module.write_target_speaker_status
+
+
+def test_target_speaker_status_writer_outputs_json(fw_module, tmp_path):
+    status_path = tmp_path / "speaker_filter_status.json"
+    fw_module.SPEAKER_FILTER_STATUS_PATH = str(status_path)
+
+    fw_module.write_target_speaker_status(
+        {
+            "decision": "filtered",
+            "accepted_seconds": 1.0,
+            "rejected_seconds": 0.5,
+        }
+    )
+
+    assert json.loads(status_path.read_text(encoding="utf-8")) == {
+        "decision": "filtered",
+        "accepted_seconds": 1.0,
+        "rejected_seconds": 0.5,
+    }
 
 
 def test_reset_state(fw_module, monkeypatch):

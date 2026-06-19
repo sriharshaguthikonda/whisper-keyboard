@@ -64,6 +64,43 @@ def test_record_key_normalization_is_safe_for_capture_names():
     assert normalize_record_keys("space") == DEFAULT_RECORD_KEYS
 
 
+def test_speaker_filter_settings_are_normalized(tmp_path):
+    config_path = tmp_path / "transcription_config.json"
+    config_path.write_text(
+        """
+{
+  "speaker_filter_enabled": "yes",
+  "speaker_filter_mode": "strict",
+  "speaker_filter_threshold": 2.0,
+  "speaker_filter_profile_path": "  I:/profiles/harsha.json  ",
+  "speaker_filter_enrollment_dir": "  I:/Record_only_by_harsha  ",
+  "speaker_filter_negative_dir": "  I:/Record_others_16k_wav  ",
+  "speaker_filter_apply_to": "all"
+}
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_settings(str(config_path))
+
+    assert loaded["speaker_filter_enabled"] is True
+    assert loaded["speaker_filter_mode"] == "analysis"
+    assert loaded["speaker_filter_threshold"] == 1.0
+    assert loaded["speaker_filter_profile_path"] == "I:/profiles/harsha.json"
+    assert loaded["speaker_filter_enrollment_dir"] == "I:/Record_only_by_harsha"
+    assert loaded["speaker_filter_negative_dir"] == "I:/Record_others_16k_wav"
+    assert loaded["speaker_filter_apply_to"] == "dictation"
+
+
+def test_default_speaker_filter_settings_start_in_analysis_mode():
+    loaded = load_settings("missing-transcription-config.json")
+
+    assert loaded["speaker_filter_enabled"] is False
+    assert loaded["speaker_filter_mode"] == "analysis"
+    assert loaded["speaker_filter_threshold"] == 0.72
+    assert loaded["speaker_filter_apply_to"] == "dictation"
+
+
 def test_f23_dictation_profile_derives_active_record_keys():
     profiles = normalize_hotkey_profiles(DEFAULT_HOTKEY_PROFILES)
     profiles["dictation"]["trigger"] = "f23"
