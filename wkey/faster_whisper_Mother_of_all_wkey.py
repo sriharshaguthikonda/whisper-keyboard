@@ -112,6 +112,7 @@ try:
         runtime_mode_for_settings,
         load_settings,
         normalize_record_keys,
+        record_keys_from_hotkey_profiles,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
@@ -122,6 +123,7 @@ except ModuleNotFoundError:
         runtime_mode_for_settings,
         load_settings,
         normalize_record_keys,
+        record_keys_from_hotkey_profiles,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
@@ -407,15 +409,17 @@ except AttributeError:
 except Exception as e:
     logging.warning(f"{YELLOW}Failed to apply initial Selenium setting: {e}{RESET}")
 
-# Get the key labels from environment variables, default to Left Ctrl if not set.
-key_label = os.environ.get("WKEY", "ctrl_l").lower()
+# Get the key labels from environment variables, default to Right Ctrl if not set.
+key_label = os.environ.get("WKEY", "ctrl_r").lower()
 SUPPORTED_RECORD_KEYS = {
     'f24': Key.f24,
+    'f23': Key.f23,
     'ctrl_l': Key.ctrl_l,
+    'ctrl_r': Key.ctrl_r,
 }
 if key_label not in SUPPORTED_RECORD_KEYS:
-    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'ctrl_l'")
-    key_label = 'ctrl_l'
+    print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'ctrl_r'")
+    key_label = 'ctrl_r'
 
 SUPPORTED_RUNTIME_MODES = {"combined", "keyboard", "wakeword"}
 
@@ -451,6 +455,11 @@ def _resolve_record_key_source(settings):
         return normalize_record_keys(
             os.environ.get("WKEY_RECORD_KEYS", ""),
             allow_empty=True,
+        )
+    if "hotkey_profiles" in settings:
+        return record_keys_from_hotkey_profiles(
+            settings.get("hotkey_profiles"),
+            fallback=settings.get("record_keys", DEFAULT_RECORD_KEYS),
         )
     return normalize_record_keys(settings.get("record_keys", DEFAULT_RECORD_KEYS))
 
@@ -1968,7 +1977,7 @@ def init_keyboard_handler():
         start_recording=_start_recording_async,
         stop_recording=_stop_recording_async,
         cancel_recording=_cancel_recording_async,
-        cancel_on_chord_keys={Key.ctrl_l},
+        cancel_on_chord_keys={key for label, key in RECORD_KEYS.items() if label != "f24"},
         toggle_pause=toggle_pause_state,
         debounce_time=0.5,
         log=logging,

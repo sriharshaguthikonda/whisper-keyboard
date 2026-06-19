@@ -107,14 +107,14 @@ def test_held_record_key_repeats_do_not_restart_after_rearm_delay():
     assert events == [("start", None), ("stop", None), ("start", None)]
 
 
-def test_left_ctrl_chord_cancels_recording_and_release_does_not_stop():
+def test_right_ctrl_chord_cancels_recording_and_release_does_not_stop():
     from pynput.keyboard import Key
     from wkey.keyboard_shortcuts import KeyboardShortcutHandler
 
     events = []
     now = [100.0]
     handler = KeyboardShortcutHandler(
-        record_keys={Key.ctrl_l},
+        record_keys={Key.ctrl_r},
         map_key_to_keyword_index=lambda key: None,
         start_recording=lambda keyword_index: events.append(("start", keyword_index)),
         stop_recording=lambda keyword_index: events.append(("stop", keyword_index)),
@@ -122,13 +122,13 @@ def test_left_ctrl_chord_cancels_recording_and_release_does_not_stop():
             ("cancel", keyword_index, reason)
         ),
         toggle_pause=lambda: events.append(("pause", None)),
-        cancel_on_chord_keys={Key.ctrl_l},
+        cancel_on_chord_keys={Key.ctrl_r},
         clock=lambda: now[0],
     )
 
-    handler.on_press(Key.ctrl_l, recording=False)
+    handler.on_press(Key.ctrl_r, recording=False)
     handler.on_press("c", recording=True)
-    handler.on_release(Key.ctrl_l, recording=False)
+    handler.on_release(Key.ctrl_r, recording=False)
 
     assert events == [("start", None), ("cancel", None, "chord:c")]
 

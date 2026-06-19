@@ -24,23 +24,23 @@ def test_validate_audio_buffer(fw_module):
     assert fw_module.validate_audio_buffer(good) is True
 
 
-def test_default_manual_record_keys_use_left_ctrl(monkeypatch):
+def test_default_manual_record_keys_use_right_ctrl(monkeypatch):
     monkeypatch.delenv("WKEY", raising=False)
     monkeypatch.delenv("WKEY_RECORD_KEYS", raising=False)
     monkeypatch.delenv("WKEY_ALLOW_ENV_OVERRIDES", raising=False)
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
     mod = importlib.reload(mod)
 
-    assert mod.key_label == "ctrl_l"
+    assert mod.key_label == "ctrl_r"
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "ctrl_l": mod.Key.ctrl_l,
+        "ctrl_r": mod.Key.ctrl_r,
     }
     assert mod.map_key_to_keyword_index(mod.Key.f24) == 0
-    assert mod.map_key_to_keyword_index(mod.Key.ctrl_l) is None
+    assert mod.map_key_to_keyword_index(mod.Key.ctrl_r) is None
 
 
-def test_stale_right_ctrl_config_maps_to_left_ctrl(monkeypatch):
+def test_right_ctrl_config_is_supported(monkeypatch):
     monkeypatch.setenv("WKEY_ALLOW_ENV_OVERRIDES", "1")
     monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
     mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
@@ -48,9 +48,9 @@ def test_stale_right_ctrl_config_maps_to_left_ctrl(monkeypatch):
 
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "ctrl_l": mod.Key.ctrl_l,
+        "ctrl_r": mod.Key.ctrl_r,
     }
-    assert mod.map_key_to_keyword_index(mod.Key.ctrl_l) is None
+    assert mod.map_key_to_keyword_index(mod.Key.ctrl_r) is None
 
 
 def test_stale_env_record_keys_ignored_without_override(monkeypatch):
@@ -62,7 +62,7 @@ def test_stale_env_record_keys_ignored_without_override(monkeypatch):
 
     assert mod.RECORD_KEYS == {
         "f24": mod.Key.f24,
-        "ctrl_l": mod.Key.ctrl_l,
+        "ctrl_r": mod.Key.ctrl_r,
     }
     assert mod.runtime_mode == "keyboard"
 
@@ -104,7 +104,7 @@ def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
     monkeypatch.setattr(
         fw_module,
         "RECORD_KEYS",
-        {"f24": fw_module.Key.f24, "ctrl_l": fw_module.Key.ctrl_l},
+        {"f24": fw_module.Key.f24, "ctrl_r": fw_module.Key.ctrl_r},
     )
 
     fw_module.start_listener()
@@ -209,7 +209,7 @@ def test_wakeword_setting_off_keeps_manual_keys(fw_module, monkeypatch):
     assert fw_module.is_keyboard_runtime_enabled() is True
     assert fw_module.is_wakeword_runtime_enabled() is False
     assert fw_module.RECORD_KEYS["f24"] == fw_module.Key.f24
-    assert fw_module.RECORD_KEYS["ctrl_l"] == fw_module.Key.ctrl_l
+    assert fw_module.RECORD_KEYS["ctrl_r"] == fw_module.Key.ctrl_r
     assert closed == ["closed"]
 
 
@@ -220,8 +220,30 @@ def test_apply_settings_updates_manual_record_keys(fw_module):
 
     assert fw_module.RECORD_KEYS == {
         "f24": fw_module.Key.f24,
-        "ctrl_l": fw_module.Key.ctrl_l,
+        "ctrl_r": fw_module.Key.ctrl_r,
     }
+
+
+def test_apply_settings_uses_hotkey_profile_trigger_for_f23(fw_module):
+    settings = dict(fw_module.SETTINGS)
+    profiles = dict(settings["hotkey_profiles"])
+    profiles["dictation"] = dict(profiles["dictation"])
+    profiles["command"] = dict(profiles["command"])
+    profiles["dictation"]["enabled"] = True
+    profiles["dictation"]["trigger"] = "f23"
+    profiles["command"]["enabled"] = True
+    profiles["command"]["trigger"] = "f24"
+    settings["record_keys"] = "f24"
+    settings["hotkey_profiles"] = profiles
+
+    fw_module.apply_settings(settings)
+
+    assert fw_module.RECORD_KEYS == {
+        "f24": fw_module.Key.f24,
+        "f23": fw_module.Key.f23,
+    }
+    assert fw_module.map_key_to_keyword_index(fw_module.Key.f24) == 0
+    assert fw_module.map_key_to_keyword_index(fw_module.Key.f23) is None
 
 
 def test_pending_manual_cancel_blocks_late_start(fw_module, monkeypatch):

@@ -570,3 +570,101 @@ Experimental broker commands:
 cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20
 cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 300
 ```
+
+
+
+## user comments
+
+1. so the python gui says when i try to capture the hotkey it says the capture library for keyboard is missing or something.
+2. ordered agnet to install  library, we'll report back and we'll see if you need to actually solve that issue or not.
+3. keyboard library resolved.
+4. i have asked another agent to change the left control to right control to activate the voice transcription.
+5. is it even a good idea to develop that ui or build on top of the existing ui? the current ui is definitely not good enough.
+6.
+
+Control Center V1 implementation notes:
+
+- New UI entrypoint remains `wkey\Whisper_GUI.py`; it now launches `wkey\control_center.py`.
+- Settings now have structured `hotkey_profiles`, while `record_keys` remains for the runtime.
+- Stale `ctrl_l` values migrate to Right Ctrl.
+- `D+F` stays diagnostic-only.
+- Scheduled task migration is not part of v1; the UI only displays current startup status.
+- Verification:
+  - `..\openai\Scripts\python.exe -m pytest tests\test_settings_manager.py tests\test_backend_process.py tests\test_control_center_state.py tests\test_faster_whisper.py tests\test_keyboard_shortcuts.py -q` -> 57 passed.
+  - `..\openai\Scripts\python.exe -m pytest tests -q` -> 101 passed.
+  - `..\openai\Scripts\python.exe -m py_compile wkey\settings_manager.py wkey\backend_process.py wkey\control_center_state.py wkey\control_center.py wkey\Whisper_GUI.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
+  - Headless Qt smoke instantiated `WhisperControlCenter`.
+  - Required primary-script smoke: `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py` stayed alive for 20 seconds, stopped by PID, no stderr, no leftover new backend PID.
+
+
+
+
+
+## user comments
+1. i have tried to change it to f23 and it was not working, you need to fix that.....hotkey changing is not working
+
+
+': {'name': 'search_everything', 'arguments': '{"query":"mother auto hotkey"}'}}]}
+2026-06-18 11:16:28,319 - INFO - Executing function: search_everything with arguments: {'query': 'mother auto hotkey'}
+█ VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shi…  2026-06-18 11:16:28,857 - INFO - Executed search_everything with result: None
+▄ VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shi…  2026-06-18 11:16:29,178 - INFO - Say 'Hey computer' or 'rey lama' wake word...
+▄ VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shi…  2026-06-18 11:16:47,814 - INFO - Settings updated: {'use_local_gpu': False, 'use_local_cpu': True, 'fallback_to_groq': True, 'enable_edge_selenium': False, 'enable_wakeword_detection': True, 'max_retries': 3, 'enable_pre_recording_keyword_check': False, 'enable_transcript_context_memory': False, 'stt_context_items': 2, 'stt_context_chars': 180, 'router_context_items': 3, 'router_context_chars': 320, 'context_max_age_seconds': 180, 'max_recording_seconds': 45, 'google_wake_volume_hold_seconds': 2.5, 'record_keys': 'f24', 'hotkey_profiles': {'dictation': {'label': 'Dictation / Paste', 'trigger': 'f23', 'action': 'dictation', 'enabled': True, 'diagnostic': False}, 'command': {'label': 'Command / Tool-use', 'trigger': 'f24', 'action': 'command', 'enabled': True, 'diagnostic': False}, 'pause_resume': {'label': 'Pause / Resume', 'trigger': 'ctrl+shift+p', 'action': 'pause_resume', 'enabled': True, 'diagnostic': False}, 'pause_15m': {'label': 'Timed Pause 15m', 'trigger': 'ctrl+shift+1', 'action': 'timed_pause', 'duration_minutes': 15, 'enabled': True, 'diagnostic': False}, 'pause_60m': {'label': 'Timed Pause 60m', 'trigger': 'ctrl+shift+2', 'action': 'timed_pause', 'duration_minutes': 60, 'enabled': True, 'diagnostic': False}, 'wake_mode_toggle': {'label': 'Wake Mode Toggle', 'trigger': '', 'action': 'wake_mode_toggle', 'enabled': True, 'diagnostic': False}, 'restart_backend': {'label': 'Restart Backend', 'trigger': '', 'action': 'restart_backend', 'enabled': False, 'diagnostic': False}, 'df_diagnostic': {'label': 'D+F Diagnostic', 'trigger': 'd+f', 'action': 'diagnostic', 'enabled': False, 'diagnostic': True}}}
+█ VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shi…  2026-06-18 11:16:49,338 - INFO - Settings updated: {'use_local_gpu': False, 'use_local_cpu': True, 'fallback_to_groq': True, 'enable_edge_selenium': False, 'enable_wakeword_detection': True, 'max_retries': 3, 'enable_pre_recording_keyword_check': False, 'enable_transcript_context_memory': False, 'stt_context_items': 2, 'stt_context_chars': 180, 'router_context_items': 3, 'router_context_chars': 320, 'context_max_age_seconds': 180, 'max_recording_seconds': 45, 'google_wake_volume_hold_seconds': 2.5, 'record_keys': 'f24', 'hotkey_profiles': {'dictation': {'label': 'Dictation / Paste', 'trigger': 'f23', 'action': 'dictation', 'enabled': True, 'diagnostic': False}, 'command': {'label': 'Command / Tool-use', 'trigger': 'f24', 'action': 'command', 'enabled': True, 'diagnostic': False}, 'pause_resume': {'label': 'Pause / Resume', 'trigger': 'ctrl+shift+p', 'action': 'pause_resume', 'enabled': True, 'diagnostic': False}, 'pause_15m': {'label': 'Timed Pause 15m', 'trigger': 'ctrl+shift+1', 'action': 'timed_pause', 'duration_minutes': 15, 'enabled': True, 'diagnostic': False}, 'pause_60m': {'label': 'Timed Pause 60m', 'trigger': 'ctrl+shift+2', 'action': 'timed_pause', 'duration_minutes': 60, 'enabled': True, 'diagnostic': False}, 'wake_mode_toggle': {'label': 'Wake Mode Toggle', 'trigger': '', 'action': 'wake_mode_toggle', 'enabled': True, 'diagnostic': False}, 'restart_backend': {'label': 'Restart Backend', 'trigger': '', 'action': 'restart_backend', 'enabled': False, 'diagnostic': False}, 'df_diagnostic': {'label': 'D+F Diagnostic', 'trigger': 'd+f', 'action': 'diagnostic', 'enabled': False, 'diagnostic': True}}}
+█ VOICE RECOGNITION PAUSED (wake words paused, manual key dictation still allowed) - Press Ctrl+Alt+Shi…
+
+
+## 2026-06-18 Hotkey Change, Tray, Theme Fix
+
+Status: investigating and implementing.
+
+Current finding:
+
+- Live log shows `hotkey_profiles.dictation.trigger` changed to `f23`, but active runtime `record_keys` stayed `f24`.
+- That means the UI/profile save path is not projecting dictation profile trigger into the legacy `record_keys` value that the backend listener still uses.
+- I saved the durable UI preference to memory: future UI work should support System, Dark, and Light theme modes.
+
+Current plan:
+
+- Add failing tests for `f23` profile trigger deriving active `record_keys`.
+- Fix settings normalization and Control Center save so profile changes update `record_keys`.
+- Add system/dark/light theme support in Control Center.
+- Add minimize-to-tray support in Control Center.
+- Run focused tests, full tests, compile, and required primary-script smoke.
+
+Questions for user:
+
+- None pending. I am continuing.
+
+Progress update:
+
+- Added F23 as supported manual trigger in settings and backend runtime.
+- Fixed profile-to-`record_keys` derivation so saving dictation trigger `f23` makes runtime active keys `f24,f23`.
+- Added F23 preset to Control Center and legacy GUI preset text.
+- Added Control Center tray behavior: close/minimize can hide to tray, tray menu can show, pause/resume, restart backend, or quit.
+- Added System/Dark/Light theme selector; System follows Qt/OS palette changes where available.
+
+Verification so far:
+
+- Red tests reproduced F23 bug before fix.
+- Focused hotkey/settings tests now pass.
+- Python compile clean for touched modules.
+- Headless Control Center smoke passes with 3 theme modes and F23 preset.
+
+Final verification:
+
+- `..\openai\Scripts\python.exe -m pytest tests -q` -> 105 passed.
+- `..\openai\Scripts\python.exe -m py_compile wkey\settings_manager.py wkey\control_center_state.py wkey\control_center.py wkey\Whisper_GUI.py wkey\faster_whisper_Mother_of_all_wkey.py` -> clean.
+- Headless Control Center smoke -> ok, 3 theme modes and F23 preset present.
+- Touched-path `git diff --check` -> clean.
+- Whole `git diff --check` still fails on pre-existing modified runtime file `wkey/transcription_config.json` trailing whitespace; I did not rewrite that user/runtime config.
+- Required primary-script smoke: `..\openai\Scripts\python.exe wkey\faster_whisper_Mother_of_all_wkey.py` stayed alive for 20 seconds, was stopped by own PID, no stdout/stderr, no new leftover primary-script process.
+
+Memory:
+
+- Saved global UI preference: future UI work needs System, Dark, and Light theme modes.
+- Saved project closeout state for F23/profile/tray/theme fix.
+
+
+
+## user comments
+1. see other polished applications of this type and see what improvemtns can we make that gives us significant benefits

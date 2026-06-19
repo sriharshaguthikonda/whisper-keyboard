@@ -33,7 +33,8 @@ except ImportError:
     keyboard = None
 
 RECORD_KEY_PRESETS = (
-    ("F24 or Left Ctrl", "f24,ctrl_l"),
+    ("F24 or Right Ctrl", "f24,ctrl_r"),
+    ("F24 or F23", "f24,f23"),
     ("F24 only", "f24"),
 )
 
@@ -352,14 +353,14 @@ class VoicePauseController(QMainWindow):
         self.capture_record_key_btn.setObjectName("captureRecordKeyButton")
         self.capture_record_key_btn.setFont(QFont("Segoe UI", 10))
         self.capture_record_key_btn.setMinimumWidth(82)
-        self.capture_record_key_btn.setToolTip("Capture Left Ctrl or F24")
+        self.capture_record_key_btn.setToolTip("Capture Right Ctrl, F23, or F24")
         self.capture_record_key_btn.clicked.connect(self.start_record_key_capture)
         manual_keys_row.addWidget(manual_keys_label)
         manual_keys_row.addWidget(self.record_keys_combo, 1)
         manual_keys_row.addWidget(self.capture_record_key_btn)
         manual_keys_row.addWidget(
             self._create_info_button(
-                "Left Ctrl records only when released alone. Any Ctrl+key chord "
+                "Right Ctrl records only when released alone. Any Ctrl+key chord "
                 "cancels the recording and keeps the shortcut available."
             )
         )
@@ -711,7 +712,7 @@ class VoicePauseController(QMainWindow):
 
         self._capturing_record_key = True
         self.capture_record_key_btn.setText("Cancel")
-        self.error_label.setText("Press Left Ctrl or F24")
+        self.error_label.setText("Press Right Ctrl or F24")
         threading.Thread(target=self._capture_record_key_worker, daemon=True).start()
 
     def _capture_record_key_worker(self):
@@ -732,7 +733,7 @@ class VoicePauseController(QMainWindow):
         self.capture_record_key_btn.setText("Capture")
         record_keys = self._record_keys_from_captured_name(key_name)
         if record_keys is None:
-            self.error_label.setText("Unsupported key. Use Left Ctrl or F24.")
+            self.error_label.setText("Unsupported key. Use Right Ctrl or F24.")
             return
         self._set_record_keys_combo(record_keys)
         self.save_transcription_settings()
@@ -925,7 +926,9 @@ class VoicePauseController(QMainWindow):
             event.accept()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = VoicePauseController()
-    window.show()
-    sys.exit(app.exec())
+    try:
+        from control_center import main as control_center_main
+    except ModuleNotFoundError:
+        from wkey.control_center import main as control_center_main
+
+    sys.exit(control_center_main())

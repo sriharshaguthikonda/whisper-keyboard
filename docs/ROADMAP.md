@@ -16,7 +16,7 @@ Settings:
 Activation surfaces:
 
 - Manual `F24`: command/tool-use route.
-- Manual `ctrl_l`: default dictation/paste route; release alone submits, any chord cancels and drops audio.
+- Manual `ctrl_r`: default dictation/paste route; release alone submits, any chord cancels and drops audio.
 - Wake words: OpenWakeWord route through `wkey/wakeword.py`.
 
 Runtime modes:
@@ -84,6 +84,39 @@ Phase order:
 7. Broker-managed runtime smoke.
 8. `D+F` diagnostic decision.
 9. Tray/supervision and scheduled-task migration docs.
+
+## Whisper Control Center V1
+
+Status: implemented 2026-06-18.
+
+Entry point:
+
+- `wkey/Whisper_GUI.py` now launches the Qt sidebar control center.
+- New UI internals live in `wkey/control_center.py` and `wkey/control_center_state.py`.
+
+Sections:
+
+- Dashboard: backend PID/status, runtime mode, active keys, pause state, config path, provider status.
+- Hotkeys: structured per-action profile cards for dictation, command/tool-use, pause/resume, timed pause, wake mode, restart backend, and `D+F` diagnostic.
+- Transcription: local/Groq/wake/context toggles plus context sizes, context age, max recording seconds, wake-volume hold timing, and retry count.
+- Voice Commands: provider/status view only; no API-key editing.
+- Diagnostics: command-based Rust broker key diagnostic, summary output only.
+- Startup: current `Whisper.bat` and scheduled-task status display only.
+- Logs: tail view for repo log files.
+
+Settings:
+
+- `hotkey_profiles` is the structured UI schema.
+- `record_keys` remains preserved for the Python runtime and is derived from profile save/load.
+- Stale `ctrl_l` config values migrate to the current Right Ctrl dictation default.
+- `D+F` remains a disabled diagnostic preset and is not made the default.
+
+Backend management:
+
+- `wkey/backend_process.py` provides `find_backend_processes()`, `start_backend()`, `stop_backend()`, `restart_backend()`, and runtime-status helpers.
+- The control center manages the Python backend directly for v1.
+- Rust broker launch remains diagnostic/experimental.
+- Windows scheduled-task migration remains future broker/tray work.
 
 ## Active Groq Follow-up
 

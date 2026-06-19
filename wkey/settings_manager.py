@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -15,24 +16,88 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_RECORD_KEYS = "f24,ctrl_l"
-SUPPORTED_RECORD_KEY_LABELS = ("f24", "ctrl_l")
+DEFAULT_RECORD_KEYS = "f24,ctrl_r"
+SUPPORTED_RECORD_KEY_LABELS = ("f24", "f23", "ctrl_l", "ctrl_r")
 RECORD_KEY_DISPLAY_NAMES = {
     "f24": "F24",
+    "f23": "F23",
     "ctrl_l": "Left Ctrl",
+    "ctrl_r": "Right Ctrl",
 }
 RECORD_KEY_ALIASES = {
     "f24": "f24",
-    "left ctrl": "ctrl_l",
-    "left control": "ctrl_l",
-    "lctrl": "ctrl_l",
-    "ctrl_l": "ctrl_l",
-    "left_ctrl": "ctrl_l",
-    "right ctrl": "ctrl_l",
-    "right control": "ctrl_l",
-    "rctrl": "ctrl_l",
-    "ctrl_r": "ctrl_l",
-    "right_ctrl": "ctrl_l",
+    "f23": "f23",
+    "left ctrl": "ctrl_r",
+    "left control": "ctrl_r",
+    "lctrl": "ctrl_r",
+    "ctrl_l": "ctrl_r",
+    "left_ctrl": "ctrl_r",
+    "right ctrl": "ctrl_r",
+    "right control": "ctrl_r",
+    "rctrl": "ctrl_r",
+    "ctrl_r": "ctrl_r",
+    "right_ctrl": "ctrl_r",
+}
+
+DEFAULT_HOTKEY_PROFILES = {
+    "dictation": {
+        "label": "Dictation / Paste",
+        "trigger": "ctrl_r",
+        "action": "dictation",
+        "enabled": True,
+        "diagnostic": False,
+    },
+    "command": {
+        "label": "Command / Tool-use",
+        "trigger": "f24",
+        "action": "command",
+        "enabled": True,
+        "diagnostic": False,
+    },
+    "pause_resume": {
+        "label": "Pause / Resume",
+        "trigger": "ctrl+shift+p",
+        "action": "pause_resume",
+        "enabled": True,
+        "diagnostic": False,
+    },
+    "pause_15m": {
+        "label": "Timed Pause 15m",
+        "trigger": "ctrl+shift+1",
+        "action": "timed_pause",
+        "duration_minutes": 15,
+        "enabled": True,
+        "diagnostic": False,
+    },
+    "pause_60m": {
+        "label": "Timed Pause 60m",
+        "trigger": "ctrl+shift+2",
+        "action": "timed_pause",
+        "duration_minutes": 60,
+        "enabled": True,
+        "diagnostic": False,
+    },
+    "wake_mode_toggle": {
+        "label": "Wake Mode Toggle",
+        "trigger": "",
+        "action": "wake_mode_toggle",
+        "enabled": False,
+        "diagnostic": False,
+    },
+    "restart_backend": {
+        "label": "Restart Backend",
+        "trigger": "",
+        "action": "restart_backend",
+        "enabled": False,
+        "diagnostic": False,
+    },
+    "df_diagnostic": {
+        "label": "D+F Diagnostic",
+        "trigger": "d+f",
+        "action": "diagnostic",
+        "enabled": False,
+        "diagnostic": True,
+    },
 }
 
 DEFAULT_SETTINGS = {
@@ -52,6 +117,9 @@ DEFAULT_SETTINGS = {
     "max_recording_seconds": 45,
     "google_wake_volume_hold_seconds": 2.5,
     "record_keys": DEFAULT_RECORD_KEYS,
+    "hotkey_profiles": copy.deepcopy(DEFAULT_HOTKEY_PROFILES),
+    "ui_theme": "system",
+    "minimize_to_tray": True,
 }
 
 
@@ -89,6 +157,99 @@ def normalize_record_keys(value, default=DEFAULT_RECORD_KEYS, allow_empty=False)
     return ",".join(label for label in SUPPORTED_RECORD_KEY_LABELS if label in selected)
 
 
+def _coerce_bool(value, default=False):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    if value is None:
+        return default
+    return bool(value)
+
+
+def _normalize_profile_trigger(trigger):
+    if trigger is None:
+        return ""
+    value = str(trigger).strip().lower().replace(" ", "")
+    if value in {"ctrl_l", "leftctrl", "leftcontrol", "lctrl"}:
+        return "ctrl_r"
+    if value in {"rightctrl", "rightcontrol", "rctrl"}:
+        return "ctrl_r"
+    return value
+
+
+def normalize_hotkey_profiles(value, record_keys=None):
+    profiles = copy.deepcopy(DEFAULT_HOTKEY_PROFILES)
+
+    if record_keys is not None:
+        record_labels = normalize_record_keys(record_keys, allow_empty=True).split(",")
+        selected = {label for label in record_labels if label}
+        profiles["command"]["enabled"] = "f24" in selected
+        dictation_labels = [
+            label
+            for label in SUPPORTED_RECORD_KEY_LABELS
+            if label != "f24" and label in selected
+        ]
+        profiles["dictation"]["enabled"] = bool(dictation_labels)
+        if dictation_labels:
+            profiles["dictation"]["trigger"] = dictation_labels[0]
+
+    if not isinstance(value, dict):
+        return profiles
+
+    for profile_id, profile_data in value.items():
+        if profile_id not in profiles or not isinstance(profile_data, dict):
+            continue
+        merged = profiles[profile_id]
+        if "label" in profile_data and str(profile_data["label"]).strip():
+            merged["label"] = str(profile_data["label"]).strip()
+        if "action" in profile_data and str(profile_data["action"]).strip():
+            merged["action"] = str(profile_data["action"]).strip()
+        if "trigger" in profile_data:
+            merged["trigger"] = _normalize_profile_trigger(profile_data["trigger"])
+        if "enabled" in profile_data:
+            merged["enabled"] = _coerce_bool(profile_data["enabled"], merged["enabled"])
+        if "diagnostic" in profile_data:
+            merged["diagnostic"] = _coerce_bool(
+                profile_data["diagnostic"], merged["diagnostic"]
+            )
+        if "duration_minutes" in profile_data:
+            try:
+                merged["duration_minutes"] = max(1, int(profile_data["duration_minutes"]))
+            except Exception:
+                pass
+
+    profiles["df_diagnostic"]["enabled"] = False
+    profiles["df_diagnostic"]["diagnostic"] = True
+    profiles["df_diagnostic"]["trigger"] = "d+f"
+    return profiles
+
+
+def record_keys_from_hotkey_profiles(profiles, fallback=DEFAULT_RECORD_KEYS):
+    normalized_profiles = normalize_hotkey_profiles(profiles)
+    selected = []
+
+    command = normalized_profiles.get("command", {})
+    if command.get("enabled", False):
+        trigger = normalize_record_key_label(command.get("trigger"))
+        if trigger == "f24":
+            selected.append("f24")
+
+    dictation = normalized_profiles.get("dictation", {})
+    if dictation.get("enabled", False):
+        trigger = normalize_record_key_label(dictation.get("trigger"))
+        if trigger in SUPPORTED_RECORD_KEY_LABELS and trigger not in selected:
+            selected.append(trigger)
+
+    if not selected:
+        return normalize_record_keys(fallback)
+    return normalize_record_keys(selected)
+
+
 def record_key_display_text(record_keys):
     normalized = normalize_record_keys(record_keys)
     names = [
@@ -100,10 +261,15 @@ def record_key_display_text(record_keys):
 
 
 def _validate_settings(settings, defaults):
-    merged = defaults.copy()
+    merged = copy.deepcopy(defaults)
     if not isinstance(settings, dict):
+        merged["record_keys"] = normalize_record_keys(merged.get("record_keys"))
+        merged["hotkey_profiles"] = normalize_hotkey_profiles(
+            merged.get("hotkey_profiles"), merged.get("record_keys")
+        )
         return merged
 
+    source_has_hotkey_profiles = False
     for key, value in settings.items():
         if key in (
             "use_local_gpu",
@@ -135,8 +301,29 @@ def _validate_settings(settings, defaults):
                 pass
         elif key == "record_keys":
             merged[key] = normalize_record_keys(value)
+        elif key == "hotkey_profiles":
+            source_has_hotkey_profiles = True
+            merged[key] = normalize_hotkey_profiles(
+                value, record_keys=merged.get("record_keys", DEFAULT_RECORD_KEYS)
+            )
+        elif key == "ui_theme":
+            normalized_theme = str(value).strip().lower()
+            merged[key] = (
+                normalized_theme if normalized_theme in {"system", "dark", "light"} else "system"
+            )
+        elif key == "minimize_to_tray":
+            merged[key] = _coerce_bool(value, True)
         else:
             merged[key] = value
+
+    if source_has_hotkey_profiles:
+        merged["record_keys"] = record_keys_from_hotkey_profiles(
+            merged.get("hotkey_profiles"), fallback=merged.get("record_keys")
+        )
+    else:
+        merged["hotkey_profiles"] = normalize_hotkey_profiles(
+            None, record_keys=merged.get("record_keys", DEFAULT_RECORD_KEYS)
+        )
     return merged
 
 
@@ -146,8 +333,13 @@ def runtime_mode_for_settings(settings):
 
 def build_backend_environment(settings, base_env=None):
     env = dict(os.environ if base_env is None else base_env)
+    record_keys = settings.get("record_keys", DEFAULT_RECORD_KEYS)
+    if "hotkey_profiles" in settings:
+        record_keys = record_keys_from_hotkey_profiles(
+            settings.get("hotkey_profiles"), fallback=record_keys
+        )
     env["WKEY_RECORD_KEYS"] = normalize_record_keys(
-        settings.get("record_keys", DEFAULT_RECORD_KEYS)
+        record_keys
     )
     env["WKEY_RUNTIME_MODE"] = runtime_mode_for_settings(settings)
     return env
