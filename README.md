@@ -44,6 +44,20 @@ Optional environment variables:
 
 The Rust broker lives under `native/wkey-broker`.
 
+`wkey-broker.exe` is a generated Cargo artifact, not source. Build it with:
+
+```powershell
+cargo build --manifest-path native\wkey-broker\Cargo.toml --release
+```
+
+The release binary is written to:
+
+```text
+native\wkey-broker\target\release\wkey-broker.exe
+```
+
+The broker owns native Windows hotkeys and supervises the Python runtime. Python still owns microphone capture, Groq/Faster-Whisper transcription, transcript cleanup, paste, wake-word commands, and tool-use routing. In broker mode the broker starts Python as a child process and Python disables its own manual keyboard listener.
+
 Useful smoke commands from the repo root:
 
 ```powershell
@@ -55,11 +69,60 @@ cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --sec
 - `--engine-smoke` starts the Python engine in stdio-control mode, requests status, and shuts it down.
 - `--broker-smoke` keeps the broker-managed Python child alive for the requested seconds, verifies Python's own keyboard listener is disabled, then shuts down.
 - `--diagnose-keys` installs the low-level Windows keyboard hook and prints broker decisions only; it does not suppress normal typing.
+- `--run` starts the production broker loop and forwards configured hotkeys to the Python child.
 
 Broker-managed Python uses:
 
 - `WKEY_BROKER_CONTROL=stdio`
 - `WKEY_INPUT_OWNER=broker`
+
+## Broker Startup
+
+Production startup uses the tracked launcher:
+
+```powershell
+.\Start-WKeyBroker.bat
+```
+
+The batch file calls `scripts\Start-WKeyBroker.ps1`, which builds `wkey-broker.exe` when missing or stale, stops old WKEY Python/broker processes for this checkout, and runs:
+
+```powershell
+native\wkey-broker\target\release\wkey-broker.exe --run
+```
+
+The existing Windows scheduled task may continue to point to:
+
+```text
+C:\Windows_software\openai whisper\Whisper.bat
+```
+
+That parent batch file delegates to `whisper-keyboard\Start-WKeyBroker.bat` when present, so Task Scheduler elevation and wake/logon triggers stay unchanged.
+
+Timed smoke:
+
+```powershell
+.\scripts\Start-WKeyBroker.ps1 -Seconds 20
+```
+
+If the scheduled task action itself should be changed to the repo launcher, run this from an elevated shell:
+
+```powershell
+.\scripts\Install-WKeyBrokerTask.ps1
+```
+
+Start it immediately after install:
+
+```powershell
+.\scripts\Install-WKeyBrokerTask.ps1 -RunAfterInstall
+```
+
+Rollback options:
+
+```powershell
+Set-ScheduledTask -TaskName Whisper -TaskPath "\" -Action (New-ScheduledTaskAction -Execute "C:\Windows_software\openai whisper\Whisper.bat")
+```
+
+Or edit `C:\Windows_software\openai whisper\Whisper.bat` and remove the broker delegation block.
 
 ## Settings
 

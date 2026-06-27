@@ -1,0 +1,104 @@
+param(
+    [string]$TaskName = "Whisper",
+    [switch]$RunAfterInstall
+)
+
+$ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoRoot = Split-Path -Parent $ScriptDir
+$Launcher = Join-Path $RepoRoot "Start-WKeyBroker.bat"
+
+if (-not (Test-Path -LiteralPath $Launcher)) {
+    throw "Broker launcher not found: $Launcher"
+}
+
+function New-WKeyBrokerTaskXml {
+    param(
+        [string]$TaskName,
+        [string]$Launcher
+    )
+
+    $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $userName = [System.Security.SecurityElement]::Escape($identity.Name)
+    $sid = [System.Security.SecurityElement]::Escape($identity.User.Value)
+    $command = [System.Security.SecurityElement]::Escape($Launcher)
+    $author = $userName
+    $now = (Get-Date).ToString("s")
+    $uri = [System.Security.SecurityElement]::Escape("\$TaskName")
+
+    return @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Date>$now</Date>
+    <Author>$author</Author>
+    <URI>$uri</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <EventTrigger>
+      <Enabled>true</Enabled>
+      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
+      <Delay>PT30S</Delay>
+    </EventTrigger>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>$userName</UserId>
+      <Delay>PT1M</Delay>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>$sid</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <DisallowStartOnRemoteAppSession>false</DisallowStartOnRemoteAppSession>
+    <UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>$command</Command>
+    </Exec>
+  </Actions>
+</Task>
+"@
+}
+
+$existing = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction SilentlyContinue
+if ($existing) {
+    $action = New-ScheduledTaskAction -Execute $Launcher
+    Set-ScheduledTask -TaskName $TaskName -TaskPath "\" -Action $action | Out-Null
+    Write-Host "Updated scheduled task action for \$TaskName -> $Launcher"
+}
+else {
+    $xml = New-WKeyBrokerTaskXml -TaskName $TaskName -Launcher $Launcher
+    Register-ScheduledTask -TaskName $TaskName -TaskPath "\" -Xml $xml -Force | Out-Null
+    Write-Host "Created scheduled task \$TaskName -> $Launcher"
+}
+
+$task = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
+$task.Actions | Select-Object Execute,Arguments,WorkingDirectory | Format-List
+
+if ($RunAfterInstall) {
+    Start-ScheduledTask -TaskName $TaskName -TaskPath "\"
+    Write-Host "Started scheduled task \$TaskName"
+}

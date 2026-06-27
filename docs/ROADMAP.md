@@ -48,9 +48,9 @@ Recovery:
 - Wake-stream recovery must initialize the PyAudio stream before the wake listener starts.
 - Keyboard release must stop active manual recording even if press/release happens inside debounce time.
 
-## Planned Native Hotkey Broker Workflow
+## Native Hotkey Broker Workflow
 
-Status: planned 2026-06-18.
+Status: broker startup enabled 2026-06-27.
 
 Goal: move fragile Windows keyboard hook ownership out of Python while keeping Python as the transcription engine.
 
@@ -65,7 +65,9 @@ Architecture:
 - Python keeps audio capture, Groq/Faster-Whisper fallback, transcript cleanup, paste, command routing, wake-word path, and settings.
 - Broker controls Python through JSONL over child-process stdio.
 - Python manual `pynput` listener is disabled only when `WKEY_INPUT_OWNER=broker`.
-- Existing Python hotkeys stay default until broker-managed smoke passes.
+- `Start-WKeyBroker.bat` launches the Rust broker, which launches Python in broker-control mode.
+- Windows scheduled task `\Whisper` may keep pointing to `C:\Windows_software\openai whisper\Whisper.bat`; that parent batch file delegates to `Start-WKeyBroker.bat` when present.
+- `scripts/Install-WKeyBrokerTask.ps1` can change the task action directly when run elevated.
 
 Trigger policy:
 
@@ -73,7 +75,7 @@ Trigger policy:
 - `left_ctrl_release_alone`: current fallback profile, not assumed final.
 - `D+F`: experimental dictation profile; must run diagnostic mode before becoming default.
 
-Phase order:
+Completed phase order:
 
 1. Planning docs and roadmap.
 2. Python broker command dispatcher.
@@ -83,7 +85,14 @@ Phase order:
 6. Rust broker starts/controls Python engine.
 7. Broker-managed runtime smoke.
 8. `D+F` diagnostic decision.
-9. Tray/supervision and scheduled-task migration docs.
+9. Broker launcher and scheduled-task migration script.
+
+Current startup files:
+
+- `C:\Windows_software\openai whisper\Whisper.bat`
+- `Start-WKeyBroker.bat`
+- `scripts/Start-WKeyBroker.ps1`
+- `scripts/Install-WKeyBrokerTask.ps1`
 
 ## Whisper Control Center V1
 
@@ -115,8 +124,8 @@ Backend management:
 
 - `wkey/backend_process.py` provides `find_backend_processes()`, `start_backend()`, `stop_backend()`, `restart_backend()`, and runtime-status helpers.
 - The control center manages the Python backend directly for v1.
-- Rust broker launch remains diagnostic/experimental.
-- Windows scheduled-task migration remains future broker/tray work.
+- Rust broker is now the scheduled-task startup path.
+- Tray supervision remains future work.
 
 ## Target-Speaker Paste Filter
 
