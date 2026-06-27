@@ -90,18 +90,33 @@ The batch file calls `scripts\Start-WKeyBroker.ps1`, which builds `wkey-broker.e
 native\wkey-broker\target\release\wkey-broker.exe --run
 ```
 
+Manual starts default to live console output, like the old direct Python launcher:
+
+```powershell
+.\Start-WKeyBroker.bat --console
+.\scripts\Start-WKeyBroker.ps1 -OutputMode Console
+```
+
+Background starts can append broker and Python output to `logs\wkey-broker-startup.log`:
+
+```powershell
+.\Start-WKeyBroker.bat --log
+.\scripts\Start-WKeyBroker.ps1 -OutputMode Log
+```
+
 The existing Windows scheduled task may continue to point to:
 
 ```text
 C:\Windows_software\openai whisper\Whisper.bat
 ```
 
-That parent batch file delegates to `whisper-keyboard\Start-WKeyBroker.bat` when present, so Task Scheduler elevation and wake/logon triggers stay unchanged.
+That parent batch file delegates to `whisper-keyboard\Start-WKeyBroker.bat` when present, so Task Scheduler elevation and wake/logon triggers stay unchanged. Run it without arguments for live output, or with `--log` for scheduled/background output.
 
 Timed smoke:
 
 ```powershell
-.\scripts\Start-WKeyBroker.ps1 -Seconds 20
+.\scripts\Start-WKeyBroker.ps1 -Seconds 20 -OutputMode Console
+.\scripts\Start-WKeyBroker.ps1 -Seconds 20 -OutputMode Log
 ```
 
 If the scheduled task action itself should be changed to the repo launcher, run this from an elevated shell:
@@ -109,6 +124,8 @@ If the scheduled task action itself should be changed to the repo launcher, run 
 ```powershell
 .\scripts\Install-WKeyBrokerTask.ps1
 ```
+
+The installer writes the task action as `Start-WKeyBroker.bat --log`.
 
 Start it immediately after install:
 

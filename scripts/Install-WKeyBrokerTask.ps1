@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $Launcher = Join-Path $RepoRoot "Start-WKeyBroker.bat"
+$LauncherArguments = "--log"
 
 if (-not (Test-Path -LiteralPath $Launcher)) {
     throw "Broker launcher not found: $Launcher"
@@ -16,13 +17,15 @@ if (-not (Test-Path -LiteralPath $Launcher)) {
 function New-WKeyBrokerTaskXml {
     param(
         [string]$TaskName,
-        [string]$Launcher
+        [string]$Launcher,
+        [string]$LauncherArguments
     )
 
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $userName = [System.Security.SecurityElement]::Escape($identity.Name)
     $sid = [System.Security.SecurityElement]::Escape($identity.User.Value)
     $command = [System.Security.SecurityElement]::Escape($Launcher)
+    $arguments = [System.Security.SecurityElement]::Escape($LauncherArguments)
     $author = $userName
     $now = (Get-Date).ToString("s")
     $uri = [System.Security.SecurityElement]::Escape("\$TaskName")
@@ -77,6 +80,7 @@ function New-WKeyBrokerTaskXml {
   <Actions Context="Author">
     <Exec>
       <Command>$command</Command>
+      <Arguments>$arguments</Arguments>
     </Exec>
   </Actions>
 </Task>
@@ -85,20 +89,20 @@ function New-WKeyBrokerTaskXml {
 
 $existing = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction SilentlyContinue
 if ($existing) {
-    $action = New-ScheduledTaskAction -Execute $Launcher
-    Set-ScheduledTask -TaskName $TaskName -TaskPath "\" -Action $action | Out-Null
-    Write-Host "Updated scheduled task action for \$TaskName -> $Launcher"
+    $action = New-ScheduledTaskAction -Execute $Launcher -Argument $LauncherArguments
+    Set-ScheduledTask -TaskName $TaskName -TaskPath "\" -Action $action -ErrorAction Stop | Out-Null
+    Write-Host "Updated scheduled task action for \$TaskName -> $Launcher $LauncherArguments"
 }
 else {
-    $xml = New-WKeyBrokerTaskXml -TaskName $TaskName -Launcher $Launcher
-    Register-ScheduledTask -TaskName $TaskName -TaskPath "\" -Xml $xml -Force | Out-Null
-    Write-Host "Created scheduled task \$TaskName -> $Launcher"
+    $xml = New-WKeyBrokerTaskXml -TaskName $TaskName -Launcher $Launcher -LauncherArguments $LauncherArguments
+    Register-ScheduledTask -TaskName $TaskName -TaskPath "\" -Xml $xml -Force -ErrorAction Stop | Out-Null
+    Write-Host "Created scheduled task \$TaskName -> $Launcher $LauncherArguments"
 }
 
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
 $task.Actions | Select-Object Execute,Arguments,WorkingDirectory | Format-List
 
 if ($RunAfterInstall) {
-    Start-ScheduledTask -TaskName $TaskName -TaskPath "\"
+    Start-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
     Write-Host "Started scheduled task \$TaskName"
 }

@@ -66,6 +66,7 @@ Architecture:
 - Broker controls Python through JSONL over child-process stdio.
 - Python manual `pynput` listener is disabled only when `WKEY_INPUT_OWNER=broker`.
 - `Start-WKeyBroker.bat` launches the Rust broker, which launches Python in broker-control mode.
+- Manual launcher output defaults to live console mode; pass `--log` or `-OutputMode Log` for scheduled/background output in `logs\wkey-broker-startup.log`.
 - Windows scheduled task `\Whisper` may keep pointing to `C:\Windows_software\openai whisper\Whisper.bat`; that parent batch file delegates to `Start-WKeyBroker.bat` when present.
 - `scripts/Install-WKeyBrokerTask.ps1` can change the task action directly when run elevated.
 
