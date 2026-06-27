@@ -91,6 +91,7 @@ except ModuleNotFoundError:
     from wkey.voice_activity_detection import VoiceDetector
 import traceback
 from queue import Empty as QueueEmpty
+from queue import Full as QueueFull
 from contextlib import contextmanager
 import faulthandler
 try:
@@ -279,6 +280,7 @@ BRIGHT_WHITE = "\033[97m"
 initial_volume = None
 transcript_queue = queue.Queue()
 audio_buffer_queue = queue.Queue()
+wake_audio_queue = queue.Queue(maxsize=8)
 volume_lease_manager = VolumeLeaseManager(
     get_volume_fn=get_volume,
     set_volume_fn=set_volume,
@@ -402,6 +404,9 @@ load_dotenv()
 
 # Load transcription settings
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
+BACKEND_HEALTH_STATUS_PATH = os.path.join(
+    os.path.dirname(__file__), "backend_health_status.json"
+)
 SETTINGS = load_settings(SETTINGS_PATH, SETTINGS_DEFAULTS)
 try:
     voice_commands_module.set_selenium_enabled(
@@ -487,6 +492,86 @@ def _build_record_keys(record_key_source, mode):
 record_key_source = _resolve_record_key_source(SETTINGS)
 RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
 
+activation_metrics_lock = threading.Lock()
+activation_events = []
+activation_first_audio_recorded = False
+last_backend_health_write = 0.0
+
+
+def reset_activation_metrics():
+    global activation_first_audio_recorded
+    with activation_metrics_lock:
+        activation_events.clear()
+        activation_first_audio_recorded = False
+
+
+def record_activation_event(event, clock=time.perf_counter):
+    timestamp = float(clock())
+    with activation_metrics_lock:
+        activation_events.append({"event": str(event), "timestamp": timestamp})
+        del activation_events[:-32]
+    return timestamp
+
+
+def record_first_audio_frame(clock=time.perf_counter):
+    global activation_first_audio_recorded
+    with activation_metrics_lock:
+        if activation_first_audio_recorded:
+            return False
+        activation_first_audio_recorded = True
+    record_activation_event("first_audio_frame", clock=clock)
+    return True
+
+
+def get_activation_status():
+    with activation_metrics_lock:
+        events = [dict(item) for item in activation_events]
+    first_by_name = {}
+    for item in events:
+        first_by_name.setdefault(item.get("event"), item.get("timestamp"))
+    press_time = first_by_name.get("hotkey_press")
+
+    def delta_ms(name):
+        if press_time is None or name not in first_by_name:
+            return None
+        return round((first_by_name[name] - press_time) * 1000.0, 3)
+
+    return {
+        "latest_event": events[-1]["event"] if events else None,
+        "events": events,
+        "press_to_recording_true_ms": delta_ms("recording_true"),
+        "press_to_stream_ready_ms": delta_ms("stream_ready"),
+        "press_to_first_audio_ms": delta_ms("first_audio_frame"),
+        "press_to_queued_audio_ms": delta_ms("queued_audio"),
+    }
+
+
+def write_backend_health_status(source="runtime", clock=time.time, force=False):
+    global last_backend_health_write
+    now = float(clock())
+    if not force and now - last_backend_health_write < 1.0:
+        return None
+    last_backend_health_write = now
+    payload = {
+        "pid": os.getpid(),
+        "source": str(source),
+        "last_heartbeat": now,
+        "runtime_mode": runtime_mode,
+        "record_keys": list(RECORD_KEYS.keys()),
+        "wakeword_enabled": is_wakeword_runtime_enabled(),
+        "keyboard_runtime_enabled": is_keyboard_runtime_enabled(),
+        "python_keyboard_listener_enabled": is_python_keyboard_listener_enabled(),
+        "activation": get_activation_status(),
+    }
+    try:
+        temp_path = f"{BACKEND_HEALTH_STATUS_PATH}.tmp"
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, separators=(",", ":"), sort_keys=True)
+        os.replace(temp_path, BACKEND_HEALTH_STATUS_PATH)
+    except Exception as exc:
+        logging.warning("Failed to write backend health status: %s", exc)
+    return payload
+
 
 def is_keyboard_runtime_enabled():
     return runtime_mode in {"combined", "keyboard"} and bool(RECORD_KEYS)
@@ -514,7 +599,7 @@ def map_key_to_keyword_index(key):
 keyboard_controller = KeyboardController()
 recording = False
 stream = None
-audio_buffer = np.array([], dtype="float32")
+audio_buffer = []
 sample_rate = 16000
 
 # Initialize local model based on settings and GPU availability
@@ -674,7 +759,10 @@ def apply_settings(new_settings):
         _close_wake_stream_for_recovery()
     elif not wakeword_was_enabled and wakeword_is_enabled:
         logging.info(f"{GREEN}Wake-word detection enabled in settings.{RESET}")
-        initialize_wake_stream()
+        if runtime_mode == "combined":
+            logging.info("Wake-word detection will use shared input stream in combined mode.")
+        else:
+            initialize_wake_stream()
 
 def start_settings_watch():
     global settings_watch_handle
@@ -1134,6 +1222,46 @@ def audio_operation_guard():
         logging.error(f"{RED}Audio operation failed: {e}{RESET}", exc_info=True)
         reset_state()
 
+
+def _enqueue_shared_wake_audio(indata, frames):
+    if (
+        runtime_mode != "combined"
+        or not is_wakeword_runtime_enabled()
+        or recording
+        or not isinstance(indata, np.ndarray)
+        or frames <= 0
+    ):
+        return
+    try:
+        audio = np.asarray(indata[:frames], dtype=np.float32)
+        if audio.ndim > 1:
+            audio = audio[:, 0]
+        pcm = np.clip(audio.reshape(-1), -1.0, 1.0)
+        data = (pcm * 32767.0).astype(np.int16, copy=False).tobytes()
+        if not data:
+            return
+        try:
+            wake_audio_queue.put_nowait(data)
+        except QueueFull:
+            try:
+                wake_audio_queue.get_nowait()
+            except QueueEmpty:
+                pass
+            try:
+                wake_audio_queue.put_nowait(data)
+            except QueueFull:
+                pass
+    except Exception as e:
+        logging.debug("shared wake audio enqueue skipped: %s", e, exc_info=True)
+
+
+def read_shared_wake_audio(timeout=0.05):
+    try:
+        return wake_audio_queue.get(timeout=timeout)
+    except QueueEmpty:
+        return None
+
+
 # Modify the audio callback for better error handling
 def audio_callback(indata, frames, time, status):
     try:
@@ -1149,6 +1277,9 @@ def audio_callback(indata, frames, time, status):
                         RECOVERY_POLICY,
                         RESET,
                     )
+            if recording and isinstance(indata, np.ndarray) and len(indata) > 0:
+                record_first_audio_frame()
+            _enqueue_shared_wake_audio(indata, frames)
             buffer_index, audio_buffer = audio_callback_impl(
                 indata=indata,
                 frames=frames,
@@ -1475,6 +1606,35 @@ def _cancel_recording_start_if_invalid(recording_session_id, keyword_index, cont
     return True
 
 
+def _is_recording_session_active(recording_session_id):
+    with recording_lock:
+        return bool(recording and active_recording_session_id == recording_session_id)
+
+
+def _run_start_feedback_async(recording_session_id, keyword_index, duck_playback=False):
+    def _run():
+        try:
+            if not _is_recording_session_active(recording_session_id):
+                return
+            decrease_volume_all()
+            if duck_playback and _is_recording_session_active(recording_session_id):
+                decrease_volume_all()
+            if _is_recording_session_active(recording_session_id):
+                beep(START_BEEP)
+        except Exception as e:
+            logging.error(
+                "Error in start feedback keyword_index=%s session_id=%s: %s",
+                keyword_index,
+                recording_session_id,
+                e,
+                exc_info=True,
+            )
+
+    thread = threading.Thread(target=_run, name="StartRecordingFeedback", daemon=True)
+    thread.start()
+    return thread
+
+
 def _is_manual_recording_keyword(keyword_index):
     return keyword_index in (None, 0)
 
@@ -1539,7 +1699,7 @@ def cancel_recording(keyword_index, reason):
             _mark_manual_recording_cancel_pending(reason)
 
     with audio_data_lock:
-        audio_buffer = np.array([], dtype="float32")
+        audio_buffer = []
 
     play_pause_pressed = False
     force_release_volume_ducking(
@@ -1622,22 +1782,16 @@ def start_recording(keyword_index=None):
             keyword_validation_event.clear()
             keyword_validation_result = None
             recording = True
+            record_activation_event("recording_true")
             recording_start_time = time.time()
             recording_session_counter += 1
             active_recording_session_id = recording_session_counter
             current_recording_session_id = active_recording_session_id
 
         with audio_data_lock:
-            audio_buffer = np.array([], dtype="float32")
+            audio_buffer = []
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
-        decrease_volume_all()
-        if _cancel_recording_start_if_invalid(
-            current_recording_session_id,
-            keyword_index,
-            "after_primary_duck",
-        ):
-            return
 
         if not initialize_input_stream():
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
@@ -1649,25 +1803,23 @@ def start_recording(keyword_index=None):
                 recording = False
                 active_recording_session_id = 0
             return
+        record_activation_event("stream_ready")
         if _cancel_recording_start_if_invalid(
             current_recording_session_id,
             keyword_index,
             "after_initialize_input_stream",
-        ):
-            return
-
-        if something_is_playing:
-            logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
-            decrease_volume_all()
-            play_pause_pressed = True
-            if _cancel_recording_start_if_invalid(
-                current_recording_session_id,
-                keyword_index,
-                "after_secondary_duck",
             ):
                 return
 
-        beep(START_BEEP)
+        if something_is_playing:
+            logging.info(f"{ORANGE}Something is playing, decreasing volume.{RESET}")
+            play_pause_pressed = True
+
+        _run_start_feedback_async(
+            current_recording_session_id,
+            keyword_index,
+            duck_playback=something_is_playing,
+        )
         if _cancel_recording_start_if_invalid(
             current_recording_session_id,
             keyword_index,
@@ -1839,7 +1991,7 @@ def stop_recording(keyword_index):
                     MIN_MANUAL_RECORDING_SECONDS,
                 )
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
-                audio_buffer = np.array([], dtype="float32")
+                audio_buffer = []
 
                 if play_pause_pressed:
                     _restore_volume_all_async(delay_seconds=restore_delay_seconds)
@@ -1854,15 +2006,19 @@ def stop_recording(keyword_index):
             pre_recording_data = np.roll(
                 pre_recording_buffer_f24, -buffer_index, axis=0
             ).flatten()
-            audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+            local_audio_buffer = snapshot_audio_buffer_impl(
+                audio_buffer, audio_data_lock
+            )
+            audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
             audio_buffer = _trim_audio_to_max_duration(audio_buffer)
             save_manual_recording_if_configured(
                 audio_buffer, keyword_index, sample_rate=sample_rate
             )
+            record_activation_event("queued_audio")
             audio_buffer_queue.put((audio_buffer, keyword_index))
 
             _restore_volume_all_async(delay_seconds=restore_delay_seconds)
-            audio_buffer = np.array([], dtype="float32")
+            audio_buffer = []
 
             if play_pause_pressed:
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
@@ -1907,11 +2063,12 @@ def stop_recording(keyword_index):
                 audio_duration_seconds,
                 len(audio_buffer),
             )
+        record_activation_event("queued_audio")
         audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
-        audio_buffer = np.array([], dtype="float32")
+        audio_buffer = []
 
         _restore_volume_all_async(delay_seconds=restore_delay_seconds)
-        audio_buffer = np.array([], dtype="float32")
+        audio_buffer = []
 
         if play_pause_pressed:
             _restore_volume_all_async(delay_seconds=restore_delay_seconds)
@@ -1935,6 +2092,8 @@ keyboard_handler = None
 broker_control_shutdown_requested = threading.Event()
 
 def _start_recording_async(keyword_index):
+    reset_activation_metrics()
+    record_activation_event("hotkey_press")
     threading.Thread(target=start_recording, args=(keyword_index,)).start()
 
 def _stop_recording_async(keyword_index):
@@ -1962,6 +2121,7 @@ def get_broker_control_status():
         "runtime_mode": runtime_mode,
         "keyboard_runtime_enabled": is_keyboard_runtime_enabled(),
         "python_keyboard_listener_enabled": is_python_keyboard_listener_enabled(),
+        "activation": get_activation_status(),
     }
 
 
@@ -2226,6 +2386,7 @@ def listen_for_wake_word():
         wake_stream_lock=wake_stream_lock,
         is_recovery_active=is_audio_recovery_in_progress,
         is_enabled=is_wakeword_runtime_enabled,
+        shared_audio_source=read_shared_wake_audio if runtime_mode == "combined" else None,
         heartbeat=lambda: touch_heartbeat("wakeword listener"),
         log=lambda message: logging.info(message),
     )
@@ -2425,7 +2586,7 @@ def reset_state():
         recording = False
         active_recording_session_id = 0
         play_pause_pressed = False
-        audio_buffer = np.array([], dtype="float32")
+        audio_buffer = []
         _clear_manual_recording_cancel_pending()
         force_release_volume_ducking("reset_state", level=logging.WARNING)
         logging.info("State reset completed")
@@ -2702,8 +2863,8 @@ def start_watchdog():
     threading.Thread(target=_watch, name="Watchdog", daemon=True).start()
 
 def touch_heartbeat(source="runtime"):
-    _ = source
     global_state["last_heartbeat"] = time.time()
+    write_backend_health_status(source=source)
 
 def monitor_program_health():
     try:
@@ -2737,11 +2898,17 @@ def reset_all_states():
             recording_stop_in_progress = False
 
         play_pause_pressed = False
-        audio_buffer = np.array([], dtype="float32")
+        audio_buffer = []
 
         while not audio_buffer_queue.empty():
             try:
                 audio_buffer_queue.get_nowait()
+            except QueueEmpty:
+                break
+
+        while not wake_audio_queue.empty():
+            try:
+                wake_audio_queue.get_nowait()
             except QueueEmpty:
                 break
 
@@ -2757,7 +2924,7 @@ def reset_all_states():
             stream = None
 
         _close_wake_stream_for_recovery()
-        if is_wakeword_runtime_enabled():
+        if is_wakeword_runtime_enabled() and runtime_mode != "combined":
             initialize_wake_stream()
         request_keyboard_listener_restart("reset_all_states")
 
@@ -2833,7 +3000,10 @@ def main():
 
         if is_wakeword_runtime_enabled():
             init_wakeword_listener()
-            initialize_wake_stream()
+            if runtime_mode == "combined":
+                logging.info("Wake-word detection using shared input stream in combined mode.")
+            else:
+                initialize_wake_stream()
             start_runtime_thread(listen_for_wake_word, "WakeWordListener")
         start_watchdog()
         loop2 = asyncio.new_event_loop()

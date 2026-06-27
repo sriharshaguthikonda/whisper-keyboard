@@ -176,6 +176,7 @@ train/
 
 # runtime locks
 wkey/wkey_runtime.lock
+wkey/backend_health_status.json
 
 # target-speaker filter runtime artifacts
 wkey/speaker_filter_profile.json

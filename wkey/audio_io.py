@@ -54,14 +54,24 @@ def audio_callback(
             if is_recording():
                 if isinstance(indata, np.ndarray):
                     with audio_data_lock:
-                        audio_buffer = np.append(audio_buffer, indata.flatten())
+                        if not isinstance(audio_buffer, list):
+                            audio_buffer = [np.asarray(audio_buffer, dtype=np.float32).flatten()]
+                        audio_buffer.append(indata[:frames].flatten().copy())
                         if max_recording_samples:
                             try:
                                 cap = int(max_recording_samples)
                             except Exception:
                                 cap = 0
-                            if cap > 0 and len(audio_buffer) > cap:
-                                audio_buffer = audio_buffer[-cap:]
+                            total = sum(len(chunk) for chunk in audio_buffer)
+                            while cap > 0 and audio_buffer and total > cap:
+                                first = audio_buffer[0]
+                                overflow = total - cap
+                                if overflow >= len(first):
+                                    total -= len(first)
+                                    audio_buffer.pop(0)
+                                else:
+                                    audio_buffer[0] = first[int(overflow) :]
+                                    total = cap
                 else:
                     log.error(
                         f"{error_color_prefix}Invalid indata type: {type(indata)}{error_color_suffix}"
@@ -172,7 +182,11 @@ def initialize_input_stream(
 def snapshot_audio_buffer(audio_buffer, audio_data_lock):
     with audio_data_lock:
         if isinstance(audio_buffer, list):
-            return np.array(audio_buffer)
+            if not audio_buffer:
+                return np.array([], dtype=np.float32)
+            if all(isinstance(chunk, np.ndarray) for chunk in audio_buffer):
+                return np.concatenate(audio_buffer).astype(np.float32, copy=False)
+            return np.array(audio_buffer, dtype=np.float32)
         return audio_buffer.copy()
 
 

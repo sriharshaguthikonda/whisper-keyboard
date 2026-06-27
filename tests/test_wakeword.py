@@ -54,3 +54,32 @@ def test_wakeword_waits_for_mic(monkeypatch):
 
     assert any("Listening for wake words" in msg for msg in messages)
     assert any("Waiting for microphone" in msg for msg in messages)
+
+
+def test_wakeword_can_read_from_shared_audio_source(monkeypatch):
+    from wkey.wakeword import WakeWordListener
+
+    listener = WakeWordListener()
+    seen = []
+
+    def predict(pcm):
+        seen.append(pcm.copy())
+        raise StopIteration()
+
+    listener.model.predict = predict
+
+    with pytest.raises(StopIteration):
+        listener.listen(
+            get_wake_stream=lambda: None,
+            set_wake_stream=lambda _: None,
+            check_pause_status=lambda: False,
+            is_recording=lambda: False,
+            start_recording_async=lambda _: None,
+            stop_recording_async=lambda _: None,
+            decrease_volume_all=lambda: None,
+            restore_volume_all=lambda: None,
+            shared_audio_source=lambda: b"\x01\x00\x02\x00",
+            log=lambda _: None,
+        )
+
+    assert seen[0].tolist() == [1, 2]

@@ -660,7 +660,9 @@ class WhisperControlCenter(QMainWindow):
     def refresh_status(self):
         self.status = get_runtime_status(settings=self.settings, config_path=self.config_path)
         snapshot = build_settings_snapshot(self.settings)
-        self.backend_status_label.setText("Running" if self.status.running else "Stopped")
+        self.backend_status_label.setText(
+            self.status.health_summary or ("Running" if self.status.running else "Stopped")
+        )
         self.pid_label.setText(", ".join(str(pid) for pid in self.status.backend_pids) or "-")
         self.runtime_label.setText(self.status.runtime_mode)
         self.active_keys_label.setText(self.status.active_keys)

@@ -87,6 +87,7 @@ class WakeWordListener:
         wake_stream_lock=None,
         is_recovery_active=None,
         is_enabled=None,
+        shared_audio_source=None,
         log=print,
     ):
         log("Listening for wake words...")
@@ -110,8 +111,17 @@ class WakeWordListener:
                     time.sleep(1)
                     continue
 
-                wake_stream = get_wake_stream()
-                if wake_stream:
+                if shared_audio_source is not None:
+                    data = shared_audio_source()
+                    if not data:
+                        time.sleep(self.relax_sleep)
+                        continue
+                else:
+                    wake_stream = get_wake_stream()
+                    if not wake_stream:
+                        log("Waiting for microphone...")
+                        time.sleep(5)
+                        continue
                     if wake_stream_lock is not None:
                         with wake_stream_lock:
                             wake_stream = get_wake_stream()
@@ -123,62 +133,59 @@ class WakeWordListener:
                     else:
                         data = wake_stream.read(self.chunk, exception_on_overflow=False)
 
-                    if (should_relax and should_relax()) or self._cpu_overloaded():
-                        time.sleep(self.relax_sleep)
-                        continue
+                if (should_relax and should_relax()) or self._cpu_overloaded():
+                    time.sleep(self.relax_sleep)
+                    continue
 
-                    pcm = np.frombuffer(data, dtype=np.int16)
+                pcm = np.frombuffer(data, dtype=np.int16)
 
-                    _ = self.model.predict(pcm)
-                    keyword_index = -1
-                    max_score = 0.0
+                _ = self.model.predict(pcm)
+                keyword_index = -1
+                max_score = 0.0
 
-                    recent_predictions = list(self.model.prediction_buffer.values())[-8:]
+                recent_predictions = list(self.model.prediction_buffer.values())[-8:]
 
-                    for idx, scores in enumerate(recent_predictions):
-                        if scores[-1] > max_score:
-                            max_score = scores[-1]
-                            keyword_index = idx
+                for idx, scores in enumerate(recent_predictions):
+                    if scores[-1] > max_score:
+                        max_score = scores[-1]
+                        keyword_index = idx
 
-                    current_time = time.time()
-                    if (
-                        keyword_index >= 0
-                        and max_score > self.thresholds.get(keyword_index, 0.4)
-                        and (current_time - self.last_detection_time) > self.cooldown
-                        and not is_recording()
-                        and not check_pause_status()
-                    ):
-                        self.last_detection_time = current_time
+                current_time = time.time()
+                if (
+                    keyword_index >= 0
+                    and max_score > self.thresholds.get(keyword_index, 0.4)
+                    and (current_time - self.last_detection_time) > self.cooldown
+                    and not is_recording()
+                    and not check_pause_status()
+                ):
+                    self.last_detection_time = current_time
 
-                        if keyword_index == 0:
-                            log("Custom wake word 'hey_jarvis' detected!")
+                    if keyword_index == 0:
+                        log("Custom wake word 'hey_jarvis' detected!")
+                        start_recording_async(keyword_index)
+                        time.sleep(3)
+                        stop_recording_async(keyword_index)
+                    elif keyword_index == 1:
+                        log("Custom wake word 'hey_computer10' detected!")
+                        if capture_wake_command_async is not None:
+                            capture_wake_command_async(keyword_index)
+                        else:
+                            log(
+                                "Wake capture mode for 'hey_computer10': "
+                                f"holding {DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS:.2f}s before silence stop"
+                            )
                             start_recording_async(keyword_index)
-                            time.sleep(3)
-                            stop_recording_async(keyword_index)
-                        elif keyword_index == 1:
-                            log("Custom wake word 'hey_computer10' detected!")
-                            if capture_wake_command_async is not None:
-                                capture_wake_command_async(keyword_index)
-                            else:
-                                log(
-                                    "Wake capture mode for 'hey_computer10': "
-                                    f"holding {DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS:.2f}s before silence stop"
-                                )
-                                start_recording_async(keyword_index)
-                                time.sleep(DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS)
-                                stop_recording_async(1)
-                        elif keyword_index == 2:
-                            log("Custom wake word 'hey_lama' detected!")
-                            start_recording_async(keyword_index)
-                            stop_recording_async(2)
-                        elif keyword_index == 3:
-                            log("Custom wake word 'hey_google' detected!")
-                            decrease_volume_all()
-                            time.sleep(3)
-                            restore_volume_all()
-                else:
-                    log("Waiting for microphone...")
-                    time.sleep(5)
+                            time.sleep(DEFAULT_COMPUTER_WAKE_CAPTURE_GRACE_SECONDS)
+                            stop_recording_async(1)
+                    elif keyword_index == 2:
+                        log("Custom wake word 'hey_lama' detected!")
+                        start_recording_async(keyword_index)
+                        stop_recording_async(2)
+                    elif keyword_index == 3:
+                        log("Custom wake word 'hey_google' detected!")
+                        decrease_volume_all()
+                        time.sleep(3)
+                        restore_volume_all()
 
             except OSError as e:
                 log(f"Audio stream error: {e}")

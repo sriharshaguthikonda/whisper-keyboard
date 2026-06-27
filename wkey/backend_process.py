@@ -38,6 +38,7 @@ REPO_ROOT = WKEY_DIR.parent
 WORKSPACE_ROOT = REPO_ROOT.parent
 DEFAULT_CONFIG_PATH = WKEY_DIR / "transcription_config.json"
 DEFAULT_PYTHON_EXE = WORKSPACE_ROOT / "openai" / "Scripts" / "python.exe"
+DEFAULT_HEALTH_STATUS_PATH = WKEY_DIR / "backend_health_status.json"
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,9 @@ class RuntimeStatus:
     pause_state: str
     config_path: str
     last_launch_command: str
+    scheduled_task_state: str = "unknown"
+    backend_health: dict[str, object] | None = None
+    health_summary: str = "unknown"
 
 
 def is_backend_command_line(command_line: str | None) -> bool:
@@ -126,11 +130,35 @@ def read_pause_state(path: str | os.PathLike[str] | None = None) -> str:
     return value or "UNKNOWN"
 
 
+def read_backend_health_status(
+    path: str | os.PathLike[str] | None = None,
+) -> dict[str, object]:
+    health_path = Path(path) if path is not None else DEFAULT_HEALTH_STATUS_PATH
+    try:
+        payload = json.loads(health_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def summarize_runtime_health(running: bool, scheduled_task_state: str | None) -> str:
+    task_state = str(scheduled_task_state or "").strip().lower()
+    if running:
+        return "backend running"
+    if task_state == "running":
+        return "task running but backend missing"
+    return "backend stopped"
+
+
 def get_runtime_status(
     settings: Mapping[str, object] | None = None,
     config_path: str | os.PathLike[str] | None = None,
     process_rows: Iterable[Mapping[str, object]] | None = None,
     pause_state_reader: Callable[[], str] | None = None,
+    scheduled_task_state_reader: Callable[[], str] | None = None,
+    health_status_path: str | os.PathLike[str] | None = None,
 ) -> RuntimeStatus:
     path = Path(config_path) if config_path is not None else DEFAULT_CONFIG_PATH
     config = dict(settings or load_settings(path, DEFAULT_SETTINGS))
@@ -138,14 +166,22 @@ def get_runtime_status(
     processes = find_backend_processes(process_rows=process_rows)
     command = build_launch_command(repo_root=path.parent.parent)
     pause_state = pause_state_reader() if pause_state_reader else read_pause_state()
+    scheduled_task_state = (
+        scheduled_task_state_reader() if scheduled_task_state_reader else "unknown"
+    )
+    health = read_backend_health_status(health_status_path)
+    running = bool(processes)
     return RuntimeStatus(
         backend_pids=tuple(process.pid for process in processes),
-        running=bool(processes),
+        running=running,
         runtime_mode=runtime_mode_for_settings(config),
         active_keys=record_key_display_text(config.get("record_keys")),
         pause_state=str(pause_state).upper(),
         config_path=str(path),
         last_launch_command=" ".join(command),
+        scheduled_task_state=str(scheduled_task_state or "unknown"),
+        backend_health=health,
+        health_summary=summarize_runtime_health(running, scheduled_task_state),
     )
 
 

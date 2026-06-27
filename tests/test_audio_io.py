@@ -91,8 +91,40 @@ def test_audio_callback_appends_when_recording():
         recording_lock=threading.Lock(),
         audio_data_lock=threading.Lock(),
     )
-    assert isinstance(buf, np.ndarray)
-    assert buf.size == 3
+    assert isinstance(buf, list)
+    assert len(buf) == 1
+    assert np.allclose(buf[0], np.ones(3, dtype=np.float32))
+
+
+def test_audio_callback_keeps_chunks_until_snapshot():
+    from wkey import audio_io
+
+    pre, pre_f24, idx, buf = audio_io.create_audio_buffers(
+        buffer_size=10, sample_rate=16000, channels=1
+    )
+    lock = threading.Lock()
+
+    for value in (1.0, 2.0):
+        idx, buf = audio_io.audio_callback(
+            indata=np.full((3, 1), value, dtype=np.float32),
+            frames=3,
+            time_info=None,
+            status=None,
+            is_recording=lambda: True,
+            buffer_index=idx,
+            audio_buffer=buf,
+            pre_recording_buffer=pre,
+            pre_recording_buffer_f24=pre_f24,
+            buffer_size=10,
+            recording_lock=threading.Lock(),
+            audio_data_lock=lock,
+        )
+
+    assert len(buf) == 2
+    assert np.allclose(
+        audio_io.snapshot_audio_buffer(buf, lock),
+        np.array([1, 1, 1, 2, 2, 2], dtype=np.float32),
+    )
 
 
 def test_snapshot_audio_buffer_handles_list_and_array():

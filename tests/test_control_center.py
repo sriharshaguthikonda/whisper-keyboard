@@ -146,3 +146,41 @@ def test_control_center_updates_speaker_filter_status_labels(tmp_path, monkeypat
         assert window.speaker_filter_last_duration_label.text() == "accepted 1.25s / rejected 0.75s"
     finally:
         window.close()
+
+
+def test_control_center_shows_backend_health_summary(tmp_path, monkeypatch):
+    qt_app()
+    import wkey.control_center as control_center
+
+    monkeypatch.setattr(
+        control_center,
+        "get_runtime_status",
+        lambda settings, config_path: RuntimeStatus(
+            backend_pids=(),
+            running=False,
+            runtime_mode="combined",
+            active_keys="F24, F23",
+            pause_state="RUNNING",
+            config_path=str(config_path),
+            last_launch_command="python backend",
+            scheduled_task_state="Running",
+            backend_health={"pid": 999},
+            health_summary="task running but backend missing",
+        ),
+    )
+    monkeypatch.setattr(
+        control_center.WhisperControlCenter,
+        "_scheduled_task_summary",
+        lambda self: "Running",
+    )
+    config_path = tmp_path / "settings.json"
+    save_settings(config_path, dict(DEFAULT_SETTINGS))
+
+    window = control_center.WhisperControlCenter(config_path=config_path)
+    try:
+        window.refresh_status()
+
+        assert window.backend_status_label.text() == "task running but backend missing"
+        assert window.pid_label.text() == "-"
+    finally:
+        window.close()
