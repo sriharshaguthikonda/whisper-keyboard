@@ -1,5 +1,66 @@
 # Q and A
 
+## 2026-06-27 Instant WKEY Activation
+
+Status: implemented and verified.
+
+Progress:
+
+- Added activation timing metrics and backend heartbeat/status JSON.
+- Control Center now distinguishes a scheduled/running task with a missing backend process.
+- Replaced repeated `np.append()` recording buffering with chunk buffering.
+- Combined wake-word mode now reads from the shared sounddevice stream instead of opening a second PyAudio wake stream.
+- Manual start now initializes the capture stream before feedback, then runs volume ducking and the start beep in a guarded background worker.
+- Rust broker now has configured F23/F24/control trigger support and optional `--run` mode.
+
+Current findings:
+
+- Full Rust/C++ migration is not the first fix. Native hook ownership can reduce key-event loss, but current activation delay also lives in Python audio/startup paths.
+- Live config currently has `enable_wakeword_detection=true` and `record_keys=f24,f23`, so the runtime is in combined mode.
+- `recording = True` already happens before the start beep in `start_recording`; that part of the external suggestion is already fixed.
+- Remaining confirmed delay risks: wakeword PyAudio stream and dictation sounddevice stream both touching the mic, `np.append()` in the audio callback, synchronous volume duck/beep work on start, and scheduled task state not proving the backend process is alive.
+- Rust broker now has optional `--run` mode, but `C:\Windows_software\openai whisper\Whisper.bat` is still the Python launcher and does not start the broker unless that launcher or the scheduled task is changed.
+
+Execution order:
+
+- Add activation metrics and backend health/status JSON first, then show it in Control Center.
+- Replace callback `np.append()` with chunk buffering.
+- Route wakeword detection through the shared sounddevice stream in combined mode instead of a separate PyAudio wake stream.
+- Move beep/volume duck to nonblocking feedback after the capture state is active.
+- Extend Rust broker after Python audio path is fixed: F23/F24/control trigger support plus optional production run mode, keeping Python listener fallback.
+
+Questions for user:
+
+- None pending. I am continuing.
+
+
+
+## user comments
+1. asshole you dont know how to open scripts in powershell for files with spaces?
+2. if i start the whisper bat will it be enough to start the rust broker or if i have to o anything special to start the program with all latest eatures?
+3. add commit push small commits
+
+## agent answers
+
+1. Correct way for paths with spaces is quoted `Start-Process`, for example `Start-Process -FilePath notepad.exe -ArgumentList '"C:\Windows_software\openai whisper\whisper-keyboard\Q and A.md"'`. I reopened Q&A using that.
+2. Current `C:\Windows_software\openai whisper\Whisper.bat` starts only the Python backend. The Python latency fixes are active through that normal launcher once this branch is used. The Rust broker is now available as `native\wkey-broker\target\debug\wkey-broker.exe --run`, but it will not start from `Whisper.bat` unless the launcher/scheduled task is wired to call it.
+3. I will split this into small commits after verification, then push.
+
+Verification:
+
+- `..\openai\Scripts\python.exe -m pytest tests\test_audio_io.py tests\test_wakeword.py tests\test_keyboard_shortcuts.py tests\test_broker_control.py tests\test_backend_process.py tests\test_control_center_state.py tests\test_faster_whisper.py -q` -> 81 passed.
+- `cargo test --manifest-path native\wkey-broker\Cargo.toml` -> 16 passed.
+- `..\openai\Scripts\python.exe -m pytest tests -q` -> 135 passed.
+- `..\openai\Scripts\python.exe -m py_compile wkey\audio_io.py wkey\wakeword.py wkey\backend_process.py wkey\control_center.py wkey\faster_whisper_Mother_of_all_wkey.py` -> passed.
+- Primary-script smoke using `..\openai\Scripts\python.exe -u wkey\faster_whisper_Mother_of_all_wkey.py` ran for 15 seconds, had no stdout/stderr errors, was stopped, and left no matching backend process.
+- `git diff --check` on touched files -> clean. Full `git diff --check` still reports trailing whitespace in pre-existing dirty `wkey\transcription_config.json`; I did not edit/revert that runtime config.
+
+Commits:
+
+- `1c99c18 fix: make wkey activation path immediate`
+- `26a44e8 feat: run broker with configured hotkeys`
+
+
 ## 2026-06-13 Groq Model Hydration
 
 Status: implemented and verified.
