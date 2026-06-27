@@ -9,7 +9,7 @@ use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        Input::KeyboardAndMouse::VK_LCONTROL,
+        Input::KeyboardAndMouse::{VK_LCONTROL, VK_RCONTROL},
         WindowsAndMessaging::{
             CallNextHookEx, DispatchMessageW, KBDLLHOOKSTRUCT, MSG, PM_REMOVE, PeekMessageW,
             SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN,
@@ -105,15 +105,22 @@ unsafe extern "system" fn low_level_keyboard_proc(
 }
 
 fn map_vk_to_key(vk_code: u32) -> Option<BrokerKey> {
+    const VK_F23: u32 = 0x86;
     const VK_F24: u32 = 0x87;
     const VK_D: u32 = 0x44;
     const VK_F: u32 = 0x46;
 
+    if vk_code == VK_F23 {
+        return Some(BrokerKey::F23);
+    }
     if vk_code == VK_F24 {
         return Some(BrokerKey::F24);
     }
     if vk_code == VK_LCONTROL.0 as u32 {
         return Some(BrokerKey::LeftCtrl);
+    }
+    if vk_code == VK_RCONTROL.0 as u32 {
+        return Some(BrokerKey::RightCtrl);
     }
     if vk_code == VK_D {
         return Some(BrokerKey::D);
@@ -122,4 +129,24 @@ fn map_vk_to_key(vk_code: u32) -> Option<BrokerKey> {
         return Some(BrokerKey::F);
     }
     Some(BrokerKey::Other(vk_code as u16))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_f23_and_f24_virtual_keys() {
+        assert_eq!(map_vk_to_key(0x86), Some(BrokerKey::F23));
+        assert_eq!(map_vk_to_key(0x87), Some(BrokerKey::F24));
+    }
+
+    #[test]
+    fn maps_left_and_right_control_virtual_keys() {
+        assert_eq!(
+            map_vk_to_key(VK_LCONTROL.0 as u32),
+            Some(BrokerKey::LeftCtrl)
+        );
+        assert_eq!(map_vk_to_key(0xA3), Some(BrokerKey::RightCtrl));
+    }
 }

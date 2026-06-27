@@ -4,8 +4,10 @@ use crate::protocol::{EngineCommand, EngineRoute};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BrokerKey {
+    F23,
     F24,
     LeftCtrl,
+    RightCtrl,
     D,
     F,
     Other(u16),
@@ -52,13 +54,62 @@ pub enum TriggerDecision {
     Engine(EngineCommand),
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TriggerConfig {
+    pub f23_dictation: bool,
+    pub f24_command: bool,
+    pub left_ctrl_dictation: bool,
+    pub right_ctrl_dictation: bool,
+}
+
+impl Default for TriggerConfig {
+    fn default() -> Self {
+        Self {
+            f23_dictation: true,
+            f24_command: true,
+            left_ctrl_dictation: true,
+            right_ctrl_dictation: true,
+        }
+    }
+}
+
+impl TriggerConfig {
+    pub fn from_record_keys(source: &str) -> Self {
+        let mut config = Self {
+            f23_dictation: false,
+            f24_command: false,
+            left_ctrl_dictation: false,
+            right_ctrl_dictation: false,
+        };
+        for label in source
+            .split(',')
+            .map(|item| item.trim().to_ascii_lowercase())
+        {
+            match label.as_str() {
+                "f23" => config.f23_dictation = true,
+                "f24" => config.f24_command = true,
+                "ctrl_l" | "left_ctrl" | "left control" => config.left_ctrl_dictation = true,
+                "ctrl_r" | "right_ctrl" | "right control" => config.right_ctrl_dictation = true,
+                _ => {}
+            }
+        }
+        config
+    }
+}
+
 #[derive(Debug)]
 pub struct TriggerStateMachine {
+    config: TriggerConfig,
     df_hold_threshold: Duration,
+    f23_down: bool,
+    f23_cancelled: bool,
     f24_down: bool,
     left_ctrl_down: bool,
     left_ctrl_started: bool,
     left_ctrl_cancelled: bool,
+    right_ctrl_down: bool,
+    right_ctrl_started: bool,
+    right_ctrl_cancelled: bool,
     d_down_at: Option<Duration>,
     f_down_at: Option<Duration>,
     df_started: bool,
@@ -67,21 +118,35 @@ pub struct TriggerStateMachine {
 
 impl Default for TriggerStateMachine {
     fn default() -> Self {
+        Self::new(TriggerConfig::default())
+    }
+}
+
+impl TriggerStateMachine {
+    pub fn new(config: TriggerConfig) -> Self {
         Self {
+            config,
             df_hold_threshold: Duration::from_millis(180),
+            f23_down: false,
+            f23_cancelled: false,
             f24_down: false,
             left_ctrl_down: false,
             left_ctrl_started: false,
             left_ctrl_cancelled: false,
+            right_ctrl_down: false,
+            right_ctrl_started: false,
+            right_ctrl_cancelled: false,
             d_down_at: None,
             f_down_at: None,
             df_started: false,
             df_cancelled: false,
         }
     }
-}
 
-impl TriggerStateMachine {
+    pub fn from_record_keys(source: &str) -> Self {
+        Self::new(TriggerConfig::from_record_keys(source))
+    }
+
     pub fn handle_event(&mut self, event: TriggerEvent) -> Vec<TriggerDecision> {
         let mut decisions = Vec::new();
         match event.kind {
@@ -93,21 +158,36 @@ impl TriggerStateMachine {
     }
 
     fn handle_press(&mut self, key: BrokerKey, at: Duration, decisions: &mut Vec<TriggerDecision>) {
-        self.cancel_left_ctrl_chord_if_needed(key, decisions);
+        self.cancel_manual_dictation_chord_if_needed(key, decisions);
         self.cancel_df_if_needed(key, decisions);
 
         match key {
+            BrokerKey::F23 => {
+                if self.config.f23_dictation && !self.f23_down {
+                    self.f23_down = true;
+                    self.f23_cancelled = false;
+                    decisions.push(engine(EngineCommand::start(EngineRoute::Dictation)));
+                }
+            }
             BrokerKey::F24 => {
-                if !self.f24_down {
+                if self.config.f24_command && !self.f24_down {
                     self.f24_down = true;
                     decisions.push(engine(EngineCommand::start(EngineRoute::Command)));
                 }
             }
             BrokerKey::LeftCtrl => {
-                if !self.left_ctrl_down {
+                if self.config.left_ctrl_dictation && !self.left_ctrl_down {
                     self.left_ctrl_down = true;
                     self.left_ctrl_started = true;
                     self.left_ctrl_cancelled = false;
+                    decisions.push(engine(EngineCommand::start(EngineRoute::Dictation)));
+                }
+            }
+            BrokerKey::RightCtrl => {
+                if self.config.right_ctrl_dictation && !self.right_ctrl_down {
+                    self.right_ctrl_down = true;
+                    self.right_ctrl_started = true;
+                    self.right_ctrl_cancelled = false;
                     decisions.push(engine(EngineCommand::start(EngineRoute::Dictation)));
                 }
             }
@@ -134,6 +214,13 @@ impl TriggerStateMachine {
         decisions: &mut Vec<TriggerDecision>,
     ) {
         match key {
+            BrokerKey::F23 => {
+                if self.f23_down && !self.f23_cancelled {
+                    decisions.push(engine(EngineCommand::stop(EngineRoute::Dictation)));
+                }
+                self.f23_down = false;
+                self.f23_cancelled = false;
+            }
             BrokerKey::F24 => {
                 if self.f24_down {
                     self.f24_down = false;
@@ -147,6 +234,14 @@ impl TriggerStateMachine {
                 self.left_ctrl_down = false;
                 self.left_ctrl_started = false;
                 self.left_ctrl_cancelled = false;
+            }
+            BrokerKey::RightCtrl => {
+                if self.right_ctrl_down && self.right_ctrl_started && !self.right_ctrl_cancelled {
+                    decisions.push(engine(EngineCommand::stop(EngineRoute::Dictation)));
+                }
+                self.right_ctrl_down = false;
+                self.right_ctrl_started = false;
+                self.right_ctrl_cancelled = false;
             }
             BrokerKey::D | BrokerKey::F => {
                 let should_stop = self.df_started && !self.df_cancelled;
@@ -186,20 +281,32 @@ impl TriggerStateMachine {
         }
     }
 
-    fn cancel_left_ctrl_chord_if_needed(
+    fn cancel_manual_dictation_chord_if_needed(
         &mut self,
         key: BrokerKey,
         decisions: &mut Vec<TriggerDecision>,
     ) {
-        if key == BrokerKey::LeftCtrl {
-            return;
+        if key != BrokerKey::F23 && self.f23_down && !self.f23_cancelled {
+            self.f23_cancelled = true;
+            decisions.push(engine(EngineCommand::cancel(
+                EngineRoute::Dictation,
+                "f23_chord",
+            )));
         }
-        if self.left_ctrl_started && !self.left_ctrl_cancelled {
+        if key != BrokerKey::LeftCtrl && self.left_ctrl_started && !self.left_ctrl_cancelled {
             self.left_ctrl_started = false;
             self.left_ctrl_cancelled = true;
             decisions.push(engine(EngineCommand::cancel(
                 EngineRoute::Dictation,
                 "left_ctrl_chord",
+            )));
+        }
+        if key != BrokerKey::RightCtrl && self.right_ctrl_started && !self.right_ctrl_cancelled {
+            self.right_ctrl_started = false;
+            self.right_ctrl_cancelled = true;
+            decisions.push(engine(EngineCommand::cancel(
+                EngineRoute::Dictation,
+                "right_ctrl_chord",
             )));
         }
     }
@@ -495,6 +602,56 @@ mod tests {
         assert_eq!(
             state.handle_event(TriggerEvent::release(BrokerKey::F24, ms(100))),
             engine(EngineCommand::stop(EngineRoute::Command))
+        );
+    }
+
+    #[test]
+    fn f23_press_release_emits_dictation_start_stop() {
+        let mut state = TriggerStateMachine::default();
+
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::F23, ms(0))),
+            engine(EngineCommand::start(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::F23, ms(100))),
+            engine(EngineCommand::stop(EngineRoute::Dictation))
+        );
+    }
+
+    #[test]
+    fn right_ctrl_press_release_emits_dictation_start_stop() {
+        let mut state = TriggerStateMachine::default();
+
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::RightCtrl, ms(0))),
+            engine(EngineCommand::start(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::RightCtrl, ms(100))),
+            engine(EngineCommand::stop(EngineRoute::Dictation))
+        );
+    }
+
+    #[test]
+    fn configured_record_keys_enable_only_selected_manual_triggers() {
+        let mut state = TriggerStateMachine::from_record_keys("f24,f23");
+
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::RightCtrl, ms(0))),
+            Vec::<TriggerDecision>::new()
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::F23, ms(10))),
+            engine(EngineCommand::start(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::F23, ms(15))),
+            engine(EngineCommand::stop(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::F24, ms(20))),
+            engine(EngineCommand::start(EngineRoute::Command))
         );
     }
 
