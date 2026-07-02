@@ -859,3 +859,5 @@ Questions for user:
 3. RED tests being added for settings durations, multi-trigger profile migration, backend health temp-file writes, overflow restart signaling, voice tool registry coverage, empty transcript logging, and Rust broker chord routing.
 4. Focused implementation checkpoint: `py_compile` passed for touched Python modules; focused Python suite passed `76`; Rust broker suite passed `17`.
 5. Full verification checkpoint before repo-intel/commit: full Python suite passed `146`; Rust broker suite passed `17`; `git diff --check --` passed.
+6. Startup checkpoint: launcher initially hit a release-exe lock because the old broker was still running; `Start-WKeyBroker.ps1` now stops old WKEY processes before rebuilding.
+7. Required primary-script smoke after launcher fix: `..\openai\Scripts\python.exe -u wkey\faster_whisper_Mother_of_all_wkey.py` ran for 20 seconds, emitted no stdout/stderr, and was stopped by PID.

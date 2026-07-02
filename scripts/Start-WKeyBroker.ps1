@@ -223,8 +223,8 @@ if (-not (Test-Path -LiteralPath $BrokerManifest)) {
     throw "Broker manifest not found: $BrokerManifest"
 }
 
-Build-BrokerIfNeeded
 Stop-ExistingWKeyProcesses
+Build-BrokerIfNeeded
 
 $brokerArgs = @("--run")
 if ($Seconds -gt 0) {

@@ -32,11 +32,11 @@
     ]
   },
   "sourceState": {
-    "commit": "20cd25435f9b6ee81aefe74ec72b9b7640576009",
+    "commit": "18f254ae6e2a6ba643052174e56dda831279042f",
     "branch": "native-hotkey-broker",
     "dirty": true,
-    "generatedForCommit": "20cd25435f9b6ee81aefe74ec72b9b7640576009",
-    "sourceFingerprint": "5559beb8c4a4f73419be7895f4696ac5f7bbecf8d4757a7374c2accee6695cdd",
+    "generatedForCommit": "18f254ae6e2a6ba643052174e56dda831279042f",
+    "sourceFingerprint": "3be123e34970c96e9fa4978d8c04da3f3c830bf202b436a3b47ee6dbe9a722c1",
     "dirtyReason": "uncommitted changes"
   },
   "policy": {
@@ -49,7 +49,7 @@
     "allowGraphPilots": false,
     "runOnPush": false
   },
-  "generatedAt": "2026-07-02T00:43:37.672105Z",
+  "generatedAt": "2026-07-02T00:49:28.142567Z",
   "toolRuns": [
     {
       "id": "repomix.basic",
