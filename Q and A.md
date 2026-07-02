@@ -61,6 +61,28 @@ Commits:
 - `26a44e8 feat: run broker with configured hotkeys`
 
 
+
+## 2026-06-27 evening ist
+
+
+## user comments
+
+wkey-broker.exe
+
+i dont see any file like taht . and what exactly is it supposed to do?
+
+if it is needed to start...see that scheduled task or whisper bat or which ever way is the best way to start it ...it has to start..set it up!
+
+[$superpowers:using-superpowers](C:\\Users\\deletable\\.codex\\plugins\\cache\\claude-plugins-official\\superpowers\\6.0.3\\skills\\using-superpowers\\SKILL.md) [$caveman:caveman](C:\\Users\\deletable\\.codex\\plugins\\cache\\caveman-repo\\caveman\\0.1.0\\skills\\caveman\\SKILL.md) use gsd skills as needed .
+
+
+
+
+
+
+
+
+
 ## 2026-06-13 Groq Model Hydration
 
 Status: implemented and verified.
@@ -783,3 +805,57 @@ Progress:
 - Merged into `native-hotkey-broker` and pushed to origin.
 - Post-merge verification in main checkout passed after temporarily stashing/restoring pre-existing runtime config dirt: 126 tests passed, py_compile passed, merge-commit `git diff --check` passed, and bounded primary-script smoke passed with no leftover process.
 - Removed worktree `C:\Windows_software\openai whisper\whisper-keyboard-speaker-filter`.
+
+
+## 2026-06-28 Partial Dictation Paste Debug
+
+Status: implemented and verified.
+
+Current finding:
+
+- Logging was active, but runtime logs were landing in root `voice_commands.log`; `wkey/whisper_keyboard.log` was stale because logging setup depended on import order and current directory.
+- Live runtime repeatedly initialized the shared mic stream in broker-owned mode, including during recordings. Code confirmed the main loop opened the input stream, slept, and always closed it in `finally`.
+- Recent saved manual WAVs had expected durations and nonzero audio, so saving was not the first truncation suspect.
+
+Implementation:
+
+- Broker-owned hotkey mode now keeps the shared input stream open across main-loop iterations and closes it only for Python-listener ownership, shutdown, or explicit recovery.
+- Runtime logging now also writes deterministically to `logs/wkey-runtime.log` and logs the active file path at startup.
+- Added metric-only diagnostics for queued manual audio, saved WAV path, pipeline input, WAV bytes, speaker-filter output, Groq transcript length, manual paste length, and paste helper length.
+- Speaker isolation remains disabled by default and is now exposed in the legacy `Whisper_GUI.py` settings toggle as well as existing Control Center controls.
+
+Verification so far:
+
+- Red tests reproduced broker stream closure and missing diagnostics before fix.
+- Targeted new tests now pass: `5 passed`.
+- Focused runtime/pipeline/settings/UI suite passed: `73 passed`.
+- Full Python suite passed: `140 passed`.
+- Rust broker suite passed: `16 passed`.
+- Touched-path `git diff --check` passed.
+- Whole `git diff --check` still fails on pre-existing dirty runtime config whitespace in `wkey\transcription_config.json`; I did not rewrite that user/runtime file.
+- Required primary-script smoke ran `..\openai\Scripts\python.exe -u wkey\faster_whisper_Mother_of_all_wkey.py` for 20 seconds, produced no stdout/stderr, was stopped by its own PID, and left no matching primary-script or broker test process.
+- Runtime log check confirmed startup line and diagnostics in `logs\wkey-runtime.log`.
+
+Questions for user:
+
+- None pending.
+
+
+
+
+
+## 2026-07-02
+
+
+
+
+## user comments
+1. add cmmit push smal commits
+2 manual_pre_recording_seconds default 2.0
+
+## implementation notes
+1. Plan execution started in `native-hotkey-broker`.
+2. Current decision: `manual_pre_recording_seconds` default is `2.0`; `wake_pre_recording_seconds` default is `2.0`.
+3. RED tests being added for settings durations, multi-trigger profile migration, backend health temp-file writes, overflow restart signaling, voice tool registry coverage, empty transcript logging, and Rust broker chord routing.
+4. Focused implementation checkpoint: `py_compile` passed for touched Python modules; focused Python suite passed `76`; Rust broker suite passed `17`.
+5. Full verification checkpoint before repo-intel/commit: full Python suite passed `146`; Rust broker suite passed `17`; `git diff --check --` passed.

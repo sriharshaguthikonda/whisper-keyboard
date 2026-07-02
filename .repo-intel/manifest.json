@@ -4,7 +4,7 @@
     "id": "whisper-keyboard",
     "root": ".",
     "remoteUrl": "https://github.com/sriharshaguthikonda/whisper-keyboard.git",
-    "defaultBranch": "refactor/clean-architecture",
+    "defaultBranch": "native-hotkey-broker",
     "localPaths": [
       ".gitignore",
       ".webui_secret_key",
@@ -14,35 +14,33 @@
       "README.md",
       "README.rst",
       "REFACTOR_TODO.md",
-      "_codex_primary_run_stderr.log",
-      "_codex_primary_run_stderr_venv.log",
-      "_codex_primary_run_stdout.log",
-      "_codex_primary_run_stdout_venv.log",
+      "Start-WKeyBroker.bat",
+      "Whisper.xml",
       "benchmarking_substracting_audio.py",
       "benchmarking_substracting_audio.txt",
       "docs",
+      "native",
       "porcupine",
       "pre_recording.py",
       "requirements.txt",
+      "scripts",
       "setup.py",
       "test_volume.py",
       "tests",
-      "train",
       "upscale_8khz.py",
-      "voice_commands.log",
-      "whisper_keyboard.log",
-      "whisper_keyboard.spec",
       "wkey"
     ]
   },
   "sourceState": {
-    "commit": "2dc150b4269bf550439b033473e6833d99eafb4e",
-    "branch": "refactor/clean-architecture",
-    "dirty": false,
-    "generatedForCommit": "2dc150b4269bf550439b033473e6833d99eafb4e"
+    "commit": "20cd25435f9b6ee81aefe74ec72b9b7640576009",
+    "branch": "native-hotkey-broker",
+    "dirty": true,
+    "generatedForCommit": "20cd25435f9b6ee81aefe74ec72b9b7640576009",
+    "sourceFingerprint": "5559beb8c4a4f73419be7895f4696ac5f7bbecf8d4757a7374c2accee6695cdd",
+    "dirtyReason": "uncommitted changes"
   },
   "policy": {
-    "profile": "standard",
+    "profile": "basic",
     "sensitivity": "private",
     "committedArtifacts": [
       "manifest"
@@ -51,12 +49,12 @@
     "allowGraphPilots": false,
     "runOnPush": false
   },
-  "generatedAt": "2026-06-13T02:41:40.424990Z",
+  "generatedAt": "2026-07-02T00:43:37.672105Z",
   "toolRuns": [
     {
-      "id": "repomix.standard",
+      "id": "repomix.basic",
       "tool": "repomix",
-      "mode": "standard",
+      "mode": "basic",
       "status": "skipped",
       "outputRef": "artifacts/repomix/repo-map.json",
       "warnings": [
@@ -67,9 +65,9 @@
       ]
     },
     {
-      "id": "aider.standard",
+      "id": "aider.basic",
       "tool": "aider",
-      "mode": "standard",
+      "mode": "basic",
       "status": "skipped",
       "outputRef": "artifacts/aider/repo-map-guidance.md",
       "warnings": [
@@ -79,15 +77,15 @@
       ]
     },
     {
-      "id": "serena.standard",
+      "id": "serena.basic",
       "tool": "serena",
-      "mode": "standard",
-      "status": "skipped",
-      "outputRef": "artifacts/serena/symbols.json",
+      "mode": "basic",
+      "status": "passed",
+      "outputRef": "artifacts/serena/capability.json",
       "warnings": [
-        "Serena records symbol-navigation guidance without auto-configuring global state.",
-        "Serena is unavailable on PATH and no command override is configured.",
-        "Symbol-navigation output lives in an artifact path and is not committed by default."
+        "Serena records ephemeral live-symbol capability without auto-configuring global state.",
+        "Suggested command: `serena start-mcp-server --project-from-cwd --context=codex`.",
+        "Serena query results are ephemeral; durable repo context stays in Repo_maps artifacts."
       ]
     }
   ],
@@ -107,7 +105,12 @@
       },
       {
         "name": "serena",
-        "path": "artifacts/serena/symbols.json",
+        "path": "artifacts/serena/capability.json",
+        "kind": "native"
+      },
+      {
+        "name": "repo-map-full",
+        "path": "artifacts/repo-map/repo-map-full.json",
         "kind": "native"
       }
     ],
@@ -120,7 +123,7 @@
     "level3": "symbols",
     "level4": "fullExport"
   },
-  "staleness": "current",
+  "staleness": "dirty",
   "security": {
     "ignorePolicy": ".repo-map-ignore",
     "secretScanStatus": "skipped",
