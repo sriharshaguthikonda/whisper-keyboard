@@ -640,6 +640,50 @@ ACTIONS = {
 }
 
 
+def _call_voice_command_tool(name, **kwargs):
+    try:
+        import voice_commands
+    except ImportError:
+        from wkey import voice_commands
+    return getattr(voice_commands, name)(**kwargs)
+
+
+def _named_voice_tool(name):
+    return lambda **kwargs: _call_voice_command_tool(name, **kwargs)
+
+
+def tool_function_registry(namespace=None):
+    namespace = namespace or {}
+    registry = {
+        "launch_application": launch_application,
+        "play_music": play_music,
+        "pause_song": pause_song,
+        "stop_media": pause_song,
+        "next_track": next_track,
+        "previous_track": previous_track,
+        "restart_media": play_music,
+        "stop_spotify": stop_spotify,
+        "start_whisper": start_whisper,
+        "start_grok": start_grok,
+        "set_alarm": _set_alarm_wrapper,
+        "open_task_scheduler": ACTIONS["open_task_scheduler"],
+        "open_startup_folder": ACTIONS["open_startup_folder"],
+        "manage_services": ACTIONS["manage_services"],
+    }
+    for item in tools:
+        if item.get("type") != "function" or "function" not in item:
+            continue
+        name = item["function"].get("name")
+        if not name or name in registry:
+            continue
+        candidate = namespace.get(name)
+        if callable(candidate):
+            registry[name] = candidate
+        else:
+            registry[name] = _named_voice_tool(name)
+    return registry
+
+
 """
 ########  #######   #######  ##        ######  
    ##    ##     ## ##     ## ##       ##    ## 

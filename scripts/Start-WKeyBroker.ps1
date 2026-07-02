@@ -122,19 +122,24 @@ function Stop-ExistingWKeyProcesses {
     $targets = @()
     if (Test-Path -LiteralPath $BackendHealthPath) {
         try {
-            $health = Get-Content -LiteralPath $BackendHealthPath -Raw | ConvertFrom-Json
-            $healthPid = [int]$health.pid
-            $healthProc = Get-CimInstance Win32_Process -Filter "ProcessId=$healthPid" -ErrorAction SilentlyContinue
-            if ($healthProc -and $healthProc.Name -in @("python.exe", "pythonw.exe")) {
-                $targets += $healthProc
-                $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($healthProc.ParentProcessId)" -ErrorAction SilentlyContinue
-                if ($parent -and $parent.Name -in @("python.exe", "pythonw.exe") -and $parent.ProcessId -ne $PID) {
-                    $targets += $parent
+            $healthText = Get-Content -LiteralPath $BackendHealthPath -Raw -ErrorAction Stop
+            if (-not [string]::IsNullOrWhiteSpace($healthText)) {
+                $health = $healthText | ConvertFrom-Json -ErrorAction Stop
+                if ($health -and $health.pid) {
+                    $healthPid = [int]$health.pid
+                    $healthProc = Get-CimInstance Win32_Process -Filter "ProcessId=$healthPid" -ErrorAction SilentlyContinue
+                    if ($healthProc -and $healthProc.Name -in @("python.exe", "pythonw.exe")) {
+                        $targets += $healthProc
+                        $parent = Get-CimInstance Win32_Process -Filter "ProcessId=$($healthProc.ParentProcessId)" -ErrorAction SilentlyContinue
+                        if ($parent -and $parent.Name -in @("python.exe", "pythonw.exe") -and $parent.ProcessId -ne $PID) {
+                            $targets += $parent
+                        }
+                    }
                 }
             }
         }
         catch {
-            Write-LauncherLog "Backend health PID scan unavailable: $($_.Exception.Message)"
+            Write-LauncherLog "Backend health PID scan skipped: $($_.Exception.Message)"
         }
     }
 

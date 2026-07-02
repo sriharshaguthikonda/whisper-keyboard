@@ -82,6 +82,12 @@ class TranscriptionPipeline:
                     self.global_state["consecutive_failures"] += 1
                     continue
 
+                self.log.info(
+                    "audio_pipeline_input keyword_index=%s samples=%d duration=%.3fs",
+                    keyword_index,
+                    len(audio_buffer_for_processing),
+                    len(audio_buffer_for_processing) / float(self.sample_rate),
+                )
                 transcript = None
                 groq_success = False
                 current_settings = self.settings_getter()
@@ -106,6 +112,12 @@ class TranscriptionPipeline:
                     audio_buffer_for_processing = audio_buffer_for_processing[
                         -max_samples:
                     ]
+                    self.log.info(
+                        "audio_pipeline_trimmed keyword_index=%s samples=%d duration=%.3fs",
+                        keyword_index,
+                        len(audio_buffer_for_processing),
+                        len(audio_buffer_for_processing) / float(self.sample_rate),
+                    )
 
                 if (
                     keyword_index is None
@@ -119,6 +131,16 @@ class TranscriptionPipeline:
                     if filter_result is None:
                         continue
                     audio_buffer_for_processing = filter_result.audio
+                    self.log.info(
+                        "speaker_filter_output keyword_index=%s decision=%s "
+                        "samples=%d duration=%.3fs accepted=%.3fs rejected=%.3fs",
+                        keyword_index,
+                        getattr(filter_result, "decision", ""),
+                        len(audio_buffer_for_processing),
+                        len(audio_buffer_for_processing) / float(self.sample_rate),
+                        float(getattr(filter_result, "accepted_seconds", 0.0)),
+                        float(getattr(filter_result, "rejected_seconds", 0.0)),
+                    )
                     if len(audio_buffer_for_processing) == 0:
                         self.log.warning(
                             "Speaker filter rejected manual dictation audio; paste skipped."
@@ -130,9 +152,13 @@ class TranscriptionPipeline:
                 byte_io = io.BytesIO()
                 wav_write(byte_io, self.sample_rate, audio_buffer_for_processing)
                 byte_io.seek(0)
-                self.log.debug(
-                    "process_audio_async: WAV buffer ready, size=%d bytes",
-                    byte_io.getbuffer().nbytes,
+                wav_bytes = byte_io.getbuffer().nbytes
+                self.log.info(
+                    "audio_pipeline_wav_ready keyword_index=%s bytes=%d samples=%d duration=%.3fs",
+                    keyword_index,
+                    wav_bytes,
+                    len(audio_buffer_for_processing),
+                    len(audio_buffer_for_processing) / float(self.sample_rate),
                 )
 
                 if use_groq:
@@ -148,13 +174,16 @@ class TranscriptionPipeline:
                         finally:
                             self.global_state["transcribe_inflight"] = False
                             self.global_state["last_transcribe_activity"] = time.time()
-                        self.log.debug(
-                            "process_audio_async: Groq returned transcript_len=%d",
-                            len(transcript or ""),
-                        )
                         if transcript is not None:
                             groq_success = True
                             groq_duration = time.time() - groq_start_time
+                            self.log.info(
+                                "groq_transcript_received keyword_index=%s "
+                                "transcript_len=%d duration=%.2fs",
+                                keyword_index,
+                                len(transcript or ""),
+                                groq_duration,
+                            )
                             self.log.info(
                                 "Groq transcription successful in %.2fs", groq_duration
                             )
@@ -221,8 +250,17 @@ class TranscriptionPipeline:
                     except Exception as e:
                         self.log.error("Local transcription failed: %s", e)
 
-                if not transcript:
+                if transcript is None:
                     self.log.error("All transcription attempts failed")
+                    continue
+
+                if not str(transcript).strip():
+                    self.log.warning(
+                        "empty_transcript_no_speech keyword_index=%s samples=%d duration=%.3fs",
+                        keyword_index,
+                        len(audio_buffer_for_processing),
+                        len(audio_buffer_for_processing) / float(self.sample_rate),
+                    )
                     continue
 
                 transcript_lower = transcript.lower()
@@ -252,7 +290,11 @@ class TranscriptionPipeline:
                     self.transcript_queue.put((transcript_stripped, 0))
                     continue
                 if keyword_index is None:
-                    self.log.debug("routing manual dictation transcription for paste")
+                    self.log.info(
+                        "manual_dictation_paste transcript_len=%d paste_len=%d",
+                        len(transcript or ""),
+                        len(transcript_stripped),
+                    )
                     self.paste_transcript(transcript, self.beep)
                     continue
                 if keyword_index == 1 and "computer" in transcript_lower:

@@ -163,6 +163,138 @@ def test_manual_dictation_filters_audio_before_transcription(monkeypatch):
     assert status_updates[-1]["rejected_seconds"] == 1.0
 
 
+def test_manual_dictation_logs_pipeline_diagnostics(monkeypatch, caplog):
+    from wkey.transcription_pipeline import TranscriptionPipeline
+
+    audio_buffer = np.zeros(20, dtype=np.float32)
+    audio_queue = queue.Queue()
+    audio_queue.put((audio_buffer, None))
+    transcript_queue = queue.Queue()
+    pasted = []
+    global_state = _base_global_state()
+
+    async def fake_groq(byte_io, keyword_index, max_retries=3):
+        _ = byte_io, keyword_index, max_retries
+        return "diagnostic text"
+
+    pipeline = TranscriptionPipeline(
+        audio_buffer_queue=audio_queue,
+        transcript_queue=transcript_queue,
+        settings_getter=lambda: {
+            "fallback_to_groq": True,
+            "max_retries": 1,
+            "speaker_filter_enabled": False,
+        },
+        sample_rate=10,
+        validate_audio_buffer=lambda _: True,
+        transcribe_with_groq_async=fake_groq,
+        transcribe_with_local_model=lambda *_: "",
+        model_getter=lambda: None,
+        gpu_available_getter=lambda: False,
+        initialize_local_model_cpu=lambda: None,
+        paste_transcript=lambda transcript, *_: pasted.append(transcript),
+        beep=lambda *_: None,
+        global_state=global_state,
+    )
+
+    caplog.set_level("INFO")
+    _run_one_pipeline_cycle(monkeypatch, pipeline)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "audio_pipeline_input keyword_index=None samples=20 duration=2.000s" in messages
+    assert "audio_pipeline_wav_ready keyword_index=None bytes=" in messages
+    assert "groq_transcript_received keyword_index=None transcript_len=15" in messages
+    assert "manual_dictation_paste transcript_len=15 paste_len=15" in messages
+    assert pasted == ["diagnostic text"]
+
+
+def test_empty_remote_transcript_is_logged_as_no_speech_warning(monkeypatch, caplog):
+    from wkey.transcription_pipeline import TranscriptionPipeline
+
+    audio_queue = queue.Queue()
+    audio_queue.put((np.zeros(20, dtype=np.float32), None))
+    transcript_queue = queue.Queue()
+    pasted = []
+    global_state = _base_global_state()
+
+    async def fake_groq(byte_io, keyword_index, max_retries=3):
+        _ = byte_io, keyword_index, max_retries
+        return ""
+
+    pipeline = TranscriptionPipeline(
+        audio_buffer_queue=audio_queue,
+        transcript_queue=transcript_queue,
+        settings_getter=lambda: {
+            "fallback_to_groq": True,
+            "max_retries": 1,
+            "speaker_filter_enabled": False,
+        },
+        sample_rate=10,
+        validate_audio_buffer=lambda _: True,
+        transcribe_with_groq_async=fake_groq,
+        transcribe_with_local_model=lambda *_: "",
+        model_getter=lambda: None,
+        gpu_available_getter=lambda: False,
+        initialize_local_model_cpu=lambda: None,
+        paste_transcript=lambda transcript, *_: pasted.append(transcript),
+        beep=lambda *_: None,
+        global_state=global_state,
+    )
+
+    caplog.set_level("INFO")
+    _run_one_pipeline_cycle(monkeypatch, pipeline)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "empty_transcript_no_speech" in messages
+    assert "All transcription attempts failed" not in messages
+    assert pasted == []
+    assert transcript_queue.empty()
+
+
+def test_manual_dictation_speaker_filter_disabled_skips_filter_getter(monkeypatch):
+    from wkey.transcription_pipeline import TranscriptionPipeline
+
+    audio_queue = queue.Queue()
+    audio_queue.put((np.zeros(20, dtype=np.float32), None))
+    transcript_queue = queue.Queue()
+    pasted = []
+    global_state = _base_global_state()
+
+    async def fake_groq(byte_io, keyword_index, max_retries=3):
+        _ = byte_io, keyword_index, max_retries
+        return "plain dictation"
+
+    def speaker_filter_getter():
+        raise AssertionError("Disabled speaker filter must not be constructed")
+
+    pipeline = TranscriptionPipeline(
+        audio_buffer_queue=audio_queue,
+        transcript_queue=transcript_queue,
+        settings_getter=lambda: {
+            "fallback_to_groq": True,
+            "max_retries": 1,
+            "speaker_filter_enabled": False,
+            "speaker_filter_apply_to": "dictation",
+        },
+        sample_rate=10,
+        validate_audio_buffer=lambda _: True,
+        transcribe_with_groq_async=fake_groq,
+        transcribe_with_local_model=lambda *_: "",
+        model_getter=lambda: None,
+        gpu_available_getter=lambda: False,
+        initialize_local_model_cpu=lambda: None,
+        paste_transcript=lambda transcript, *_: pasted.append(transcript),
+        beep=lambda *_: None,
+        global_state=global_state,
+        speaker_filter_getter=speaker_filter_getter,
+    )
+
+    _run_one_pipeline_cycle(monkeypatch, pipeline)
+
+    assert pasted == ["plain dictation"]
+    assert "last_speaker_filter" not in global_state
+
+
 def test_rejected_manual_dictation_does_not_transcribe_or_paste(monkeypatch):
     from wkey.transcription_pipeline import TranscriptionPipeline
 

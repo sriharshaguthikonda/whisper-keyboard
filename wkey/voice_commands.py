@@ -56,6 +56,7 @@ from commands_and_tools import (
     ACTIONS,
     tools,
     extra_tools,
+    tool_function_registry,
     launch_application,
     stop_spotify,
 )
@@ -1922,7 +1923,8 @@ async def execute_command_run_with_tool(
                             )
                             return False
 
-                        if function_name not in globals():
+                        tool_registry = tool_function_registry(globals())
+                        if function_name not in tool_registry:
                             logging.error(
                                 f"{RED}Function {function_name} not found{RESET}"
                             )
@@ -1932,7 +1934,7 @@ async def execute_command_run_with_tool(
                             logging.info(
                                 f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                             )
-                            func = globals()[function_name]
+                            func = tool_registry[function_name]
                             import inspect
 
                             sig = inspect.signature(func)
