@@ -8,6 +8,10 @@ pub enum BrokerKey {
     F24,
     LeftCtrl,
     RightCtrl,
+    LeftShift,
+    RightShift,
+    LeftAlt,
+    RightAlt,
     D,
     F,
     Other(u16),
@@ -52,6 +56,13 @@ impl TriggerEvent {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TriggerDecision {
     Engine(EngineCommand),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct TriggerBinding {
+    keys: Vec<BrokerKey>,
+    route: EngineRoute,
+    label: String,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +112,9 @@ impl TriggerConfig {
 pub struct TriggerStateMachine {
     config: TriggerConfig,
     df_hold_threshold: Duration,
+    profile_bindings: Vec<TriggerBinding>,
+    profile_pressed_keys: Vec<BrokerKey>,
+    active_profile_binding: Option<TriggerBinding>,
     f23_down: bool,
     f23_cancelled: bool,
     f24_down: bool,
@@ -127,6 +141,9 @@ impl TriggerStateMachine {
         Self {
             config,
             df_hold_threshold: Duration::from_millis(180),
+            profile_bindings: Vec::new(),
+            profile_pressed_keys: Vec::new(),
+            active_profile_binding: None,
             f23_down: false,
             f23_cancelled: false,
             f24_down: false,
@@ -147,6 +164,13 @@ impl TriggerStateMachine {
         Self::new(TriggerConfig::from_record_keys(source))
     }
 
+    pub fn from_hotkey_profiles_json(source: &str) -> Result<Self, String> {
+        let bindings = trigger_bindings_from_profiles_json(source)?;
+        let mut state = Self::new(TriggerConfig::from_record_keys(""));
+        state.profile_bindings = bindings;
+        Ok(state)
+    }
+
     pub fn handle_event(&mut self, event: TriggerEvent) -> Vec<TriggerDecision> {
         let mut decisions = Vec::new();
         match event.kind {
@@ -158,6 +182,9 @@ impl TriggerStateMachine {
     }
 
     fn handle_press(&mut self, key: BrokerKey, at: Duration, decisions: &mut Vec<TriggerDecision>) {
+        if !self.profile_bindings.is_empty() {
+            self.handle_profile_press(key, decisions);
+        }
         self.cancel_manual_dictation_chord_if_needed(key, decisions);
         self.cancel_df_if_needed(key, decisions);
 
@@ -203,7 +230,11 @@ impl TriggerStateMachine {
                 }
                 self.maybe_start_df(at, decisions);
             }
-            BrokerKey::Other(_) => {}
+            BrokerKey::LeftShift
+            | BrokerKey::RightShift
+            | BrokerKey::LeftAlt
+            | BrokerKey::RightAlt
+            | BrokerKey::Other(_) => {}
         }
     }
 
@@ -213,6 +244,9 @@ impl TriggerStateMachine {
         _at: Duration,
         decisions: &mut Vec<TriggerDecision>,
     ) {
+        if !self.profile_bindings.is_empty() {
+            self.handle_profile_release(key, decisions);
+        }
         match key {
             BrokerKey::F23 => {
                 if self.f23_down && !self.f23_cancelled {
@@ -260,8 +294,49 @@ impl TriggerStateMachine {
                     self.df_cancelled = false;
                 }
             }
-            BrokerKey::Other(_) => {}
+            BrokerKey::LeftShift
+            | BrokerKey::RightShift
+            | BrokerKey::LeftAlt
+            | BrokerKey::RightAlt
+            | BrokerKey::Other(_) => {}
         }
+    }
+
+    fn handle_profile_press(&mut self, key: BrokerKey, decisions: &mut Vec<TriggerDecision>) {
+        if !self.profile_pressed_keys.contains(&key) {
+            self.profile_pressed_keys.push(key);
+        }
+        if self.active_profile_binding.is_some() {
+            return;
+        }
+        let mut matches = self
+            .profile_bindings
+            .iter()
+            .filter(|binding| {
+                binding.keys.contains(&key)
+                    && binding
+                        .keys
+                        .iter()
+                        .all(|candidate| self.profile_pressed_keys.contains(candidate))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        matches.sort_by(|left, right| right.keys.len().cmp(&left.keys.len()));
+        if let Some(binding) = matches.into_iter().next() {
+            decisions.push(engine(EngineCommand::start(binding.route)));
+            self.active_profile_binding = Some(binding);
+        }
+    }
+
+    fn handle_profile_release(&mut self, key: BrokerKey, decisions: &mut Vec<TriggerDecision>) {
+        if let Some(binding) = self.active_profile_binding.clone() {
+            if binding.keys.contains(&key) {
+                decisions.push(engine(EngineCommand::stop(binding.route)));
+                self.active_profile_binding = None;
+            }
+        }
+        self.profile_pressed_keys
+            .retain(|candidate| *candidate != key);
     }
 
     fn maybe_start_df(&mut self, at: Duration, decisions: &mut Vec<TriggerDecision>) {
@@ -330,6 +405,79 @@ impl TriggerStateMachine {
 
 fn engine(command: EngineCommand) -> TriggerDecision {
     TriggerDecision::Engine(command)
+}
+
+fn trigger_bindings_from_profiles_json(source: &str) -> Result<Vec<TriggerBinding>, String> {
+    let parsed: serde_json::Value = serde_json::from_str(source).map_err(|err| err.to_string())?;
+    let mut bindings = Vec::new();
+    for (profile_id, route) in [
+        ("dictation", EngineRoute::Dictation),
+        ("command", EngineRoute::Command),
+    ] {
+        let Some(profile) = parsed.get(profile_id) else {
+            continue;
+        };
+        if profile.get("enabled").and_then(|value| value.as_bool()) != Some(true) {
+            continue;
+        }
+        if let Some(items) = profile.get("triggers").and_then(|value| value.as_array()) {
+            for item in items {
+                if let Some(label) = item.as_str() {
+                    if let Some(binding) = parse_trigger_binding(label, route) {
+                        bindings.push(binding);
+                    }
+                }
+            }
+        } else if let Some(label) = profile.get("trigger").and_then(|value| value.as_str()) {
+            if let Some(binding) = parse_trigger_binding(label, route) {
+                bindings.push(binding);
+            }
+        }
+    }
+    Ok(bindings)
+}
+
+fn parse_trigger_binding(label: &str, route: EngineRoute) -> Option<TriggerBinding> {
+    let mut keys = Vec::new();
+    for part in label.split('+') {
+        let key = parse_trigger_key(part)?;
+        if !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    if keys.is_empty() {
+        return None;
+    }
+    Some(TriggerBinding {
+        keys,
+        route,
+        label: label.to_string(),
+    })
+}
+
+fn parse_trigger_key(value: &str) -> Option<BrokerKey> {
+    let normalized = value.trim().to_ascii_lowercase().replace([' ', '-'], "_");
+    match normalized.as_str() {
+        "f23" => Some(BrokerKey::F23),
+        "f24" => Some(BrokerKey::F24),
+        "ctrl_l" | "left_ctrl" | "left_control" | "lctrl" => Some(BrokerKey::LeftCtrl),
+        "ctrl" | "ctrl_r" | "right_ctrl" | "right_control" | "rctrl" => Some(BrokerKey::RightCtrl),
+        "shift" | "shift_l" | "left_shift" | "lshift" => Some(BrokerKey::LeftShift),
+        "shift_r" | "right_shift" | "rshift" => Some(BrokerKey::RightShift),
+        "alt" | "alt_l" | "left_alt" | "lalt" => Some(BrokerKey::LeftAlt),
+        "alt_r" | "right_alt" | "ralt" => Some(BrokerKey::RightAlt),
+        "d" => Some(BrokerKey::D),
+        "f" => Some(BrokerKey::F),
+        _ if normalized.len() == 1 => {
+            let byte = normalized.as_bytes()[0];
+            if byte.is_ascii_alphanumeric() {
+                Some(BrokerKey::Other(byte.to_ascii_uppercase() as u16))
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -652,6 +800,53 @@ mod tests {
         assert_eq!(
             state.handle_event(TriggerEvent::press(BrokerKey::F24, ms(20))),
             engine(EngineCommand::start(EngineRoute::Command))
+        );
+    }
+
+    #[test]
+    fn hotkey_profile_json_supports_multiple_routes_and_chords() {
+        let profiles = r#"{
+            "dictation": {
+                "enabled": true,
+                "triggers": ["f23", "ctrl_r+shift+a"]
+            },
+            "command": {
+                "enabled": true,
+                "triggers": ["f24", "ctrl_r+shift+f24"]
+            }
+        }"#;
+        let mut state =
+            TriggerStateMachine::from_hotkey_profiles_json(profiles).expect("profiles parse");
+
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::F23, ms(0))),
+            engine(EngineCommand::start(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::F23, ms(10))),
+            engine(EngineCommand::stop(EngineRoute::Dictation))
+        );
+
+        state.handle_event(TriggerEvent::press(BrokerKey::RightCtrl, ms(20)));
+        state.handle_event(TriggerEvent::press(BrokerKey::LeftShift, ms(30)));
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::Other(0x41), ms(40))),
+            engine(EngineCommand::start(EngineRoute::Dictation))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::Other(0x41), ms(50))),
+            engine(EngineCommand::stop(EngineRoute::Dictation))
+        );
+
+        state.handle_event(TriggerEvent::press(BrokerKey::RightCtrl, ms(60)));
+        state.handle_event(TriggerEvent::press(BrokerKey::LeftShift, ms(70)));
+        assert_eq!(
+            state.handle_event(TriggerEvent::press(BrokerKey::F24, ms(80))),
+            engine(EngineCommand::start(EngineRoute::Command))
+        );
+        assert_eq!(
+            state.handle_event(TriggerEvent::release(BrokerKey::F24, ms(90))),
+            engine(EngineCommand::stop(EngineRoute::Command))
         );
     }
 

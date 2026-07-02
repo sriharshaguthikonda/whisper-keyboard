@@ -9,7 +9,9 @@ use windows::Win32::{
     Foundation::{HINSTANCE, LPARAM, LRESULT, WPARAM},
     System::LibraryLoader::GetModuleHandleW,
     UI::{
-        Input::KeyboardAndMouse::{VK_LCONTROL, VK_RCONTROL},
+        Input::KeyboardAndMouse::{
+            VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_RCONTROL, VK_RMENU, VK_RSHIFT,
+        },
         WindowsAndMessaging::{
             CallNextHookEx, DispatchMessageW, KBDLLHOOKSTRUCT, MSG, PM_REMOVE, PeekMessageW,
             SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx, WH_KEYBOARD_LL, WM_KEYDOWN,
@@ -122,11 +124,26 @@ fn map_vk_to_key(vk_code: u32) -> Option<BrokerKey> {
     if vk_code == VK_RCONTROL.0 as u32 {
         return Some(BrokerKey::RightCtrl);
     }
+    if vk_code == VK_LSHIFT.0 as u32 {
+        return Some(BrokerKey::LeftShift);
+    }
+    if vk_code == VK_RSHIFT.0 as u32 {
+        return Some(BrokerKey::RightShift);
+    }
+    if vk_code == VK_LMENU.0 as u32 {
+        return Some(BrokerKey::LeftAlt);
+    }
+    if vk_code == VK_RMENU.0 as u32 {
+        return Some(BrokerKey::RightAlt);
+    }
     if vk_code == VK_D {
         return Some(BrokerKey::D);
     }
     if vk_code == VK_F {
         return Some(BrokerKey::F);
+    }
+    if (0x30..=0x39).contains(&vk_code) || (0x41..=0x5A).contains(&vk_code) {
+        return Some(BrokerKey::Other(vk_code as u16));
     }
     Some(BrokerKey::Other(vk_code as u16))
 }

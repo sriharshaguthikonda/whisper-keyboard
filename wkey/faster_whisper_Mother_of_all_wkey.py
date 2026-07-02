@@ -114,6 +114,7 @@ try:
         load_settings,
         normalize_record_keys,
         record_keys_from_hotkey_profiles,
+        trigger_routes_from_hotkey_profiles,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
@@ -125,6 +126,7 @@ except ModuleNotFoundError:
         load_settings,
         normalize_record_keys,
         record_keys_from_hotkey_profiles,
+        trigger_routes_from_hotkey_profiles,
         watch_settings,
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
@@ -248,15 +250,49 @@ def _safe_console_stream():
         except Exception:
             return sys.stdout
 
-# Set up logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.FileHandler("whisper_keyboard.log", encoding="utf-8"),
-        logging.StreamHandler(_safe_console_stream()),
-    ],
+RUNTIME_LOG_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "logs", "wkey-runtime.log")
 )
+
+
+def configure_runtime_logging(log_path=RUNTIME_LOG_PATH):
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    normalized_path = os.path.abspath(log_path)
+
+    try:
+        os.makedirs(os.path.dirname(normalized_path), exist_ok=True)
+        has_file_handler = any(
+            getattr(handler, "_wkey_runtime_log_path", None) == normalized_path
+            for handler in root_logger.handlers
+        )
+        if not has_file_handler:
+            file_handler = logging.FileHandler(normalized_path, encoding="utf-8")
+            file_handler.setFormatter(formatter)
+            file_handler._wkey_runtime_log_path = normalized_path
+            root_logger.addHandler(file_handler)
+    except Exception as exc:
+        root_logger.warning(
+            "Runtime file logging unavailable path=%s error=%s",
+            normalized_path,
+            exc,
+        )
+
+    has_stream_handler = any(
+        getattr(handler, "_wkey_runtime_stream_handler", False)
+        for handler in root_logger.handlers
+    )
+    if not has_stream_handler:
+        stream_handler = logging.StreamHandler(_safe_console_stream())
+        stream_handler.setFormatter(formatter)
+        stream_handler._wkey_runtime_stream_handler = True
+        root_logger.addHandler(stream_handler)
+
+    return normalized_path
+
+
+ACTIVE_RUNTIME_LOG_PATH = configure_runtime_logging()
 
 # ANSI Color codes
 BLUE = "\033[94m"
@@ -473,6 +509,10 @@ def _resolve_record_key_source(settings):
     return normalize_record_keys(settings.get("record_keys", DEFAULT_RECORD_KEYS))
 
 
+def _resolve_trigger_routes(settings):
+    return trigger_routes_from_hotkey_profiles(settings.get("hotkey_profiles"))
+
+
 def _build_record_keys(record_key_source, mode):
     record_key_labels = [
         label.strip().lower()
@@ -491,11 +531,17 @@ def _build_record_keys(record_key_source, mode):
 
 record_key_source = _resolve_record_key_source(SETTINGS)
 RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
+TRIGGER_ROUTES = _resolve_trigger_routes(SETTINGS)
 
 activation_metrics_lock = threading.Lock()
 activation_events = []
 activation_first_audio_recorded = False
 last_backend_health_write = 0.0
+last_audio_overflow_status = {
+    "last_overflow_count": 0,
+    "overflow_burst": False,
+    "external_restart_requested": False,
+}
 
 
 def reset_activation_metrics():
@@ -562,14 +608,33 @@ def write_backend_health_status(source="runtime", clock=time.time, force=False):
         "keyboard_runtime_enabled": is_keyboard_runtime_enabled(),
         "python_keyboard_listener_enabled": is_python_keyboard_listener_enabled(),
         "activation": get_activation_status(),
+        "audio": dict(last_audio_overflow_status),
     }
-    try:
-        temp_path = f"{BACKEND_HEALTH_STATUS_PATH}.tmp"
-        with open(temp_path, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, separators=(",", ":"), sort_keys=True)
-        os.replace(temp_path, BACKEND_HEALTH_STATUS_PATH)
-    except Exception as exc:
-        logging.warning("Failed to write backend health status: %s", exc)
+    last_error = None
+    for attempt in range(3):
+        temp_path = (
+            f"{BACKEND_HEALTH_STATUS_PATH}."
+            f"{os.getpid()}.{threading.get_ident()}.{time.monotonic_ns()}.tmp"
+        )
+        try:
+            status_dir = os.path.dirname(BACKEND_HEALTH_STATUS_PATH)
+            if status_dir:
+                os.makedirs(status_dir, exist_ok=True)
+            with open(temp_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, separators=(",", ":"), sort_keys=True)
+            os.replace(temp_path, BACKEND_HEALTH_STATUS_PATH)
+            return payload
+        except Exception as exc:
+            last_error = exc
+            try:
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
+            except Exception:
+                pass
+            if attempt < 2:
+                time.sleep(0.05 * (attempt + 1))
+    if last_error is not None:
+        logging.warning("Failed to write backend health status: %s", last_error)
     return payload
 
 
@@ -592,8 +657,12 @@ def is_wakeword_runtime_enabled():
 
 def map_key_to_keyword_index(key):
     """Return keyword index for a given manual trigger key."""
-    if RECORD_KEYS.get('f24') is not None and key == RECORD_KEYS['f24']:
-        return 0  # Route directly to execute_command_run_with_tool
+    for label, configured_key in RECORD_KEYS.items():
+        if key == configured_key:
+            route = TRIGGER_ROUTES.get(label)
+            if route == "command" or (route is None and label == "f24"):
+                return 0  # Route directly to execute_command_run_with_tool
+            return None
     return None  # Default manual (paste) pathway
 
 keyboard_controller = KeyboardController()
@@ -712,14 +781,63 @@ def write_target_speaker_status(status):
 
 settings_watch_handle = None
 
+
+def _setting_float(name, default, minimum, maximum):
+    try:
+        value = float(SETTINGS.get(name, default))
+    except Exception:
+        value = float(default)
+    return max(float(minimum), min(float(maximum), value))
+
+
+def _rebuild_prerecord_buffers_if_idle():
+    global PRE_RECORDING_DURATION, PRE_RECORDING_F24_SECONDS, BUFFER_SIZE
+    global pre_recording_buffer, pre_recording_buffer_f24, buffer_index, audio_buffer
+
+    if globals().get("recording", False):
+        logging.info("prerecord_buffer_rebuild_deferred recording_active=true")
+        return False
+
+    wake_seconds = _setting_float("wake_pre_recording_seconds", 2.0, 0.0, 10.0)
+    manual_seconds = _setting_float("manual_pre_recording_seconds", 2.0, 0.0, 5.0)
+    buffer_size = int(round(wake_seconds * sample_rate))
+
+    lock = globals().get("audio_data_lock")
+    if lock is None:
+        lock = threading.RLock()
+
+    with lock:
+        (
+            pre_recording_buffer,
+            pre_recording_buffer_f24,
+            buffer_index,
+            audio_buffer,
+        ) = create_audio_buffers(
+            buffer_size=buffer_size,
+            sample_rate=sample_rate,
+            channels=channels,
+            pre_recording_f24_seconds=manual_seconds,
+        )
+        PRE_RECORDING_DURATION = wake_seconds
+        PRE_RECORDING_F24_SECONDS = manual_seconds
+        BUFFER_SIZE = buffer_size
+    logging.info(
+        "prerecord_buffers_rebuilt wake_seconds=%.3f manual_seconds=%.3f",
+        wake_seconds,
+        manual_seconds,
+    )
+    return True
+
+
 def apply_settings(new_settings):
-    global SETTINGS, runtime_mode, record_key_source, RECORD_KEYS
+    global SETTINGS, runtime_mode, record_key_source, RECORD_KEYS, TRIGGER_ROUTES
     global gpu_available, model, model_device, cpu_model_initialized
     wakeword_was_enabled = is_wakeword_runtime_enabled()
     SETTINGS = new_settings
     runtime_mode = _resolve_runtime_mode(SETTINGS)
     record_key_source = _resolve_record_key_source(SETTINGS)
     RECORD_KEYS = _build_record_keys(record_key_source, runtime_mode)
+    TRIGGER_ROUTES = _resolve_trigger_routes(SETTINGS)
     handler = globals().get("keyboard_handler")
     if handler is not None:
         handler.record_keys = set(RECORD_KEYS.values())
@@ -728,6 +846,8 @@ def apply_settings(new_settings):
     want_gpu = SETTINGS.get("use_local_gpu", True)
     want_cpu = SETTINGS.get("use_local_cpu", True)
     want_selenium = SETTINGS.get("enable_edge_selenium", True)
+
+    _rebuild_prerecord_buffers_if_idle()
 
     if not want_gpu and model_device == "cuda":
         model = None
@@ -1196,9 +1316,13 @@ def register_volume_timeout_recovery_hook():
  ######     ##    ##     ## ######## ##     ## ##     ## 
 """
 
-PRE_RECORDING_DURATION = 2
-PRE_RECORDING_F24_SECONDS = 1
-BUFFER_SIZE = PRE_RECORDING_DURATION * sample_rate
+PRE_RECORDING_DURATION = max(
+    0.0, min(10.0, float(SETTINGS.get("wake_pre_recording_seconds", 2.0)))
+)
+PRE_RECORDING_F24_SECONDS = max(
+    0.0, min(5.0, float(SETTINGS.get("manual_pre_recording_seconds", 2.0)))
+)
+BUFFER_SIZE = int(round(PRE_RECORDING_DURATION * sample_rate))
 channels = 1
 
 (
@@ -1266,17 +1390,27 @@ def read_shared_wake_audio(timeout=0.05):
 def audio_callback(indata, frames, time, status):
     try:
         with audio_operation_guard():
-            global buffer_index, audio_buffer
+            global buffer_index, audio_buffer, last_audio_overflow_status
             if status:
                 bump_resource_relax()
                 if _status_has_overflow(status):
-                    overflow_burst_tracker.note_overflow()
+                    burst, count = overflow_burst_tracker.note_overflow()
+                    last_audio_overflow_status = {
+                        "last_overflow_count": int(count),
+                        "overflow_burst": bool(burst),
+                        "external_restart_requested": bool(burst),
+                    }
                     logging.warning(
                         "%sInput overflow detected; recovery_policy=%s leaves stream for external restart.%s",
                         YELLOW,
                         RECOVERY_POLICY,
                         RESET,
                     )
+                    if burst:
+                        write_backend_health_status(
+                            source="input_overflow_burst", force=True
+                        )
+                        request_broker_control_shutdown()
             if recording and isinstance(indata, np.ndarray) and len(indata) > 0:
                 record_first_audio_frame()
             _enqueue_shared_wake_audio(indata, frames)
@@ -2009,13 +2143,30 @@ def stop_recording(keyword_index):
             local_audio_buffer = snapshot_audio_buffer_impl(
                 audio_buffer, audio_data_lock
             )
+            pre_samples = len(pre_recording_data)
+            live_samples = len(local_audio_buffer)
             audio_buffer = np.concatenate([pre_recording_data, local_audio_buffer], axis=0)
             audio_buffer = _trim_audio_to_max_duration(audio_buffer)
-            save_manual_recording_if_configured(
+            saved_path = save_manual_recording_if_configured(
                 audio_buffer, keyword_index, sample_rate=sample_rate
             )
             record_activation_event("queued_audio")
             audio_buffer_queue.put((audio_buffer, keyword_index))
+            try:
+                queue_size = audio_buffer_queue.qsize()
+            except Exception:
+                queue_size = "unknown"
+            logging.info(
+                "manual_audio_queued keyword_index=%s samples=%d duration=%.3fs "
+                "pre_samples=%d live_samples=%d saved_path=%s queue_size=%s",
+                keyword_index,
+                len(audio_buffer),
+                len(audio_buffer) / float(sample_rate),
+                pre_samples,
+                live_samples,
+                saved_path or "",
+                queue_size,
+            )
 
             _restore_volume_all_async(delay_seconds=restore_delay_seconds)
             audio_buffer = []
@@ -2258,9 +2409,9 @@ def save_manual_recording_if_configured(
 ):
     try:
         if audio_data is None or len(audio_data) == 0:
-            return
+            return None
         if not os.path.isdir(target_dir):
-            return
+            return None
 
         key_label_local = "f24" if keyword_index == 0 else "dictation"
         duration_ms = int((len(audio_data) / sample_rate) * 1000)
@@ -2281,8 +2432,10 @@ def save_manual_recording_if_configured(
         audio_data_int16 = np.int16(audio_data * 32767)
         wav_write(filename, sample_rate, audio_data_int16)
         logging.info(f"{GREEN}Saved manual recording: {filename}{RESET}")
+        return filename
     except Exception as e:
         logging.error(f"Error saving manual recording: {e}", exc_info=True)
+        return None
 
 """
  #######  ##      ## ##      ## 
@@ -2970,6 +3123,7 @@ def main():
         _env_overrides_enabled(),
         RECOVERY_POLICY,
     )
+    logging.info("Runtime logging active path=%s", ACTIVE_RUNTIME_LOG_PATH)
     logging.info(
         f"{CYAN}Press Ctrl+Alt+Shift+Scroll Lock to pause/resume voice recognition.{RESET}"
     )
@@ -3049,8 +3203,9 @@ def main():
                 time.sleep(5)
                 continue
 
+            python_listener_owns_input = is_python_keyboard_listener_enabled()
             try:
-                if is_python_keyboard_listener_enabled():
+                if python_listener_owns_input:
                     start_listener()
                 else:
                     time.sleep(1)
@@ -3060,7 +3215,8 @@ def main():
                 )
             finally:
                 keyboard_listener_restart_requested.clear()
-                _close_input_stream_for_recovery()
+                if python_listener_owns_input:
+                    _close_input_stream_for_recovery()
             time.sleep(2)
         logging.info("Broker control shutdown requested. Exiting main loop.")
 

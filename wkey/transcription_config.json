@@ -3,7 +3,7 @@
   "use_local_cpu": true,
   "fallback_to_groq": true,
   "enable_edge_selenium": false,
-  "enable_wakeword_detection": false,
+  "enable_wakeword_detection": true,
   "max_retries": 3,
   "enable_pre_recording_keyword_check": false,
   "enable_transcript_context_memory": false,
@@ -13,5 +13,90 @@
   "router_context_chars": 320,
   "context_max_age_seconds": 180,
   "max_recording_seconds": 45,
-  "google_wake_volume_hold_seconds": 2.5
+  "manual_pre_recording_seconds": 2.0,
+  "wake_pre_recording_seconds": 2.0,
+  "google_wake_volume_hold_seconds": 2.5,
+  "record_keys": "f24,f23",
+  "hotkey_profiles": {
+    "dictation": {
+      "label": "Dictation / Paste",
+      "trigger": "f23",
+      "triggers": [
+        "f23"
+      ],
+      "action": "dictation",
+      "enabled": true,
+      "diagnostic": false
+    },
+    "command": {
+      "label": "Command / Tool-use",
+      "trigger": "f24",
+      "triggers": [
+        "f24"
+      ],
+      "action": "command",
+      "enabled": true,
+      "diagnostic": false
+    },
+    "pause_resume": {
+      "label": "Pause / Resume",
+      "trigger": "ctrl+shift+p",
+      "triggers": [
+        "ctrl_r+shift+p"
+      ],
+      "action": "pause_resume",
+      "enabled": true,
+      "diagnostic": false
+    },
+    "pause_15m": {
+      "label": "Timed Pause 15m",
+      "trigger": "ctrl+shift+1",
+      "triggers": [
+        "ctrl_r+shift+1"
+      ],
+      "action": "timed_pause",
+      "duration_minutes": 15,
+      "enabled": true,
+      "diagnostic": false
+    },
+    "pause_60m": {
+      "label": "Timed Pause 60m",
+      "trigger": "ctrl+shift+2",
+      "triggers": [
+        "ctrl_r+shift+2"
+      ],
+      "action": "timed_pause",
+      "duration_minutes": 60,
+      "enabled": true,
+      "diagnostic": false
+    },
+    "wake_mode_toggle": {
+      "label": "Wake Mode Toggle",
+      "trigger": "",
+      "triggers": [],
+      "action": "wake_mode_toggle",
+      "enabled": true,
+      "diagnostic": false
+    },
+    "restart_backend": {
+      "label": "Restart Backend",
+      "trigger": "",
+      "triggers": [],
+      "action": "restart_backend",
+      "enabled": false,
+      "diagnostic": false
+    },
+    "df_diagnostic": {
+      "label": "D+F Diagnostic",
+      "trigger": "d+f",
+      "triggers": [
+        "d+f"
+      ],
+      "action": "diagnostic",
+      "enabled": false,
+      "diagnostic": true
+    }
+  },
+  "ui_theme": "system",
+  "minimize_to_tray": true
 }

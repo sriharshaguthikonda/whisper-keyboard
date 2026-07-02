@@ -10,11 +10,13 @@ def create_audio_buffers(
     buffer_size: int,
     sample_rate: int,
     channels: int,
-    pre_recording_f24_seconds: int = 3,
+    pre_recording_f24_seconds: float = 3,
 ):
+    buffer_size = max(0, int(round(buffer_size)))
+    f24_buffer_size = max(0, int(round(sample_rate * float(pre_recording_f24_seconds))))
     pre_recording_buffer = np.zeros((buffer_size, channels), dtype=np.float32)
     pre_recording_buffer_f24 = np.zeros(
-        (sample_rate * pre_recording_f24_seconds, channels), dtype=np.float32
+        (f24_buffer_size, channels), dtype=np.float32
     )
     buffer_index = 0
     audio_buffer = []

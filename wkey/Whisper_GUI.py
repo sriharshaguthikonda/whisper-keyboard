@@ -9,8 +9,10 @@ from settings_manager import (
     DEFAULT_RECORD_KEYS,
     build_backend_environment,
     load_settings as settings_load,
+    normalize_hotkey_profiles,
     normalize_record_key_label,
     normalize_record_keys,
+    record_keys_from_hotkey_profiles,
     record_key_display_text,
     save_settings as settings_save,
     DEFAULT_SETTINGS as TRANSCRIPTION_DEFAULTS,
@@ -22,7 +24,7 @@ except ModuleNotFoundError:
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QCheckBox, QSystemTrayIcon, QMenu, QFrame, QGridLayout, QSizePolicy,
-    QComboBox, QLineEdit, QToolButton, QMessageBox
+    QComboBox, QDoubleSpinBox, QLineEdit, QToolButton, QMessageBox
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QIcon, QFont, QAction
@@ -348,7 +350,7 @@ class VoicePauseController(QMainWindow):
         self.record_keys_combo.setToolTip("Keys that start manual recording")
         for label, value in RECORD_KEY_PRESETS:
             self.record_keys_combo.addItem(label, value)
-        self.record_keys_combo.currentIndexChanged.connect(self.save_transcription_settings)
+        self.record_keys_combo.currentIndexChanged.connect(self._record_key_combo_changed)
         self.capture_record_key_btn = QPushButton("Capture")
         self.capture_record_key_btn.setObjectName("captureRecordKeyButton")
         self.capture_record_key_btn.setFont(QFont("Segoe UI", 10))
@@ -365,6 +367,45 @@ class VoicePauseController(QMainWindow):
             )
         )
         controls_layout.addLayout(manual_keys_row)
+
+        trigger_grid = QGridLayout()
+        trigger_grid.setHorizontalSpacing(6)
+        trigger_grid.setVerticalSpacing(6)
+        self.dictation_triggers_input = QLineEdit()
+        self.dictation_triggers_input.setObjectName("settingsInput")
+        self.dictation_triggers_input.setPlaceholderText("ctrl_r, f23, ctrl_r+shift+a")
+        self.dictation_triggers_input.setToolTip("Comma-separated dictation triggers")
+        self.dictation_triggers_input.editingFinished.connect(self.save_transcription_settings)
+        self.command_triggers_input = QLineEdit()
+        self.command_triggers_input.setObjectName("settingsInput")
+        self.command_triggers_input.setPlaceholderText("f24, ctrl_r+shift+f24")
+        self.command_triggers_input.setToolTip("Comma-separated command triggers")
+        self.command_triggers_input.editingFinished.connect(self.save_transcription_settings)
+        trigger_grid.addWidget(QLabel("Dictation triggers:"), 0, 0)
+        trigger_grid.addWidget(self.dictation_triggers_input, 0, 1)
+        trigger_grid.addWidget(QLabel("Command triggers:"), 1, 0)
+        trigger_grid.addWidget(self.command_triggers_input, 1, 1)
+        controls_layout.addLayout(trigger_grid)
+
+        prerecord_grid = QGridLayout()
+        prerecord_grid.setHorizontalSpacing(6)
+        self.manual_prerecord_input = QDoubleSpinBox()
+        self.manual_prerecord_input.setRange(0.0, 5.0)
+        self.manual_prerecord_input.setDecimals(2)
+        self.manual_prerecord_input.setSingleStep(0.25)
+        self.manual_prerecord_input.setToolTip("Seconds of audio kept before manual trigger")
+        self.manual_prerecord_input.valueChanged.connect(self.save_transcription_settings)
+        self.wake_prerecord_input = QDoubleSpinBox()
+        self.wake_prerecord_input.setRange(0.0, 10.0)
+        self.wake_prerecord_input.setDecimals(2)
+        self.wake_prerecord_input.setSingleStep(0.25)
+        self.wake_prerecord_input.setToolTip("Seconds of audio kept before wake command")
+        self.wake_prerecord_input.valueChanged.connect(self.save_transcription_settings)
+        prerecord_grid.addWidget(QLabel("Manual pre-record:"), 0, 0)
+        prerecord_grid.addWidget(self.manual_prerecord_input, 0, 1)
+        prerecord_grid.addWidget(QLabel("Wake pre-record:"), 1, 0)
+        prerecord_grid.addWidget(self.wake_prerecord_input, 1, 1)
+        controls_layout.addLayout(prerecord_grid)
 
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
         self.edge_selenium_cb.setObjectName("settingsCheckbox")
@@ -410,6 +451,17 @@ class VoicePauseController(QMainWindow):
             self.context_memory_cb,
             "If enabled, recent transcripts are added as context for disambiguation. "
             "Turn this off if previous phrases are biasing or altering current transcription.",
+        )
+
+        self.speaker_filter_cb = QCheckBox("Enable speaker isolation")
+        self.speaker_filter_cb.setObjectName("settingsCheckbox")
+        self.speaker_filter_cb.setFont(QFont("Segoe UI", 10))
+        self.speaker_filter_cb.setToolTip("Filter manual dictation to the enrolled speaker")
+        self.speaker_filter_cb.stateChanged.connect(self.save_transcription_settings)
+        self._add_with_info_button(
+            controls_layout,
+            self.speaker_filter_cb,
+            "When enabled, manual dictation audio is filtered against the enrolled speaker profile before transcription.",
         )
 
         self.max_retries_input = QLineEdit()
@@ -645,6 +697,24 @@ class VoicePauseController(QMainWindow):
             self.context_memory_cb.setChecked(
                 config.get("enable_transcript_context_memory", True)
             )
+            self.speaker_filter_cb.setChecked(
+                config.get("speaker_filter_enabled", False)
+            )
+            profiles = normalize_hotkey_profiles(
+                config.get("hotkey_profiles"), config.get("record_keys")
+            )
+            self.dictation_triggers_input.setText(
+                ", ".join(profiles["dictation"].get("triggers", []))
+            )
+            self.command_triggers_input.setText(
+                ", ".join(profiles["command"].get("triggers", []))
+            )
+            self.manual_prerecord_input.setValue(
+                float(config.get("manual_pre_recording_seconds", 2.0))
+            )
+            self.wake_prerecord_input.setValue(
+                float(config.get("wake_pre_recording_seconds", 2.0))
+            )
             self._set_record_keys_combo(config.get("record_keys", DEFAULT_RECORD_KEYS))
             self.max_retries_input.setText(str(config.get("max_retries", 3)))
         except Exception as e:
@@ -666,6 +736,32 @@ class VoicePauseController(QMainWindow):
             config = settings_load(
                 self.transcription_config_file, TRANSCRIPTION_DEFAULTS
             )
+            profiles = normalize_hotkey_profiles(
+                config.get("hotkey_profiles"), config.get("record_keys")
+            )
+            profiles["dictation"]["triggers"] = [
+                item.strip().lower()
+                for item in self.dictation_triggers_input.text().split(",")
+                if item.strip()
+            ]
+            profiles["dictation"]["trigger"] = (
+                profiles["dictation"]["triggers"][0]
+                if profiles["dictation"]["triggers"]
+                else ""
+            )
+            profiles["dictation"]["enabled"] = bool(profiles["dictation"]["triggers"])
+            profiles["command"]["triggers"] = [
+                item.strip().lower()
+                for item in self.command_triggers_input.text().split(",")
+                if item.strip()
+            ]
+            profiles["command"]["trigger"] = (
+                profiles["command"]["triggers"][0]
+                if profiles["command"]["triggers"]
+                else ""
+            )
+            profiles["command"]["enabled"] = bool(profiles["command"]["triggers"])
+            profiles = normalize_hotkey_profiles(profiles)
             config.update(
                 {
                     "use_local_gpu": self.use_gpu_cb.isChecked(),
@@ -675,9 +771,16 @@ class VoicePauseController(QMainWindow):
                     "enable_pre_recording_keyword_check": self.precheck_cb.isChecked(),
                     "enable_edge_selenium": self.edge_selenium_cb.isChecked(),
                     "enable_transcript_context_memory": self.context_memory_cb.isChecked(),
-                    "record_keys": self.record_keys_combo.currentData()
-                    or DEFAULT_RECORD_KEYS,
+                    "speaker_filter_enabled": self.speaker_filter_cb.isChecked(),
+                    "hotkey_profiles": profiles,
+                    "record_keys": record_keys_from_hotkey_profiles(
+                        profiles,
+                        fallback=self.record_keys_combo.currentData()
+                        or DEFAULT_RECORD_KEYS,
+                    ),
                     "max_retries": max_retries,
+                    "manual_pre_recording_seconds": self.manual_prerecord_input.value(),
+                    "wake_pre_recording_seconds": self.wake_prerecord_input.value(),
                 }
             )
             settings_save(self.transcription_config_file, config)
@@ -691,6 +794,20 @@ class VoicePauseController(QMainWindow):
                 self.record_keys_combo.setCurrentIndex(index)
                 return
         self.record_keys_combo.setCurrentIndex(0)
+
+    def _record_key_combo_changed(self):
+        if self._loading_transcription_settings:
+            return
+        profiles = normalize_hotkey_profiles(
+            None, self.record_keys_combo.currentData() or DEFAULT_RECORD_KEYS
+        )
+        self.dictation_triggers_input.setText(
+            ", ".join(profiles["dictation"].get("triggers", []))
+        )
+        self.command_triggers_input.setText(
+            ", ".join(profiles["command"].get("triggers", []))
+        )
+        self.save_transcription_settings()
 
     def _record_keys_from_captured_name(self, key_name):
         label = normalize_record_key_label(key_name)
@@ -712,7 +829,7 @@ class VoicePauseController(QMainWindow):
 
         self._capturing_record_key = True
         self.capture_record_key_btn.setText("Cancel")
-        self.error_label.setText("Press Right Ctrl or F24")
+        self.error_label.setText("Press Right Ctrl, F23, or F24")
         threading.Thread(target=self._capture_record_key_worker, daemon=True).start()
 
     def _capture_record_key_worker(self):
@@ -733,8 +850,27 @@ class VoicePauseController(QMainWindow):
         self.capture_record_key_btn.setText("Capture")
         record_keys = self._record_keys_from_captured_name(key_name)
         if record_keys is None:
-            self.error_label.setText("Unsupported key. Use Right Ctrl or F24.")
+            self.error_label.setText("Unsupported key. Use Right Ctrl, F23, or F24.")
             return
+        label = normalize_record_key_label(key_name)
+        if label == "f24":
+            existing = [
+                item.strip()
+                for item in self.command_triggers_input.text().split(",")
+                if item.strip()
+            ]
+            if label not in existing:
+                existing.append(label)
+            self.command_triggers_input.setText(", ".join(existing))
+        else:
+            existing = [
+                item.strip()
+                for item in self.dictation_triggers_input.text().split(",")
+                if item.strip()
+            ]
+            if label not in existing:
+                existing.append(label)
+            self.dictation_triggers_input.setText(", ".join(existing))
         self._set_record_keys_combo(record_keys)
         self.save_transcription_settings()
         self.error_label.setText(f"Manual keys set: {record_key_display_text(record_keys)}")

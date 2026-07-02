@@ -160,6 +160,43 @@ def test_broker_input_owner_skips_python_listener_in_main(fw_module, monkeypatch
     assert "ProcessAudio" in started
 
 
+def test_broker_input_owner_keeps_input_stream_open_in_main(fw_module, monkeypatch):
+    closed = []
+    initialized = []
+    fw_module.runtime_mode = "keyboard"
+
+    monkeypatch.setenv("WKEY_INPUT_OWNER", "broker")
+    monkeypatch.delenv("WKEY_BROKER_CONTROL", raising=False)
+    monkeypatch.setattr(fw_module, "register_volume_timeout_recovery_hook", lambda: None)
+    monkeypatch.setattr(fw_module, "init_keyboard_handler", lambda: None)
+    monkeypatch.setattr(fw_module, "start_settings_watch", lambda: None)
+    monkeypatch.setattr(fw_module, "init_wakeword_listener", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_wake_stream", lambda: None)
+    monkeypatch.setattr(fw_module, "start_watchdog", lambda: None)
+    monkeypatch.setattr(fw_module, "run_asyncio_in_thread", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "clean_transcript", lambda: None)
+    monkeypatch.setattr(fw_module, "process_audio_async", lambda: None)
+    monkeypatch.setattr(fw_module.voice_commands_module, "is_selenium_enabled", lambda: False, raising=False)
+    monkeypatch.setattr(fw_module.threading, "Thread", lambda *a, **k: types.SimpleNamespace(start=lambda: None))
+    monkeypatch.setattr(fw_module, "wait_for_microphone", lambda: None)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: initialized.append(True) or True)
+    monkeypatch.setattr(fw_module, "start_listener", lambda: None)
+    monkeypatch.setattr(fw_module, "start_thread", lambda target, name: None)
+    monkeypatch.setattr(fw_module, "_close_input_stream_for_recovery", lambda: closed.append("closed"))
+    monkeypatch.setattr(fw_module, "cleanup", lambda: None)
+    monkeypatch.setattr(
+        fw_module.time,
+        "sleep",
+        lambda seconds: (_ for _ in ()).throw(SystemExit()),
+    )
+
+    with pytest.raises(SystemExit):
+        fw_module.main()
+
+    assert initialized == [True]
+    assert closed == []
+
+
 def test_broker_stdio_mode_skips_console_status_thread(fw_module, monkeypatch):
     calls = []
     started = []
@@ -260,6 +297,21 @@ def test_apply_settings_uses_hotkey_profile_trigger_for_f23(fw_module):
     assert fw_module.map_key_to_keyword_index(fw_module.Key.f23) is None
 
 
+def test_apply_settings_rebuilds_prerecord_buffers_when_idle(fw_module):
+    settings = dict(fw_module.SETTINGS)
+    settings["manual_pre_recording_seconds"] = 3.0
+    settings["wake_pre_recording_seconds"] = 4.0
+    fw_module.recording = False
+
+    fw_module.apply_settings(settings)
+
+    assert fw_module.PRE_RECORDING_F24_SECONDS == 3.0
+    assert fw_module.PRE_RECORDING_DURATION == 4.0
+    assert fw_module.BUFFER_SIZE == fw_module.sample_rate * 4
+    assert len(fw_module.pre_recording_buffer_f24) == fw_module.sample_rate * 3
+    assert len(fw_module.pre_recording_buffer) == fw_module.sample_rate * 4
+
+
 def test_pending_manual_cancel_blocks_late_start(fw_module, monkeypatch):
     initialized = []
     releases = []
@@ -331,6 +383,31 @@ def test_backend_health_status_written_as_json(fw_module, tmp_path, monkeypatch)
     assert payload["activation"]["latest_event"] == "hotkey_press"
 
 
+def test_backend_health_status_uses_unique_temp_files(fw_module, tmp_path, monkeypatch):
+    status_path = tmp_path / "backend_health.json"
+    fixed_tmp = tmp_path / "backend_health.json.tmp"
+    fixed_tmp.write_text("locked by another writer", encoding="utf-8")
+    replace_sources = []
+
+    def fake_replace(source, destination):
+        replace_sources.append(source)
+        assert source != str(fixed_tmp)
+        with open(source, "r", encoding="utf-8") as source_handle:
+            payload = source_handle.read()
+        with open(destination, "w", encoding="utf-8") as dest_handle:
+            dest_handle.write(payload)
+
+    monkeypatch.setattr(fw_module, "BACKEND_HEALTH_STATUS_PATH", str(status_path))
+    monkeypatch.setattr(fw_module.os, "replace", fake_replace)
+
+    fw_module.write_backend_health_status(source="first", clock=lambda: 200.0, force=True)
+    fw_module.write_backend_health_status(source="second", clock=lambda: 201.0, force=True)
+
+    assert len(replace_sources) == 2
+    assert len(set(replace_sources)) == 2
+    assert fixed_tmp.read_text(encoding="utf-8") == "locked by another writer"
+
+
 def test_input_overflow_logs_without_scheduling_recovery(fw_module, monkeypatch):
     recoveries = []
     fw_module.runtime_mode = "keyboard"
@@ -359,6 +436,40 @@ def test_input_overflow_logs_without_scheduling_recovery(fw_module, monkeypatch)
     )
 
     assert recoveries == []
+
+
+def test_input_overflow_burst_marks_health_and_requests_external_restart(
+    fw_module, tmp_path, monkeypatch
+):
+    status_path = tmp_path / "backend_health.json"
+    fw_module.runtime_mode = "keyboard"
+    fw_module.recording = False
+    fw_module.recording_stop_in_progress = False
+    fw_module.broker_control_shutdown_requested.clear()
+    monkeypatch.setattr(fw_module, "BACKEND_HEALTH_STATUS_PATH", str(status_path))
+
+    class OverflowStatus:
+        input_overflow = True
+
+    class AlwaysBurst:
+        def note_overflow(self):
+            return True, 6
+
+    monkeypatch.setattr(fw_module, "overflow_burst_tracker", AlwaysBurst())
+
+    fw_module.audio_callback(
+        np.zeros((8, 1), dtype=np.float32),
+        8,
+        None,
+        OverflowStatus(),
+    )
+
+    assert fw_module.broker_control_shutdown_requested.is_set()
+    payload = fw_module.write_backend_health_status(
+        source="test-overflow", clock=lambda: 222.0, force=True
+    )
+    assert payload["audio"]["last_overflow_count"] == 6
+    assert payload["audio"]["external_restart_requested"] is True
 
 
 def test_volume_timeout_callback_releases_volume_without_audio_recovery(fw_module, monkeypatch):
@@ -929,6 +1040,7 @@ def test_reset_state(fw_module, monkeypatch):
 
 def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
     monkeypatch.setattr(fw_module, 'restore_volume_all', lambda: None)
+    monkeypatch.setattr(fw_module, '_restore_volume_all_async', lambda *a, **k: None)
     monkeypatch.setattr(fw_module, 'beep', lambda *a, **k: None)
 
     fw_module.recording = True
@@ -950,6 +1062,41 @@ def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
     assert idx is None
     assert len(queued_audio) == len(fw_module.pre_recording_buffer_f24) + 3
     assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
+
+
+def test_stop_recording_logs_manual_queue_diagnostics(fw_module, monkeypatch, caplog):
+    monkeypatch.setattr(fw_module, "restore_volume_all", lambda: None)
+    monkeypatch.setattr(fw_module, "_restore_volume_all_async", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+    monkeypatch.setattr(
+        fw_module,
+        "save_manual_recording_if_configured",
+        lambda *a, **k: "I:/Record_harsha/test.wav",
+    )
+
+    fw_module.sample_rate = 10
+    fw_module.recording = True
+    fw_module.play_pause_pressed = False
+    fw_module.recording_start_time = fw_module.time.time() - 1.0
+    fw_module.stream = types.SimpleNamespace(active=False)
+    fw_module.buffer_index = 0
+    fw_module.pre_recording_buffer_f24 = np.ones((4, 1), dtype=np.float32)
+    fw_module.audio_buffer = np.array([2.0, 3.0], dtype=np.float32)
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    caplog.set_level(fw_module.logging.INFO)
+    fw_module.stop_recording(None)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert "manual_audio_queued" in messages
+    assert "keyword_index=None" in messages
+    assert "samples=6" in messages
+    assert "duration=0.600s" in messages
+    assert "pre_samples=4" in messages
+    assert "live_samples=2" in messages
+    assert "saved_path=I:/Record_harsha/test.wav" in messages
 
 
 def test_audio_recovery_non_volume_reason_is_noop(fw_module):

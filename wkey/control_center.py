@@ -117,8 +117,8 @@ HOTKEY_PROFILE_ORDER = (
 )
 
 TRIGGER_PRESETS = {
-    "dictation": ("ctrl_r", "f23", ""),
-    "command": ("f24", ""),
+    "dictation": ("ctrl_r", "f23", "ctrl_r+shift+a", ""),
+    "command": ("f24", "ctrl_r+shift+f24", ""),
     "pause_resume": ("ctrl+shift+p", ""),
     "pause_15m": ("ctrl+shift+1", ""),
     "pause_60m": ("ctrl+shift+2", ""),
@@ -142,6 +142,8 @@ SETTING_LABELS = {
     "router_context_chars": "Router context chars",
     "context_max_age_seconds": "Context max age",
     "max_recording_seconds": "Max recording seconds",
+    "manual_pre_recording_seconds": "Manual pre-record seconds",
+    "wake_pre_recording_seconds": "Wake pre-record seconds",
     "google_wake_volume_hold_seconds": "Wake volume hold",
 }
 
@@ -397,57 +399,110 @@ class WhisperControlCenter(QMainWindow):
     def _hotkey_row(self, profile_id: str):
         profile = self.hotkey_profiles[profile_id]
         group = QGroupBox(profile["label"])
-        row = QHBoxLayout(group)
+        row = QGridLayout(group)
         enabled = QCheckBox("Enabled")
         enabled.setChecked(bool(profile.get("enabled")))
-        trigger = QComboBox()
-        trigger.setEditable(True)
+        triggers = QLineEdit()
+        trigger_values = profile.get("triggers") or [profile.get("trigger", "")]
+        triggers.setText(", ".join(item for item in trigger_values if item))
+        preset_combo = QComboBox()
+        preset_combo.setEditable(True)
         for preset in TRIGGER_PRESETS.get(profile_id, ("",)):
-            trigger.addItem(preset)
-        current_trigger = str(profile.get("trigger", ""))
-        if current_trigger and trigger.findText(current_trigger) < 0:
-            trigger.addItem(current_trigger)
-        trigger.setCurrentText(current_trigger)
+            preset_combo.addItem(preset)
+        add_preset = QPushButton("Add")
+        def _add_preset():
+            value = preset_combo.currentText().strip().lower()
+            if not value:
+                return
+            existing = [item.strip() for item in triggers.text().split(",") if item.strip()]
+            if value not in existing:
+                existing.append(value)
+                triggers.setText(", ".join(existing))
+        add_preset.clicked.connect(_add_preset)
         if profile_id == "df_diagnostic":
             enabled.setEnabled(False)
-            trigger.setEnabled(False)
-        row.addWidget(enabled)
-        row.addWidget(QLabel("Trigger"))
-        row.addWidget(trigger, 1)
-        row.addWidget(QLabel("Diagnostic only" if profile.get("diagnostic") else profile.get("action", "")))
-        self.hotkey_widgets[profile_id] = {"enabled": enabled, "trigger": trigger}
+            triggers.setEnabled(False)
+            preset_combo.setEnabled(False)
+            add_preset.setEnabled(False)
+        row.addWidget(enabled, 0, 0)
+        row.addWidget(QLabel("Triggers"), 0, 1)
+        row.addWidget(triggers, 0, 2)
+        row.addWidget(QLabel("Preset"), 1, 1)
+        row.addWidget(preset_combo, 1, 2)
+        row.addWidget(add_preset, 1, 3)
+        row.addWidget(QLabel("Diagnostic only" if profile.get("diagnostic") else profile.get("action", "")), 0, 3)
+        self.hotkey_widgets[profile_id] = {"enabled": enabled, "triggers": triggers}
         return group
 
     def _transcription_section(self):
         page, layout = self._page("Transcription")
-        bool_group = QGroupBox("Runtime")
-        bool_layout = QGridLayout(bool_group)
-        for index, key in enumerate(BOOLEAN_SETTING_FIELDS):
+        def add_check(layout_obj, key, row, column):
             widget = QCheckBox(SETTING_LABELS[key])
             self.setting_widgets[key] = widget
-            bool_layout.addWidget(widget, index // 2, index % 2)
-        layout.addWidget(bool_group)
+            layout_obj.addWidget(widget, row, column)
 
-        advanced_group = QGroupBox("Advanced")
-        advanced_layout = QGridLayout(advanced_group)
-        row = 0
-        for key, (minimum, maximum) in INTEGER_SETTING_LIMITS.items():
-            widget = QSpinBox()
-            widget.setRange(minimum, maximum)
+        def add_spin(layout_obj, key, row):
+            if key in INTEGER_SETTING_LIMITS:
+                minimum, maximum = INTEGER_SETTING_LIMITS[key]
+                widget = QSpinBox()
+                widget.setRange(minimum, maximum)
+            else:
+                minimum, maximum = FLOAT_SETTING_LIMITS[key]
+                widget = QDoubleSpinBox()
+                widget.setDecimals(2)
+                widget.setSingleStep(0.25)
+                widget.setRange(minimum, maximum)
             self.setting_widgets[key] = widget
-            advanced_layout.addWidget(QLabel(SETTING_LABELS[key]), row, 0)
-            advanced_layout.addWidget(widget, row, 1)
-            row += 1
-        for key, (minimum, maximum) in FLOAT_SETTING_LIMITS.items():
-            widget = QDoubleSpinBox()
-            widget.setDecimals(2)
-            widget.setSingleStep(0.25)
-            widget.setRange(minimum, maximum)
-            self.setting_widgets[key] = widget
-            advanced_layout.addWidget(QLabel(SETTING_LABELS[key]), row, 0)
-            advanced_layout.addWidget(widget, row, 1)
-            row += 1
-        layout.addWidget(advanced_group)
+            layout_obj.addWidget(QLabel(SETTING_LABELS[key]), row, 0)
+            layout_obj.addWidget(widget, row, 1)
+
+        provider_group = QGroupBox("Transcription Providers")
+        provider_layout = QGridLayout(provider_group)
+        for index, key in enumerate(("use_local_gpu", "use_local_cpu", "fallback_to_groq")):
+            add_check(provider_layout, key, index // 2, index % 2)
+        add_spin(provider_layout, "max_retries", 2)
+        layout.addWidget(provider_group)
+
+        recording_group = QGroupBox("Recording & Audio")
+        recording_layout = QGridLayout(recording_group)
+        for row, key in enumerate(
+            (
+                "max_recording_seconds",
+                "manual_pre_recording_seconds",
+                "wake_pre_recording_seconds",
+                "google_wake_volume_hold_seconds",
+            )
+        ):
+            add_spin(recording_layout, key, row)
+        layout.addWidget(recording_group)
+
+        wake_group = QGroupBox("Wake & Voice Commands")
+        wake_layout = QGridLayout(wake_group)
+        for index, key in enumerate(
+            (
+                "enable_wakeword_detection",
+                "enable_pre_recording_keyword_check",
+                "enable_edge_selenium",
+            )
+        ):
+            add_check(wake_layout, key, index // 2, index % 2)
+        layout.addWidget(wake_group)
+
+        context_group = QGroupBox("Context Memory")
+        context_layout = QGridLayout(context_group)
+        add_check(context_layout, "enable_transcript_context_memory", 0, 0)
+        for row, key in enumerate(
+            (
+                "stt_context_items",
+                "stt_context_chars",
+                "router_context_items",
+                "router_context_chars",
+                "context_max_age_seconds",
+            ),
+            start=1,
+        ):
+            add_spin(context_layout, key, row)
+        layout.addWidget(context_group)
 
         speaker_group = QGroupBox("Target Speaker Filter")
         speaker_layout = QGridLayout(speaker_group)
@@ -593,9 +648,14 @@ class WhisperControlCenter(QMainWindow):
         profiles = copy.deepcopy(self.hotkey_profiles)
         for profile_id, widgets in self.hotkey_widgets.items():
             enabled = widgets["enabled"].isChecked()
-            trigger = widgets["trigger"].currentText().strip().lower()
+            triggers = [
+                item.strip().lower()
+                for item in widgets["triggers"].text().split(",")
+                if item.strip()
+            ]
             profiles[profile_id]["enabled"] = enabled
-            profiles[profile_id]["trigger"] = trigger
+            profiles[profile_id]["triggers"] = triggers
+            profiles[profile_id]["trigger"] = triggers[0] if triggers else ""
         return normalize_hotkey_profiles(profiles, self.settings.get("record_keys"))
 
     def _collect_settings_values(self):
@@ -644,7 +704,8 @@ class WhisperControlCenter(QMainWindow):
         for profile_id, widgets in self.hotkey_widgets.items():
             profile = self.hotkey_profiles[profile_id]
             widgets["enabled"].setChecked(bool(profile.get("enabled")))
-            widgets["trigger"].setCurrentText(str(profile.get("trigger", "")))
+            trigger_values = profile.get("triggers") or [profile.get("trigger", "")]
+            widgets["triggers"].setText(", ".join(item for item in trigger_values if item))
 
     def refresh_all(self):
         self.settings = load_settings(self.config_path, DEFAULT_SETTINGS)

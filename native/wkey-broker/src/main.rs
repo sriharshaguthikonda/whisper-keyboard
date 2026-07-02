@@ -147,12 +147,38 @@ fn run_broker_runtime(seconds: Option<u64>) -> Result<()> {
 }
 
 fn trigger_state_for_repo(repo_dir: &Path) -> TriggerStateMachine {
+    if let Some(profiles) = configured_hotkey_profiles(repo_dir) {
+        match TriggerStateMachine::from_hotkey_profiles_json(&profiles) {
+            Ok(state) => {
+                println!("broker_trigger_config hotkey_profiles=true");
+                return state;
+            }
+            Err(err) => {
+                println!("broker_trigger_config hotkey_profiles_error={err}");
+            }
+        }
+    }
     if let Some(record_keys) = configured_record_keys(repo_dir) {
         println!("broker_trigger_config record_keys={record_keys}");
         TriggerStateMachine::from_record_keys(&record_keys)
     } else {
         TriggerStateMachine::default()
     }
+}
+
+fn configured_hotkey_profiles(repo_dir: &Path) -> Option<String> {
+    if let Ok(value) = env::var("WKEY_HOTKEY_PROFILES") {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return Some(trimmed.to_string());
+        }
+    }
+
+    let config_path = repo_dir.join("wkey").join("transcription_config.json");
+    let text = fs::read_to_string(config_path).ok()?;
+    let parsed: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let profiles = parsed.get("hotkey_profiles")?;
+    Some(profiles.to_string())
 }
 
 fn configured_record_keys(repo_dir: &Path) -> Option<String> {

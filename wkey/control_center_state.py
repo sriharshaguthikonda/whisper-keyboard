@@ -56,6 +56,8 @@ INTEGER_SETTING_LIMITS = {
 
 FLOAT_SETTING_LIMITS = {
     "google_wake_volume_hold_seconds": (0.0, 30.0),
+    "manual_pre_recording_seconds": (0.0, 5.0),
+    "wake_pre_recording_seconds": (0.0, 10.0),
 }
 
 ADVANCED_SETTING_FIELDS = tuple(INTEGER_SETTING_LIMITS) + tuple(FLOAT_SETTING_LIMITS)

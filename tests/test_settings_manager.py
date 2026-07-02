@@ -1,6 +1,7 @@
 from wkey.settings_manager import (
     DEFAULT_RECORD_KEYS,
     DEFAULT_HOTKEY_PROFILES,
+    DEFAULT_SETTINGS,
     build_backend_environment,
     load_settings,
     normalize_record_key_label,
@@ -101,25 +102,50 @@ def test_default_speaker_filter_settings_start_in_analysis_mode():
     assert loaded["speaker_filter_apply_to"] == "dictation"
 
 
+def test_prerecording_duration_settings_default_and_clamp(tmp_path):
+    config_path = tmp_path / "transcription_config.json"
+    config_path.write_text(
+        """
+{
+  "manual_pre_recording_seconds": 99,
+  "wake_pre_recording_seconds": -2
+}
+""",
+        encoding="utf-8",
+    )
+
+    loaded = load_settings(config_path)
+
+    assert DEFAULT_SETTINGS["manual_pre_recording_seconds"] == 2.0
+    assert DEFAULT_SETTINGS["wake_pre_recording_seconds"] == 2.0
+    assert loaded["manual_pre_recording_seconds"] == 5.0
+    assert loaded["wake_pre_recording_seconds"] == 0.0
+
+
 def test_f23_dictation_profile_derives_active_record_keys():
     profiles = normalize_hotkey_profiles(DEFAULT_HOTKEY_PROFILES)
-    profiles["dictation"]["trigger"] = "f23"
+    profiles["dictation"]["triggers"] = ["f23", "ctrl_r+shift+a", "a"]
     profiles["dictation"]["enabled"] = True
-    profiles["command"]["trigger"] = "f24"
+    profiles["command"]["triggers"] = ["f24", "ctrl_r+shift+f24"]
     profiles["command"]["enabled"] = True
 
-    assert record_keys_from_hotkey_profiles(profiles) == "f24,f23"
+    normalized = normalize_hotkey_profiles(profiles)
+
+    assert record_keys_from_hotkey_profiles(normalized) == "f24,f23"
+    assert normalized["dictation"]["triggers"] == ["f23", "ctrl_r+shift+a"]
+    assert normalized["dictation"]["trigger"] == "f23"
 
     env = build_backend_environment(
         {
             "enable_wakeword_detection": False,
             "record_keys": "f24",
-            "hotkey_profiles": profiles,
+            "hotkey_profiles": normalized,
         },
         base_env={},
     )
 
     assert env["WKEY_RECORD_KEYS"] == "f24,f23"
+    assert "ctrl_r+shift+a" in env["WKEY_HOTKEY_PROFILES"]
 
 
 def test_legacy_f23_record_keys_seed_dictation_profile():
@@ -127,6 +153,7 @@ def test_legacy_f23_record_keys_seed_dictation_profile():
 
     assert profiles["dictation"]["enabled"] is True
     assert profiles["dictation"]["trigger"] == "f23"
+    assert profiles["dictation"]["triggers"] == ["f23"]
     assert record_keys_from_hotkey_profiles(profiles) == "f24,f23"
 
 
@@ -134,8 +161,10 @@ def test_default_hotkey_profiles_preserve_record_key_compatibility():
     profiles = normalize_hotkey_profiles(None, record_keys="f24,ctrl_l")
 
     assert profiles["dictation"]["trigger"] == "ctrl_r"
+    assert profiles["dictation"]["triggers"] == ["ctrl_r"]
     assert profiles["dictation"]["enabled"] is True
     assert profiles["command"]["trigger"] == "f24"
+    assert profiles["command"]["triggers"] == ["f24"]
     assert profiles["command"]["enabled"] is True
     assert profiles["df_diagnostic"]["trigger"] == "d+f"
     assert profiles["df_diagnostic"]["enabled"] is False
@@ -156,6 +185,10 @@ def test_hotkey_profile_save_load_roundtrip_keeps_advanced_settings(tmp_path):
             "context_max_age_seconds": 90,
             "max_recording_seconds": 12,
             "google_wake_volume_hold_seconds": 1.75,
+            "speaker_filter_enabled": True,
+            "speaker_filter_mode": "balanced",
+            "speaker_filter_threshold": 0.82,
+            "speaker_filter_profile_path": "I:/profiles/harsha.json",
         },
     )
 
@@ -165,3 +198,17 @@ def test_hotkey_profile_save_load_roundtrip_keeps_advanced_settings(tmp_path):
     assert loaded["context_max_age_seconds"] == 90
     assert loaded["max_recording_seconds"] == 12
     assert loaded["google_wake_volume_hold_seconds"] == 1.75
+    assert loaded["speaker_filter_enabled"] is True
+    assert loaded["speaker_filter_mode"] == "balanced"
+    assert loaded["speaker_filter_threshold"] == 0.82
+    assert loaded["speaker_filter_profile_path"] == "I:/profiles/harsha.json"
+
+
+def test_speaker_filter_enabled_toggle_roundtrip(tmp_path):
+    settings_path = tmp_path / "transcription_config.json"
+
+    assert save_settings(settings_path, {"speaker_filter_enabled": True})
+    assert load_settings(settings_path)["speaker_filter_enabled"] is True
+
+    assert save_settings(settings_path, {"speaker_filter_enabled": False})
+    assert load_settings(settings_path)["speaker_filter_enabled"] is False

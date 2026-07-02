@@ -21,6 +21,8 @@ def test_settings_snapshot_includes_hotkeys_and_advanced_values():
             "context_max_age_seconds": 75,
             "max_recording_seconds": 20,
             "google_wake_volume_hold_seconds": 1.5,
+            "manual_pre_recording_seconds": 3.25,
+            "wake_pre_recording_seconds": 4.5,
         },
         env={"GROQ_API_KEY": ""},
     )
@@ -28,9 +30,12 @@ def test_settings_snapshot_includes_hotkeys_and_advanced_values():
     assert snapshot["runtime_mode"] == "combined"
     assert snapshot["record_keys"] == "f24,ctrl_r"
     assert snapshot["hotkey_profiles"]["dictation"]["trigger"] == "ctrl_r"
+    assert snapshot["hotkey_profiles"]["dictation"]["triggers"] == ["ctrl_r"]
     assert snapshot["advanced"]["context_max_age_seconds"] == 75
     assert snapshot["advanced"]["max_recording_seconds"] == 20
     assert snapshot["advanced"]["google_wake_volume_hold_seconds"] == 1.5
+    assert snapshot["advanced"]["manual_pre_recording_seconds"] == 3.25
+    assert snapshot["advanced"]["wake_pre_recording_seconds"] == 4.5
     assert snapshot["providers"]["groq"] == "missing"
 
 
@@ -42,9 +47,11 @@ def test_apply_settings_values_clamps_advanced_fields_and_profiles():
             "context_max_age_seconds": "3601",
             "max_recording_seconds": "0",
             "google_wake_volume_hold_seconds": "-0.5",
+            "manual_pre_recording_seconds": "6.5",
+            "wake_pre_recording_seconds": "-1",
             "hotkey_profiles": {
-                "dictation": {"enabled": False, "trigger": "ctrl_r"},
-                "command": {"enabled": True, "trigger": "f24"},
+                "dictation": {"enabled": False, "triggers": ["ctrl_r", "a"]},
+                "command": {"enabled": True, "triggers": ["f24", "ctrl_r+shift+f24"]},
             },
         },
     )
@@ -53,7 +60,13 @@ def test_apply_settings_values_clamps_advanced_fields_and_profiles():
     assert updated["context_max_age_seconds"] == 3600
     assert updated["max_recording_seconds"] == 1
     assert updated["google_wake_volume_hold_seconds"] == 0.0
+    assert updated["manual_pre_recording_seconds"] == 5.0
+    assert updated["wake_pre_recording_seconds"] == 0.0
     assert updated["hotkey_profiles"]["dictation"]["enabled"] is False
+    assert updated["hotkey_profiles"]["command"]["triggers"] == [
+        "f24",
+        "ctrl_r+shift+f24",
+    ]
     assert updated["record_keys"] == "f24"
 
 
