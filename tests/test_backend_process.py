@@ -1,3 +1,6 @@
+import importlib
+from pathlib import Path
+
 from wkey.backend_process import (
     BACKEND_SCRIPT_NAME,
     find_backend_processes,
@@ -16,6 +19,17 @@ def test_backend_process_matching_uses_target_script_name():
     )
     assert not is_backend_command_line("python ./wkey/Settings_GUI.py")
     assert not is_backend_command_line("")
+
+
+def test_default_health_status_path_uses_runtime_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("WKEY_RUNTIME_DIR", str(tmp_path))
+    import wkey.backend_process as backend_process
+
+    backend_process = importlib.reload(backend_process)
+
+    assert backend_process.DEFAULT_HEALTH_STATUS_PATH == (
+        Path(tmp_path) / "backend_health_status.json"
+    )
 
 
 def test_find_backend_processes_filters_cim_rows():

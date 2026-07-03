@@ -219,6 +219,10 @@ try:
 except ModuleNotFoundError:
     from wkey.pause_flag_path import get_pause_flag_path
 try:
+    from runtime_paths import ensure_runtime_dir, runtime_path
+except ModuleNotFoundError:
+    from wkey.runtime_paths import ensure_runtime_dir, runtime_path
+try:
     from faster_whisper_Mother_of_all_wkey_recovery import OverflowBurstTracker
 except ModuleNotFoundError:
     from wkey.faster_whisper_Mother_of_all_wkey_recovery import OverflowBurstTracker
@@ -250,9 +254,22 @@ def _safe_console_stream():
         except Exception:
             return sys.stdout
 
-RUNTIME_LOG_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "logs", "wkey-runtime.log")
-)
+
+def _env_flag_enabled(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return bool(default)
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+RUNTIME_DIR = ensure_runtime_dir()
+RUNTIME_LOG_PATH = str(runtime_path("wkey-runtime.log"))
+BACKEND_HEALTH_STATUS_PATH = str(runtime_path("backend_health_status.json"))
+BACKEND_EXIT_STATUS_PATH = str(runtime_path("backend_exit_status.json"))
+FAULT_LOG_PATH = str(runtime_path("faulthandler.log"))
+RUNTIME_LOCK_PATH = str(runtime_path("wkey_runtime.lock"))
+DUPLICATE_BACKEND_EXIT_CODE = 21
+RECOVERABLE_RESTART_EXIT_CODE = 75
 
 
 def configure_runtime_logging(log_path=RUNTIME_LOG_PATH):
@@ -325,6 +342,9 @@ volume_lease_manager = VolumeLeaseManager(
     tolerance=0.03,
     history_window_seconds=300,
     history_max_samples=5,
+    enable_endpoint_callback=_env_flag_enabled(
+        "WKEY_ENABLE_VOLUME_ENDPOINT_CALLBACKS", default=False
+    ),
 )
 
 
@@ -440,9 +460,6 @@ load_dotenv()
 
 # Load transcription settings
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
-BACKEND_HEALTH_STATUS_PATH = os.path.join(
-    os.path.dirname(__file__), "backend_health_status.json"
-)
 SETTINGS = load_settings(SETTINGS_PATH, SETTINGS_DEFAULTS)
 try:
     voice_commands_module.set_selenium_enabled(
@@ -609,6 +626,7 @@ def write_backend_health_status(source="runtime", clock=time.time, force=False):
         "python_keyboard_listener_enabled": is_python_keyboard_listener_enabled(),
         "activation": get_activation_status(),
         "audio": dict(last_audio_overflow_status),
+        "shutdown_reason": get_broker_control_shutdown_reason(),
     }
     last_error = None
     for attempt in range(3):
@@ -635,6 +653,43 @@ def write_backend_health_status(source="runtime", clock=time.time, force=False):
                 time.sleep(0.05 * (attempt + 1))
     if last_error is not None:
         logging.warning("Failed to write backend health status: %s", last_error)
+    return payload
+
+
+def write_backend_exit_status(
+    *,
+    reason,
+    exit_code,
+    recoverable=False,
+    child_pid=None,
+    clock=time.time,
+):
+    payload = {
+        "pid": os.getpid(),
+        "child_pid": child_pid,
+        "reason": str(reason),
+        "exit_code": int(exit_code),
+        "recoverable": bool(recoverable),
+        "timestamp": float(clock()),
+    }
+    temp_path = (
+        f"{BACKEND_EXIT_STATUS_PATH}."
+        f"{os.getpid()}.{threading.get_ident()}.{time.monotonic_ns()}.tmp"
+    )
+    try:
+        status_dir = os.path.dirname(BACKEND_EXIT_STATUS_PATH)
+        if status_dir:
+            os.makedirs(status_dir, exist_ok=True)
+        with open(temp_path, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, separators=(",", ":"), sort_keys=True)
+        os.replace(temp_path, BACKEND_EXIT_STATUS_PATH)
+    except Exception as exc:
+        logging.warning("Failed to write backend exit status: %s", exc)
+        try:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
+        except Exception:
+            pass
     return payload
 
 
@@ -1039,7 +1094,6 @@ manual_recording_cancel_lock = threading.Lock()
 keyboard_listener_restart_requested = threading.Event()
 keyboard_listener = None
 
-FAULT_LOG_PATH = os.path.join(os.path.dirname(__file__), "faulthandler.log")
 _fault_log_handle = None
 
 def bump_resource_relax(seconds=RESOURCE_RELAX_SECONDS_ON_OVERFLOW):
@@ -1410,7 +1464,7 @@ def audio_callback(indata, frames, time, status):
                         write_backend_health_status(
                             source="input_overflow_burst", force=True
                         )
-                        request_broker_control_shutdown()
+                        request_broker_control_shutdown("input_overflow_burst")
             if recording and isinstance(indata, np.ndarray) and len(indata) > 0:
                 record_first_audio_frame()
             _enqueue_shared_wake_audio(indata, frames)
@@ -2241,6 +2295,8 @@ def stop_recording(keyword_index):
 
 keyboard_handler = None
 broker_control_shutdown_requested = threading.Event()
+broker_control_shutdown_reason = None
+broker_control_shutdown_reason_lock = threading.Lock()
 
 def _start_recording_async(keyword_index):
     reset_activation_metrics()
@@ -2276,8 +2332,16 @@ def get_broker_control_status():
     }
 
 
-def request_broker_control_shutdown():
+def request_broker_control_shutdown(reason="broker_control_shutdown"):
+    global broker_control_shutdown_reason
+    with broker_control_shutdown_reason_lock:
+        broker_control_shutdown_reason = str(reason)
     broker_control_shutdown_requested.set()
+
+
+def get_broker_control_shutdown_reason():
+    with broker_control_shutdown_reason_lock:
+        return broker_control_shutdown_reason
 
 
 def start_broker_control_stdio_thread(input_stream=None, output_stream=None):
@@ -3241,7 +3305,6 @@ def main():
             )
 
 _runtime_lock_handle = None
-RUNTIME_LOCK_PATH = os.path.join(os.path.dirname(__file__), "wkey_runtime.lock")
 
 
 def _try_lock_runtime_file(handle):
@@ -3318,7 +3381,12 @@ def release_runtime_singleton():
 
 def run_backend():
     if not acquire_runtime_singleton():
-        return 0
+        write_backend_exit_status(
+            reason="duplicate_runtime_lock",
+            exit_code=DUPLICATE_BACKEND_EXIT_CODE,
+            recoverable=False,
+        )
+        return DUPLICATE_BACKEND_EXIT_CODE
     try:
         while not broker_control_shutdown_requested.is_set():
             try:
@@ -3330,7 +3398,16 @@ def run_backend():
                 time.sleep(5)
     finally:
         release_runtime_singleton()
-    return 0
+
+    reason = get_broker_control_shutdown_reason() or "normal_shutdown"
+    recoverable = reason == "input_overflow_burst"
+    exit_code = RECOVERABLE_RESTART_EXIT_CODE if recoverable else 0
+    write_backend_exit_status(
+        reason=reason,
+        exit_code=exit_code,
+        recoverable=recoverable,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":

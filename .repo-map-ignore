@@ -1,0 +1,12 @@
+logs/
+wkey/backend_health_status.json
+wkey/backend_exit_status.json
+wkey/wkey_runtime.lock
+wkey/faulthandler.log
+wkey/*.tmp
+native/wkey-broker/target/
+artifacts/repo-map/
+.pytest_cache/
+__pycache__/
+.serena/
+Whisper.xml

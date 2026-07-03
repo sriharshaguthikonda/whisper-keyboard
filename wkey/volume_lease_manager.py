@@ -41,6 +41,7 @@ class VolumeLeaseManager:
         callback_reapply_cooldown=0.25,
         history_window_seconds=300,
         history_max_samples=5,
+        enable_endpoint_callback=True,
     ):
         self._get_volume = get_volume_fn
         self._set_volume = set_volume_fn
@@ -64,12 +65,19 @@ class VolumeLeaseManager:
 
         self._callback_ready = threading.Event()
         self._stop_event = threading.Event()
-        self._callback_thread = threading.Thread(
-            target=self._callback_worker,
-            daemon=True,
-            name="volume-endpoint-callback",
-        )
-        self._callback_thread.start()
+        self._callback_thread = None
+        if enable_endpoint_callback:
+            self._callback_thread = threading.Thread(
+                target=self._callback_worker,
+                daemon=True,
+                name="volume-endpoint-callback",
+            )
+            self._callback_thread.start()
+        else:
+            self._callback_ready.set()
+            self._log.info(
+                "Volume endpoint callback disabled; lease manager uses verify fallback"
+            )
 
     def begin_duck(self, reason="duck"):
         baseline = None

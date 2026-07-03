@@ -1,6 +1,7 @@
 import importlib
 import io
 import json
+from pathlib import Path
 import types
 import numpy as np
 import pytest
@@ -13,6 +14,19 @@ def fw_module():
     yield mod
     if hasattr(mod, 'reset_state'):
         mod.reset_state()
+
+
+def clean_f23_settings(settings_manager):
+    settings = dict(settings_manager.DEFAULT_SETTINGS)
+    profiles = json.loads(json.dumps(settings_manager.DEFAULT_HOTKEY_PROFILES))
+    profiles["dictation"]["trigger"] = "f23"
+    profiles["dictation"]["triggers"] = ["f23"]
+    profiles["command"]["trigger"] = "f24"
+    profiles["command"]["triggers"] = ["f24"]
+    settings["record_keys"] = "f24,f23"
+    settings["hotkey_profiles"] = profiles
+    return settings
+
 
 def test_validate_audio_buffer(fw_module):
     sr = fw_module.sample_rate
@@ -49,6 +63,19 @@ def test_default_manual_record_keys_use_right_ctrl(monkeypatch):
             assert mod.map_key_to_keyword_index(key) is None
 
 
+def test_runtime_files_use_configured_runtime_dir(monkeypatch, tmp_path):
+    monkeypatch.setenv("WKEY_RUNTIME_DIR", str(tmp_path))
+    mod = importlib.import_module('wkey.faster_whisper_Mother_of_all_wkey')
+    mod = importlib.reload(mod)
+
+    assert Path(mod.RUNTIME_LOG_PATH) == tmp_path / "wkey-runtime.log"
+    assert Path(mod.BACKEND_HEALTH_STATUS_PATH) == (
+        tmp_path / "backend_health_status.json"
+    )
+    assert Path(mod.FAULT_LOG_PATH) == tmp_path / "faulthandler.log"
+    assert Path(mod.RUNTIME_LOCK_PATH) == tmp_path / "wkey_runtime.lock"
+
+
 def test_right_ctrl_config_is_supported(monkeypatch):
     monkeypatch.setenv("WKEY_ALLOW_ENV_OVERRIDES", "1")
     monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
@@ -63,6 +90,13 @@ def test_right_ctrl_config_is_supported(monkeypatch):
 
 
 def test_stale_env_record_keys_ignored_without_override(monkeypatch):
+    import wkey.settings_manager as settings_manager
+
+    monkeypatch.setattr(
+        settings_manager,
+        "load_settings",
+        lambda *args, **kwargs: clean_f23_settings(settings_manager),
+    )
     monkeypatch.delenv("WKEY_ALLOW_ENV_OVERRIDES", raising=False)
     monkeypatch.setenv("WKEY_RECORD_KEYS", "f24,ctrl_r")
     monkeypatch.setenv("WKEY_RUNTIME_MODE", "wakeword")
@@ -282,8 +316,10 @@ def test_apply_settings_uses_hotkey_profile_trigger_for_f23(fw_module):
     profiles["command"] = dict(profiles["command"])
     profiles["dictation"]["enabled"] = True
     profiles["dictation"]["trigger"] = "f23"
+    profiles["dictation"]["triggers"] = ["f23"]
     profiles["command"]["enabled"] = True
     profiles["command"]["trigger"] = "f24"
+    profiles["command"]["triggers"] = ["f24"]
     settings["record_keys"] = "f24"
     settings["hotkey_profiles"] = profiles
 
@@ -465,6 +501,7 @@ def test_input_overflow_burst_marks_health_and_requests_external_restart(
     )
 
     assert fw_module.broker_control_shutdown_requested.is_set()
+    assert fw_module.get_broker_control_shutdown_reason() == "input_overflow_burst"
     payload = fw_module.write_backend_health_status(
         source="test-overflow", clock=lambda: 222.0, force=True
     )
@@ -743,6 +780,44 @@ def test_runtime_singleton_acquire_and_release(fw_module, tmp_path):
 
     assert lock_path.read_text(encoding="utf-8") == str(fw_module.os.getpid())
     assert fw_module._runtime_lock_handle is None
+
+
+def test_run_backend_duplicate_lock_returns_non_success(fw_module, monkeypatch):
+    exit_statuses = []
+    monkeypatch.setattr(fw_module, "acquire_runtime_singleton", lambda: False)
+    monkeypatch.setattr(
+        fw_module,
+        "write_backend_exit_status",
+        lambda **kwargs: exit_statuses.append(kwargs) or kwargs,
+    )
+
+    assert fw_module.run_backend() == fw_module.DUPLICATE_BACKEND_EXIT_CODE
+    assert exit_statuses[-1]["reason"] == "duplicate_runtime_lock"
+    assert exit_statuses[-1]["exit_code"] == fw_module.DUPLICATE_BACKEND_EXIT_CODE
+
+
+def test_run_backend_overflow_shutdown_returns_recoverable_exit(
+    fw_module, monkeypatch
+):
+    exit_statuses = []
+    releases = []
+    monkeypatch.setattr(fw_module, "acquire_runtime_singleton", lambda: True)
+    monkeypatch.setattr(fw_module, "release_runtime_singleton", lambda: releases.append(True))
+    monkeypatch.setattr(
+        fw_module,
+        "write_backend_exit_status",
+        lambda **kwargs: exit_statuses.append(kwargs) or kwargs,
+    )
+
+    def stop_for_overflow():
+        fw_module.request_broker_control_shutdown("input_overflow_burst")
+
+    monkeypatch.setattr(fw_module, "main", stop_for_overflow)
+
+    assert fw_module.run_backend() == fw_module.RECOVERABLE_RESTART_EXIT_CODE
+    assert releases == [True]
+    assert exit_statuses[-1]["reason"] == "input_overflow_burst"
+    assert exit_statuses[-1]["recoverable"] is True
 
 
 def test_duplicate_manual_stop_is_idempotent(fw_module, monkeypatch):

@@ -12,6 +12,7 @@ from typing import Callable, Iterable, Mapping, Sequence
 
 try:
     from .pause_flag_path import get_pause_flag_path
+    from .runtime_paths import runtime_path
     from .settings_manager import (
         DEFAULT_SETTINGS,
         build_backend_environment,
@@ -22,6 +23,7 @@ try:
     )
 except ImportError:
     from pause_flag_path import get_pause_flag_path
+    from runtime_paths import runtime_path
     from settings_manager import (
         DEFAULT_SETTINGS,
         build_backend_environment,
@@ -38,7 +40,7 @@ REPO_ROOT = WKEY_DIR.parent
 WORKSPACE_ROOT = REPO_ROOT.parent
 DEFAULT_CONFIG_PATH = WKEY_DIR / "transcription_config.json"
 DEFAULT_PYTHON_EXE = WORKSPACE_ROOT / "openai" / "Scripts" / "python.exe"
-DEFAULT_HEALTH_STATUS_PATH = WKEY_DIR / "backend_health_status.json"
+DEFAULT_HEALTH_STATUS_PATH = runtime_path("backend_health_status.json")
 
 
 @dataclass(frozen=True)
