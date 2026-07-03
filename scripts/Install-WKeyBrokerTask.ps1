@@ -88,15 +88,19 @@ function New-WKeyBrokerTaskXml {
 }
 
 $existing = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction SilentlyContinue
+$xml = New-WKeyBrokerTaskXml -TaskName $TaskName -Launcher $Launcher -LauncherArguments $LauncherArguments
+Register-ScheduledTask -TaskName $TaskName -TaskPath "\" -Xml $xml -Force -ErrorAction Stop | Out-Null
+
 if ($existing) {
-    $action = New-ScheduledTaskAction -Execute $Launcher -Argument $LauncherArguments
-    Set-ScheduledTask -TaskName $TaskName -TaskPath "\" -Action $action -ErrorAction Stop | Out-Null
-    Write-Host "Updated scheduled task action for \$TaskName -> $Launcher $LauncherArguments"
+    Write-Host "Reconciled scheduled task \$TaskName -> $Launcher $LauncherArguments"
 }
 else {
-    $xml = New-WKeyBrokerTaskXml -TaskName $TaskName -Launcher $Launcher -LauncherArguments $LauncherArguments
-    Register-ScheduledTask -TaskName $TaskName -TaskPath "\" -Xml $xml -Force -ErrorAction Stop | Out-Null
     Write-Host "Created scheduled task \$TaskName -> $Launcher $LauncherArguments"
+}
+
+$exportedXml = Export-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
+if ($exportedXml -notlike "*Start-WKeyBroker.bat*" -or $exportedXml -notlike "*--log*") {
+    throw "Scheduled task XML verification failed for $TaskName"
 }
 
 $task = Get-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop

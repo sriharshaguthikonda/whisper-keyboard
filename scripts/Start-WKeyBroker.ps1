@@ -4,6 +4,10 @@ param(
     [switch]$SkipStopExisting,
     [ValidateSet("Console", "Log")]
     [string]$OutputMode = "Console",
+    [switch]$Supervise,
+    [switch]$NoSupervise,
+    [int]$MaxRestarts = 5,
+    [int]$RestartDelaySeconds = 2,
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$RemainingArgs
 )
@@ -14,12 +18,29 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $BrokerManifest = Join-Path $RepoRoot "native\wkey-broker\Cargo.toml"
 $BrokerExe = Join-Path $RepoRoot "native\wkey-broker\target\release\wkey-broker.exe"
-$BackendHealthPath = Join-Path $RepoRoot "wkey\backend_health_status.json"
-$RuntimeLockPath = Join-Path $RepoRoot "wkey\wkey_runtime.lock"
-$LogDir = Join-Path $RepoRoot "logs"
-$LogPath = Join-Path $LogDir "wkey-broker-startup.log"
 
-New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+function Resolve-WKeyRuntimeDir {
+    $runtimeEnvName = "WKEY_RUNTIME_DIR"
+    $override = [Environment]::GetEnvironmentVariable($runtimeEnvName, "Process")
+    if (-not [string]::IsNullOrWhiteSpace($override)) {
+        return [System.IO.Path]::GetFullPath($override)
+    }
+
+    $localAppData = [Environment]::GetFolderPath("LocalApplicationData")
+    if ([string]::IsNullOrWhiteSpace($localAppData)) {
+        $localAppData = Join-Path $env:USERPROFILE "AppData\Local"
+    }
+    return Join-Path $localAppData "WhisperKeyboard\runtime"
+}
+
+$RuntimeDir = Resolve-WKeyRuntimeDir
+$BackendHealthPath = Join-Path $RuntimeDir "backend_health_status.json"
+$RuntimeLockPath = Join-Path $RuntimeDir "wkey_runtime.lock"
+$LogPath = Join-Path $RuntimeDir "wkey-broker-startup.log"
+
+New-Item -ItemType Directory -Force -Path $RuntimeDir | Out-Null
+$runtimeEnvName = "WKEY_RUNTIME_DIR"
+Set-Item -Path "Env:$runtimeEnvName" -Value $RuntimeDir
 
 for ($index = 0; $index -lt $RemainingArgs.Count; $index++) {
     $arg = $RemainingArgs[$index]
@@ -28,6 +49,12 @@ for ($index = 0; $index -lt $RemainingArgs.Count; $index++) {
     }
     elseif ($arg -ieq "--console") {
         $OutputMode = "Console"
+    }
+    elseif ($arg -ieq "--supervise") {
+        $Supervise = $true
+    }
+    elseif ($arg -ieq "--no-supervise") {
+        $NoSupervise = $true
     }
     elseif ($arg -ieq "-OutputMode" -or $arg -ieq "--output-mode") {
         $index++
@@ -47,6 +74,20 @@ for ($index = 0; $index -lt $RemainingArgs.Count; $index++) {
         }
         $Seconds = [int]$RemainingArgs[$index]
     }
+    elseif ($arg -ieq "-MaxRestarts" -or $arg -ieq "--max-restarts") {
+        $index++
+        if ($index -ge $RemainingArgs.Count) {
+            throw "$arg requires a numeric value"
+        }
+        $MaxRestarts = [int]$RemainingArgs[$index]
+    }
+    elseif ($arg -ieq "-RestartDelaySeconds" -or $arg -ieq "--restart-delay-seconds") {
+        $index++
+        if ($index -ge $RemainingArgs.Count) {
+            throw "$arg requires a numeric value"
+        }
+        $RestartDelaySeconds = [int]$RemainingArgs[$index]
+    }
     elseif ($arg -ieq "-SkipBuild" -or $arg -ieq "--skip-build") {
         $SkipBuild = $true
     }
@@ -57,6 +98,16 @@ for ($index = 0; $index -lt $RemainingArgs.Count; $index++) {
         throw "Unknown launcher argument: $arg"
     }
 }
+
+$ShouldSupervise = (-not $NoSupervise.IsPresent) -and ($Seconds -le 0)
+if ($Supervise.IsPresent) {
+    $ShouldSupervise = $true
+}
+if ($NoSupervise.IsPresent) {
+    $ShouldSupervise = $false
+}
+$MaxRestarts = [Math]::Max(0, $MaxRestarts)
+$RestartDelaySeconds = [Math]::Max(1, $RestartDelaySeconds)
 
 function Write-LauncherLog {
     param([string]$Message)
@@ -219,41 +270,70 @@ function Quote-CmdArg {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
+function Start-BrokerOnce {
+    $brokerArgs = @("--run")
+    if ($Seconds -gt 0) {
+        $brokerArgs += @("--seconds", [string]$Seconds)
+    }
+
+    $env:PYTHONUNBUFFERED = "1"
+    Write-LauncherLog "Starting broker [$OutputMode]: $BrokerExe $($brokerArgs -join ' ')"
+
+    Push-Location $RepoRoot
+    try {
+        if ($OutputMode -eq "Log") {
+            $brokerCommand = @(
+                Quote-CmdArg $BrokerExe
+                ($brokerArgs | ForEach-Object { Quote-CmdArg $_ })
+                ">>"
+                Quote-CmdArg $LogPath
+                "2>&1"
+            ) -join " "
+            & $env:ComSpec /d /c $brokerCommand
+        }
+        else {
+            & $BrokerExe @brokerArgs
+        }
+        if ($null -eq $LASTEXITCODE) {
+            return 0
+        }
+        return [int]$LASTEXITCODE
+    }
+    finally {
+        Pop-Location
+    }
+}
+
 if (-not (Test-Path -LiteralPath $BrokerManifest)) {
     throw "Broker manifest not found: $BrokerManifest"
 }
 
+Write-LauncherLog "Runtime directory: $RuntimeDir"
+Write-LauncherLog "Supervisor enabled: $ShouldSupervise max_restarts=$MaxRestarts restart_delay_seconds=$RestartDelaySeconds"
 Stop-ExistingWKeyProcesses
 Build-BrokerIfNeeded
 
-$brokerArgs = @("--run")
-if ($Seconds -gt 0) {
-    $brokerArgs += @("--seconds", [string]$Seconds)
-}
+$exitCode = 0
+$restartCount = 0
+do {
+    $exitCode = Start-BrokerOnce
+    Write-LauncherLog "Broker exited with code $exitCode"
 
-$env:PYTHONUNBUFFERED = "1"
-Write-LauncherLog "Starting broker [$OutputMode]: $BrokerExe $($brokerArgs -join ' ')"
-
-Push-Location $RepoRoot
-try {
-    if ($OutputMode -eq "Log") {
-        $brokerCommand = @(
-            Quote-CmdArg $BrokerExe
-            ($brokerArgs | ForEach-Object { Quote-CmdArg $_ })
-            ">>"
-            Quote-CmdArg $LogPath
-            "2>&1"
-        ) -join " "
-        & $env:ComSpec /d /c $brokerCommand
+    if (-not $ShouldSupervise -or $exitCode -eq 0) {
+        break
     }
-    else {
-        & $BrokerExe @brokerArgs
-    }
-    $exitCode = $LASTEXITCODE
-}
-finally {
-    Pop-Location
-}
 
-Write-LauncherLog "Broker exited with code $exitCode"
+    $restartCount++
+    if ($restartCount -gt $MaxRestarts) {
+        Write-LauncherLog "Broker restart limit reached ($MaxRestarts); giving up"
+        break
+    }
+
+    Stop-ExistingWKeyProcesses
+    $delay = [Math]::Min($RestartDelaySeconds * $restartCount, 30)
+    Write-LauncherLog "Restarting broker in $delay seconds (attempt $restartCount of $MaxRestarts)"
+    Start-Sleep -Seconds $delay
+}
+while ($true)
+
 exit $exitCode
