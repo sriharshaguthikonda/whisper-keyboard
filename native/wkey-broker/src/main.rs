@@ -17,6 +17,35 @@ use protocol::{EngineCommandMessage, EngineEvent};
 use triggers::{DfDiagnosticCounters, TriggerDecision, TriggerEvent, TriggerStateMachine};
 use win_hook::HookKeyEvent;
 
+#[derive(Clone, Debug)]
+struct BrokerSupervisorPolicy {
+    recoverable_python_exit_code: i32,
+    base_restart_delay: Duration,
+    max_restart_delay: Duration,
+}
+
+impl Default for BrokerSupervisorPolicy {
+    fn default() -> Self {
+        Self {
+            recoverable_python_exit_code: 75,
+            base_restart_delay: Duration::from_secs(2),
+            max_restart_delay: Duration::from_secs(30),
+        }
+    }
+}
+
+impl BrokerSupervisorPolicy {
+    fn should_restart_python_exit(&self, exit_code: i32) -> bool {
+        exit_code == self.recoverable_python_exit_code
+    }
+
+    fn restart_delay(&self, attempt: u32) -> Duration {
+        self.base_restart_delay
+            .saturating_mul(attempt)
+            .min(self.max_restart_delay)
+    }
+}
+
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     if args.iter().any(|arg| arg == "--broker-smoke") {
@@ -101,6 +130,11 @@ fn run_broker_runtime(seconds: Option<u64>) -> Result<()> {
     let repo_dir = env::current_dir()?;
     let config = PythonEngineConfig::for_repo(repo_dir.clone())?;
     let mut engine = PythonEngine::spawn(config)?;
+    println!(
+        "broker_python_child pid={} job_object={}",
+        engine.child_id(),
+        engine.child_job_attached()
+    );
     let startup = request_status(&mut engine, "runtime-startup-status")?;
     ensure_python_listener_disabled(&startup)?;
     println!("broker_runtime_startup {startup:?}");
@@ -119,6 +153,7 @@ fn run_broker_runtime(seconds: Option<u64>) -> Result<()> {
         if duration.is_some_and(|limit| started_at.elapsed() >= limit) {
             break;
         }
+        ensure_engine_live(&mut engine)?;
         match receiver.recv_timeout(Duration::from_millis(20)) {
             Ok(event) => {
                 let trigger_event = if event.pressed {
@@ -203,6 +238,11 @@ fn configured_record_keys(repo_dir: &Path) -> Option<String> {
 fn run_engine_smoke() -> Result<()> {
     let config = PythonEngineConfig::for_repo(env::current_dir()?)?;
     let mut engine = PythonEngine::spawn(config)?;
+    println!(
+        "engine_python_child pid={} job_object={}",
+        engine.child_id(),
+        engine.child_job_attached()
+    );
 
     let status = request_status(&mut engine, "status-1")?;
     println!("engine_event {status:?}");
@@ -216,6 +256,11 @@ fn run_engine_smoke() -> Result<()> {
 fn run_broker_smoke(seconds: u64) -> Result<()> {
     let config = PythonEngineConfig::for_repo(env::current_dir()?)?;
     let mut engine = PythonEngine::spawn(config)?;
+    println!(
+        "broker_smoke_python_child pid={} job_object={}",
+        engine.child_id(),
+        engine.child_job_attached()
+    );
     let duration = Duration::from_secs(seconds);
 
     let startup = request_status(&mut engine, "startup-status")?;
@@ -252,8 +297,23 @@ fn dispatch_engine_decisions(
 }
 
 fn request_status(engine: &mut PythonEngine, id: &str) -> Result<EngineEvent> {
+    ensure_engine_live(engine)?;
     engine.send(&EngineCommandMessage::status(id))?;
     engine.recv_event_timeout(Duration::from_secs(180))
+}
+
+fn ensure_engine_live(engine: &mut PythonEngine) -> Result<()> {
+    if let Some(status) = engine.poll_exit()? {
+        let exit_code = status.code().unwrap_or(-1);
+        let policy = BrokerSupervisorPolicy::default();
+        let suggested_delay = policy.restart_delay(1);
+        bail!(
+            "python engine exited during broker runtime: status={status} code={exit_code} recoverable={} suggested_restart_delay_ms={}",
+            policy.should_restart_python_exit(exit_code),
+            suggested_delay.as_millis()
+        );
+    }
+    Ok(())
 }
 
 fn ensure_python_listener_disabled(event: &EngineEvent) -> Result<()> {
@@ -276,4 +336,25 @@ fn print_decisions(decisions: Vec<TriggerDecision>) -> usize {
         println!("trigger_decision {decision:?}");
     }
     count
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supervisor_policy_restarts_recoverable_python_exit() {
+        let policy = BrokerSupervisorPolicy::default();
+
+        assert!(policy.should_restart_python_exit(75));
+        assert!(!policy.should_restart_python_exit(0));
+    }
+
+    #[test]
+    fn supervisor_policy_caps_backoff_delay() {
+        let policy = BrokerSupervisorPolicy::default();
+
+        assert_eq!(policy.restart_delay(1), Duration::from_secs(2));
+        assert_eq!(policy.restart_delay(99), Duration::from_secs(30));
+    }
 }
