@@ -1,0 +1,51 @@
+diff --git a/wkey/whisper_core.py b/wkey/whisper_core.py
+--- a/wkey/whisper_core.py
++++ b/wkey/whisper_core.py
+@@
+-audio_buffer = np.array([], dtype="float32")
++audio_buffer = np.array([], dtype="float32")
++audio_chunks = []
+@@
+ def callback(indata, frames, time, status):
+-    global audio_buffer
+     if status:
+         print(status)
+     with audio_data_lock:
+         if recording:
+-            audio_buffer = np.append(audio_buffer, indata.copy())
++            audio_chunks.append(indata.copy())
++
++
++def build_recorded_audio():
++    if not audio_chunks:
++        return np.array([], dtype="float32")
++    return np.concatenate(audio_chunks, axis=0).reshape(-1).astype("float32", copy=False)
+@@
+ def start_recording():
+@@
+     global something_is_playing
++
++    with audio_data_lock:
++        audio_chunks.clear()
+@@
+ def stop_recording():
+@@
+     global play_pause_pressed
+     global audio_buffer
++
++    with recording_lock:
++        recording = False
++
++    with audio_data_lock:
++        audio_buffer = build_recorded_audio()
++        audio_chunks.clear()
+@@
+     if stream.active:
+         audio_buffer_queue.put(audio_buffer)
+         stream.stop()
+         stream.close()
+         audio_buffer = np.array([], dtype="float32")
+@@
+-    with recording_lock:
+-        recording = False
+     print("Transcribing...")
