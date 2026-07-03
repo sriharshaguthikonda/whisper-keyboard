@@ -861,3 +861,42 @@ Questions for user:
 5. Full verification checkpoint before repo-intel/commit: full Python suite passed `146`; Rust broker suite passed `17`; `git diff --check --` passed.
 6. Startup checkpoint: launcher initially hit a release-exe lock because the old broker was still running; `Start-WKeyBroker.ps1` now stops old WKEY processes before rebuilding.
 7. Required primary-script smoke after launcher fix: `..\openai\Scripts\python.exe -u wkey\faster_whisper_Mother_of_all_wkey.py` ran for 20 seconds, emitted no stdout/stderr, and was stopped by PID.
+
+
+## 2026-07-04 WKEY Broker Reliability Hardening
+
+Status: implementation in progress.
+
+Diagnosis:
+
+- Current Rust broker source builds and tests pass; the recent failure pattern is not a current Rust compile failure.
+- Evidence points to runtime fragility around Python/native audio and Windows COM volume handling: `sounddevice` startup crash evidence, older `pycaw` COM access violation evidence, repeated input-overflow warnings, stale runtime locks, and scheduled-task action drift.
+- Repo_maps watcher stays enabled, but runtime churn should stop living inside the repo so watcher refresh queues are not fed by WKEY logs/status files.
+
+Implementation plan:
+
+- Move WKEY runtime logs, lock, health, status, and faulthandler files to `%LOCALAPPDATA%\WhisperKeyboard\runtime`.
+- Add `.repo-map-ignore` for generated/runtime-heavy paths that should not trigger repo-map churn.
+- Reconcile scheduled task setup so task `Whisper` uses `whisper-keyboard\Start-WKeyBroker.bat --log` and verify exported task XML.
+- Make duplicate backend exits diagnosable and non-success.
+- Add broker-side supervision so recoverable Python exits can restart with backoff and broker exit does not orphan Python.
+
+Progress:
+
+- Red tests added for runtime-dir paths, scheduled-task XML reconciliation, duplicate/recoverable exit status, and Rust child liveness/job ownership.
+- Runtime path helper added; WKEY log, health, lock, faulthandler, and backend-exit status now target `%LOCALAPPDATA%\WhisperKeyboard\runtime` by default.
+- Launcher now exports `WKEY_RUNTIME_DIR`, cleans runtime locks from the runtime dir, and supervises long-running broker exits with capped backoff.
+- Task installer now registers full task XML with `--log` every run and verifies exported XML instead of only replacing the action.
+- Rust broker now logs Python child PID, polls child liveness while idle, and attaches the child to a Windows Job Object.
+- Volume endpoint callback is disabled by default behind `WKEY_ENABLE_VOLUME_ENDPOINT_CALLBACKS=1`; volume ducking keeps fallback behavior.
+
+Questions for user:
+
+- None pending. I am continuing.
+
+
+
+## user comments
+1. add cmmit push smal commits
+2. i am going away if you need me, beep me multiple times
+3. there is already one version of whisper is running, i can't afford to stop it from the running . be carefull with the testing properly
