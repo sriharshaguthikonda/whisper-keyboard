@@ -889,6 +889,9 @@ Progress:
 - Task installer now registers full task XML with `--log` every run and verifies exported XML instead of only replacing the action.
 - Rust broker now logs Python child PID, polls child liveness while idle, and attaches the child to a Windows Job Object.
 - Volume endpoint callback is disabled by default behind `WKEY_ENABLE_VOLUME_ENDPOINT_CALLBACKS=1`; volume ducking keeps fallback behavior.
+- Verification passed: full Python suite `157 passed`, Rust broker suite `21 passed`, Python compile passed, PowerShell parser passed, temp release build passed, debug broker smoke passed, and primary-script duplicate-lock smoke returned duplicate exit code `21` with no temp-process leftovers.
+- Live scheduled-task update was blocked by Windows permissions: `Register-ScheduledTask : Access is denied.` The installer code is fixed, but applying it to task `Whisper` must be done from an elevated shell.
+- Pushed commits: `7fcd92a`, `079383d`, `f713476`, `8c0b3c1`.
 
 Questions for user:
 
