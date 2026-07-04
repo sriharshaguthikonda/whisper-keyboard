@@ -11,27 +11,34 @@ def list_devices():
 
 # Initialize audio_buffer as an empty 2D array
 audio_buffer = np.empty((0, 1), dtype='float32')  # Make sure 'channels' is defined
+audio_chunks = []
+
+
+def build_recorded_audio():
+    if not audio_chunks:
+        return np.empty((0, 1), dtype='float32')
+    return np.concatenate(audio_chunks, axis=0).astype('float32', copy=False)
 
 def audio_callback(indata, frames, time, status):
-    global audio_buffer
     if status:
         print(status)
-    # Directly append indata to the audio_buffer
-    audio_buffer = np.append(audio_buffer, indata, axis=0)
+    audio_chunks.append(indata[:frames].copy())
 
 
 
 # Test recording function using InputStream
 def test_recording(duration=5, sample_rate=16000, channels=1, device=None):
-    global audio_buffer
+    global audio_buffer, audio_chunks
     print("Starting test recording with InputStream...")
 
     # Clear the buffer before starting a new recording
-    audio_buffer = np.array([], dtype='float32')
+    audio_buffer = np.empty((0, channels), dtype='float32')
+    audio_chunks = []
     
     with sd.InputStream(samplerate=sample_rate, channels=channels, callback=audio_callback):
         sd.sleep(duration * 1000)  # Wait for the specified duration (in milliseconds)
 
+    audio_buffer = build_recorded_audio()
     if audio_buffer.size > 0:
         print(f"Captured {audio_buffer.size} samples.")
     else:

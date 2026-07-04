@@ -220,6 +220,18 @@ buffer_index = 0
 audio_buffer = []
 
 
+def snapshot_recorded_audio():
+    if isinstance(audio_buffer, list):
+        if not audio_buffer:
+            return np.array([], dtype=np.float32)
+        chunks = [
+            np.asarray(chunk, dtype=np.float32).reshape(-1)
+            for chunk in audio_buffer
+        ]
+        return np.concatenate(chunks, axis=0).astype(np.float32, copy=False)
+    return np.asarray(audio_buffer, dtype=np.float32).reshape(-1).copy()
+
+
 # Add a context manager for audio operations
 @contextmanager
 def audio_operation_guard():
@@ -243,7 +255,16 @@ def audio_callback(indata, frames, time, status):
             with recording_lock:
                 if recording:
                     if isinstance(indata, np.ndarray):
-                        audio_buffer = np.append(audio_buffer, indata.flatten())
+                        if not isinstance(audio_buffer, list):
+                            existing_audio = np.asarray(
+                                audio_buffer, dtype=np.float32
+                            ).reshape(-1)
+                            audio_buffer = (
+                                [] if existing_audio.size == 0 else [existing_audio]
+                            )
+                        audio_buffer.append(
+                            indata[:frames].reshape(-1).astype(np.float32, copy=True)
+                        )
                     else:
                         logging.error(
                             f"{RED}Invalid indata type: {type(indata)}{RESET}"
@@ -380,7 +401,8 @@ def start_recording(keyword_index=None):
             recording, \
             play_pause_pressed, \
             something_is_playing, \
-            True_positve_audio
+            True_positve_audio, \
+            audio_buffer
 
         with recording_lock:
             if recording:
@@ -388,6 +410,7 @@ def start_recording(keyword_index=None):
                 return
 
             True_positve_audio = True
+            audio_buffer = []
             recording = True
 
         logging.info(f"{GREEN}Starting recording...{RESET}")
@@ -524,10 +547,11 @@ def stop_recording(keyword_index):
             # For manual recordings triggered by a key press, include the
             # pre-recording buffer so the audio leading up to the key press is
             # also transcribed.
+            recorded_audio = snapshot_recorded_audio()
             audio_buffer = np.concatenate(
                 [
                     np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten(),
-                    audio_buffer,
+                    recorded_audio,
                 ],
                 axis=0,
             )
@@ -558,13 +582,10 @@ def stop_recording(keyword_index):
 
         while silent_time <= stop_delay_threshold:
             if stream.active:
-                if isinstance(audio_buffer, list):
-                    audio_buffer = np.array(audio_buffer)
-
                 # Get the last frames of audio for VAD analysis (30ms frame)
                 frame_duration = 30  # ms
                 frame_size = int(sample_rate * frame_duration / 1000)
-                audio_frame = audio_buffer[-frame_size:]
+                audio_frame = snapshot_recorded_audio()[-frame_size:]
 
                 # Convert to int16 format required by webrtcvad
                 audio_int16 = (audio_frame * 32767).astype(np.int16)
@@ -599,7 +620,8 @@ def stop_recording(keyword_index):
 
                 time.sleep(0.1)
         # Convert main recording to numpy array
-        audio_buffer = np.concatenate([pre_recording_data, audio_buffer], axis=0)
+        recorded_audio = snapshot_recorded_audio()
+        audio_buffer = np.concatenate([pre_recording_data, recorded_audio], axis=0)
         audio_buffer_queue.put((audio_buffer.copy(), keyword_index))
         audio_buffer = np.array([], dtype="float32")  # Clear buffer
 

@@ -156,6 +156,18 @@ buffer_index = 0
 audio_buffer = []
 
 
+def snapshot_recorded_audio():
+    if isinstance(audio_buffer, list):
+        if not audio_buffer:
+            return np.array([], dtype=np.float32)
+        chunks = [
+            np.asarray(chunk, dtype=np.float32).reshape(-1)
+            for chunk in audio_buffer
+        ]
+        return np.concatenate(chunks, axis=0).astype(np.float32, copy=False)
+    return np.asarray(audio_buffer, dtype=np.float32).reshape(-1).copy()
+
+
 def audio_callback(indata, frames, time, status):
     """Callback function for audio recording."""
     global buffer_index
@@ -165,7 +177,12 @@ def audio_callback(indata, frames, time, status):
         print(f"Audio callback status: {status}")
     with recording_lock:
         if recording:
-            audio_buffer = np.append(audio_buffer, indata.flatten())
+            if not isinstance(audio_buffer, list):
+                existing_audio = np.asarray(audio_buffer, dtype=np.float32).reshape(-1)
+                audio_buffer = [] if existing_audio.size == 0 else [existing_audio]
+            audio_buffer.append(
+                indata[:frames].reshape(-1).astype(np.float32, copy=True)
+            )
         else:
             end_index = buffer_index + frames
             if end_index > BUFFER_SIZE:
@@ -253,6 +270,7 @@ def start_recording():
     global recording
     global play_pause_pressed
     global something_is_playing
+    global audio_buffer
 
     # this thread has to go if something_is_playing check is happening below
     threading.Thread(target=decrease_volume_all()).start()
@@ -289,6 +307,7 @@ def start_recording():
 
     beep(START_BEEP)
     with recording_lock:
+        audio_buffer = []
         recording = True
     print("Listening...")
 
@@ -308,8 +327,9 @@ def adjust_vad_threshold():
     global audio_buffer  # Access the audio buffer to analyze current noise levels
 
     # Calculate RMS value of the audio buffer to assess noise levels
-    if len(audio_buffer) > 0:
-        rms = np.sqrt(np.mean(audio_buffer**2))  # Calculate RMS
+    recorded_audio = snapshot_recorded_audio()
+    if len(recorded_audio) > 0:
+        rms = np.sqrt(np.mean(recorded_audio**2))  # Calculate RMS
     else:
         rms = 0.0  # Default to 0 if no audio
 
@@ -339,7 +359,7 @@ def stop_recording(keyword_index):
         # stop_delay_threshold = (0  # Time to wait before stopping after no speech is detected )
         # pre_recording_data = np.roll(pre_recording_buffer_f24, -buffer_index, axis=0).flatten()
         #         audio_buffer_queue.put((audio_buffer, keyword_index))
-        transcript = transcribe_with_groq(audio_buffer, keyword_index)
+        transcript = transcribe_with_groq(snapshot_recorded_audio(), keyword_index)
 
         set_clipboard_content(transcript)
         pyautogui.hotkey("ctrl", "v")
@@ -369,11 +389,8 @@ def stop_recording(keyword_index):
 
     while silent_time < stop_delay_threshold:
         if stream.active:
-            if isinstance(audio_buffer, list):
-                audio_buffer = np.array(audio_buffer)
-
             # Get the last frames of audio for VAD analysis
-            audio_frame = audio_buffer[-1600:].tobytes()
+            audio_frame = snapshot_recorded_audio()[-1600:].tobytes()
             pcm = np.frombuffer(audio_frame, dtype=np.int16)
 
             # Dynamically adjust VAD threshold based on conditions (e.g., noise level)
@@ -399,8 +416,9 @@ def stop_recording(keyword_index):
     pre_recording_data = np.roll(pre_recording_buffer, -buffer_index, axis=0).flatten()
 
     # Convert main recording to numpy array
+    recorded_audio = snapshot_recorded_audio()
     audio_buffer = np.concatenate(
-        [pre_recording_data, audio_buffer],
+        [pre_recording_data, recorded_audio],
         axis=0,
     )
     audio_buffer_queue.put((audio_buffer, keyword_index))

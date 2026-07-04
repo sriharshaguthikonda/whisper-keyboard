@@ -40,25 +40,6 @@ def audio_callback(indata, frames, time, status):
             buffer_index = (buffer_index + frames) % BUFFER_SIZE
 
 
-def audio_callback(indata, frames, time, status):
-    """Callback function for audio recording."""
-    global buffer_index
-    global audio_buffer
-    if status:
-        print(f"Audio callback status: {status}")
-    with recording_lock:
-        if recording:
-            audio_buffer = np.append(audio_buffer, indata.flatten())
-        else:
-            end_index = buffer_index + frames
-            if end_index > BUFFER_SIZE:
-                end_index = BUFFER_SIZE
-            pre_recording_buffer[buffer_index:end_index] = indata[
-                : end_index - buffer_index
-            ]
-            buffer_index = (buffer_index + frames) % BUFFER_SIZE
-
-
 def start_recording():
     """Start the recording."""
     global recording

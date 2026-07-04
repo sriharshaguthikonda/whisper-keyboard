@@ -93,21 +93,25 @@ def test_transcribe_with_local_model(fw_module, monkeypatch):
         raising=False,
     )
     data = np.zeros(fw_module.sample_rate // 10, dtype=np.float32)
-    text = fw_module.transcribe_with_local_model(data, 0)
+    text = fw_module.transcribe_with_local_model(data, 0, "keyboard")
     assert text == 'hello world'
 
 
 def test_get_transcript_with_retries(fw_module, monkeypatch):
     calls = []
-    async def fake_groq(byte_io, keyword_index):
+    async def fake_groq(byte_io, keyword_index, source_of_stop):
         calls.append('remote')
         if len(calls) < 2:
             raise Exception('fail')
         return 'remote text'
     monkeypatch.setattr(fw_module, 'transcribe_with_groq_async', fake_groq)
-    monkeypatch.setattr(fw_module, 'transcribe_with_local_model', lambda b, k: 'local text')
+    monkeypatch.setattr(fw_module, 'transcribe_with_local_model', lambda b, k, s: 'local text')
     byte_io = fw_module.create_wav_buffer(np.zeros(fw_module.sample_rate // 10, dtype=np.float32))
-    result = asyncio.run(fw_module.get_transcript_with_retries(byte_io, 1, max_retries=3))
+    result = asyncio.run(
+        fw_module.get_transcript_with_retries(
+            byte_io, 1, "keyboard", max_retries=3
+        )
+    )
     assert result == 'remote text'
     assert calls == ['remote', 'remote']
 
@@ -122,6 +126,64 @@ def test_reset_state(fw_module, monkeypatch):
     assert fw_module.play_pause_pressed is False
     assert isinstance(fw_module.audio_buffer, np.ndarray)
     assert fw_module.audio_buffer.size == 0
+
+
+def test_audio_callback_records_chunks_without_numpy_append(fw_module):
+    fw_module.recording = True
+    fw_module.audio_buffer = []
+    fw_module.buffer_index = 0
+
+    fw_module.audio_callback(
+        np.full((2, 1), 1.0, dtype=np.float32),
+        2,
+        None,
+        None,
+    )
+    fw_module.audio_callback(
+        np.full((3, 1), 2.0, dtype=np.float32),
+        3,
+        None,
+        None,
+    )
+
+    assert isinstance(fw_module.audio_buffer, list)
+    assert len(fw_module.audio_buffer) == 2
+    assert np.allclose(
+        np.concatenate(fw_module.audio_buffer),
+        np.array([1.0, 1.0, 2.0, 2.0, 2.0], dtype=np.float32),
+    )
+
+
+def test_stop_recording_includes_pre_buffer_with_chunked_recording(
+    fw_module, monkeypatch
+):
+    monkeypatch.setattr(fw_module, 'restore_volume_all', lambda: None)
+    monkeypatch.setattr(fw_module, 'beep', lambda *a, **k: None)
+
+    fw_module.recording = True
+    fw_module.play_pause_pressed = False
+    fw_module.stream = types.SimpleNamespace(active=False)
+    fw_module.buffer_index = 0
+    fw_module.True_positve_audio = True
+
+    fw_module.pre_recording_buffer = np.arange(
+        fw_module.BUFFER_SIZE, dtype=np.float32
+    ).reshape(-1, 1)
+    fw_module.audio_buffer = [
+        np.array([10.0, 11.0], dtype=np.float32),
+        np.array([12.0], dtype=np.float32),
+    ]
+
+    while not fw_module.audio_buffer_queue.empty():
+        fw_module.audio_buffer_queue.get()
+
+    fw_module.stop_recording(None, "keyboard")
+
+    queued_audio, idx, source_of_stop = fw_module.audio_buffer_queue.get_nowait()
+    assert idx is None
+    assert source_of_stop == "keyboard"
+    assert len(queued_audio) == fw_module.sample_rate + 3
+    assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
 
 
 def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
@@ -141,10 +203,10 @@ def test_stop_recording_includes_pre_buffer(fw_module, monkeypatch):
     while not fw_module.audio_buffer_queue.empty():
         fw_module.audio_buffer_queue.get()
 
-    fw_module.stop_recording(None)
+    fw_module.stop_recording(None, "keyboard")
 
-    queued_audio, idx = fw_module.audio_buffer_queue.get_nowait()
+    queued_audio, idx, source_of_stop = fw_module.audio_buffer_queue.get_nowait()
     assert idx is None
-    assert len(queued_audio) == fw_module.BUFFER_SIZE + 3
+    assert source_of_stop == "keyboard"
+    assert len(queued_audio) == fw_module.sample_rate + 3
     assert np.allclose(queued_audio[-3:], [10.0, 11.0, 12.0])
-
