@@ -903,3 +903,36 @@ Questions for user:
 1. add cmmit push smal commits
 2. i am going away if you need me, beep me multiple times
 3. there is already one version of whisper is running, i can't afford to stop it from the running . be carefull with the testing properly
+
+
+
+
+## 2026-07-04 06:00 IST
+
+
+
+
+## user comments
+
+1. is that even a real problem and is that fix necessary? tell me that.
+
+
+## agent answers
+
+1. Yes for old `main` and the newer prebuffer branch: `np.append()` inside the sounddevice callback is a real latency/perf problem because it reallocates and copies the growing recording on each audio block.
+2. On current `native-hotkey-broker`, the primary hot path was already fixed in `wkey/audio_io.py`; remaining issue was stale duplicate `pre_recording.py` callback shadowing the chunk-buffer version.
+3. Applied and pushed native fix: `9521dc5 fix: keep prerecord callback audio chunked`. Also pushed support commit `cd8c63f chore: ignore local worktrees`.
+4. Applied and pushed prebuffer fix to `codex/fixed-pre-recording-buffer-addition`: `9d02152 fix: buffer audio callback chunks`.
+5. Draft PR branch `fix/audio-callback-chunk-buffer` is based on old `main`; direct merge into `native-hotkey-broker` would remove current broker/control-center work. I used its patch intent only.
+
+Verification:
+
+- Native red: `..\openai\Scripts\python.exe -m pytest tests\test_pre_recording.py -q` failed because `pre_recording.audio_buffer` became `array([1., 1., 2., 2., 2.])`.
+- Native green: `tests\test_pre_recording.py` 1 passed; `tests\test_audio_io.py` 8 passed; `tests\test_pre_recording.py tests\test_audio_io.py tests\test_faster_whisper.py` 61 passed; py_compile passed; primary script smoke ran 15s with no stdout/stderr and only spawned PID stopped.
+- Prebuffer red: new callback/prebuffer tests failed on ndarray conversion and chunk-list concat error.
+- Prebuffer green: `tests` 14 passed; py_compile passed for touched scripts; `rg "np\.append" wkey pre_recording.py tests` returned no hits; primary script smoke ran 15s, only existing `SyntaxWarning: invalid escape sequence '\l'`, no primary-script process left.
+
+Questions for user:
+
+- None pending.
+
