@@ -172,3 +172,5 @@ train/
 
 # audio files
 *.wav
+wkey/transcription_config.json
+wkey/voice_pause_config.json
