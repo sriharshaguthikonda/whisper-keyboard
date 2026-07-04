@@ -135,8 +135,13 @@ if SETTINGS.get("use_local_gpu", True):
                 cuda_path = r"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.3"
                 if os.path.exists(cuda_path):
                     os.environ['CUDA_HOME'] = cuda_path
-                    os.environ['PATH'] = f"{cuda_path}\bin;{cuda_path}\libnvvp;{os.environ['PATH']}"
-            
+                    os.environ["PATH"] = (
+                        os.path.join(cuda_path, "bin")
+                        + os.pathsep
+                        + os.path.join(cuda_path, "libnvvp")
+                        + os.pathsep
+                        + os.environ["PATH"]
+                    )
             logging.info(f"CUDA is available. Devices: {torch.cuda.device_count()}")
             logging.info(f"Current device: {torch.cuda.current_device()}")
             logging.info(f"Device name: {torch.cuda.get_device_name(0) if torch.cuda.device_count() > 0 else 'No CUDA devices'}")
