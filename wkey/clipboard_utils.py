@@ -331,6 +331,11 @@ def paste_transcript(
             transcript = kwargs.get("text", "")
         recovery_beep = kwargs.get("copyq_recovery_beep")
         cleaned = _normalize_text(transcript).lstrip()
+        logging.info(
+            "paste_transcript_requested raw_len=%d cleaned_len=%d",
+            len(transcript or ""),
+            len(cleaned),
+        )
         if not cleaned:
             return
 
