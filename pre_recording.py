@@ -8,7 +8,7 @@ from scipy.io.wavfile import write
 # Constants
 SAMPLE_RATE = 16000
 CHANNELS = 1  # mono audio
-PRE_RECORDING_DURATION = 1  # seconds
+PRE_RECORDING_DURATION = 2  # seconds
 FILENAME = "recording.wav"
 BUFFER_SIZE = PRE_RECORDING_DURATION * SAMPLE_RATE
 
