@@ -1,6 +1,7 @@
 # Local config
 voice_pause_config.json
 wkey/groq_model_catalog_cache.json
+.worktrees/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
