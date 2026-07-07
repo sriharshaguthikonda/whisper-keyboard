@@ -184,6 +184,33 @@ Optional environment variables:
 - `GROQ_BAD_MODEL_COOLDOWN_SECONDS`: bad-model quarantine duration. Default: `3600`.
 - `GROQ_RATE_LIMIT_COOLDOWN_SECONDS`: per-model rate-limit cooldown. Default: `30`.
 
+## Ask-AI Provider Routing
+
+Ask-AI voice commands use a separate provider router for direct AI answers. Set `ask_ai_model` to `auto` for model selection by task complexity, or set an explicit model as `provider/model` or `provider:model`.
+
+Provider discovery is adapted from the Patient_Avatar multi-provider pattern. Supported provider keys:
+
+- `CEREBRAS_API_KEY`
+- `SAMBANOVA_API_KEY`
+- `OPENROUTER_API_KEY`
+- `CLOUDFLARE_ACCOUNT_ID` plus `CLOUDFLARE_API_TOKEN`
+- `OLLAMA_CLOUD_API_KEY`
+- `GROQ_API_KEYS`, `GROQ_API_KEY_2`, or `GROQ_API_KEY`
+
+Runtime behavior:
+
+- model catalogs are refreshed from configured providers and cached in `%LOCALAPPDATA%\WhisperKeyboard\runtime\ask_ai_model_catalog.json`;
+- the cache stores provider/model metadata only, never API keys, transcripts, audio, or command text;
+- `auto` favors non-Groq providers first so Groq STT/tool-use quota is not consumed by direct Ask-AI when alternatives exist;
+- simple and standard questions prefer fast current defaults; complex questions may use higher-capability models;
+- `ask_chatgpt_fallback_to_ai` defaults to `false`, so an unclaimed ChatGPT browser job does not make a hidden direct provider request.
+
+Current live-catalog smoke defaults on 2026-07-07:
+
+- simple: `cerebras/llama-3.3-70b`
+- standard: `cerebras/qwen-3-235b-a22b-instruct-2507`
+- complex: `openrouter/deepseek/deepseek-r1-0528`
+
 ## Recovery Policy
 
 The main keyboard runtime uses `recovery_policy=external_restart`.

@@ -936,3 +936,133 @@ Questions for user:
 
 - None pending.
 
+
+
+## user comments
+
+1. pause for a min...i ill tell you if it working!
+
+
+## 2026-07-04 07:25 IST
+
+## agent answers
+
+1. Branch base is now corrected: current checkout `codex/fixed-pre-recording-buffer-addition` is reset on top of `native-hotkey-broker` at `2419c94`.
+2. Audio callback fix status: primary/native hot paths were already chunk-buffered; the remaining `np.append` was in `wkey/direct_sd_to_transcribe.py`, now changed to callback chunk buffering plus one concat after recording.
+3. `Whisper.bat` failure evidence: `Start-WKeyBroker.ps1` was capturing broker stdout as function output, so the launcher logged `Broker exited with code broker_python_child ... 1` instead of a clean numeric code. Fixed `Start-BrokerOnce` so console output streams via `Write-Host` and only `$LASTEXITCODE` returns.
+4. Safe tests respected the running WKEY process: no stop-existing run was used. Primary script duplicate-lock smoke exited `21`; `Start-WKeyBroker.bat -SkipBuild -SkipStopExisting -Seconds 2 --no-supervise` returned `1` and logged clean `Broker exited with code 1`.
+
+Verification so far:
+
+- Red launcher regression failed before fix; green focused launcher/direct demo tests: `6 passed`.
+- Focused audio/prebuffer/launcher suite: `67 passed`.
+- `rg "np\.append" wkey pre_recording.py tests` returned no hits.
+- Python compile for touched/audio/runtime scripts passed.
+- PowerShell parser for `scripts\Start-WKeyBroker.ps1` passed.
+- Rust broker tests passed: `21 passed`.
+- `git diff --check` passed.
+
+## Questions for user:
+
+- None pending. I am continuing to commit and push after final verification.
+2. i have started the bat and it is running fine, i don't see any issues myself.
+
+
+## agent update ‎07 ‎July ‎2026
+
+
+
+
+## user comments
+1. use codex cli for hard work, you orchestrate and correct
+2. and yes obviously it has to always send it to a new tab not some already existing open tab on which some other automation is running.
+
+3. and in roadmap something like that add in future that we will have a sort of visual feedback wherever the cursor is and slash or at the center of the screen on which the cursor is and we will have this behind the screen. settings, gui, enable or disable.
+
+4. i think in the settings gui app we should have a search bar where we can type and every setting pops up like vs code ctrl shift p
+
+5. integrate these plans into the repos roadmap file don't dump these plans wherever you feel like link atleast!
+
+6.
+
+
+
+
+## agent update ‎07 ‎July ‎2026
+
+
+## user comments
+1. use codex cli for hard work, you orchestrate and correct
+
+2.unrelated issue:
+	a. when my desktop sleeps and wakes up / hibernates and wakes up i start the whisper.bat through shchduled tasks
+	b. it kills the previous running instace and related scripts and starts another one
+	c. this is associated with failures. you can check the logs.
+	----------------------------------------------------
+
+	[2026-07-07T08:34:35] Stopping old WKEY process PID 38076: python.exe
+	[2026-07-07T08:34:36] Stopping old WKEY process PID 47032: wkey-broker.exe
+	[2026-07-07T08:34:38] Restarting broker in 4 seconds (attempt 2 of 5)
+	[2026-07-07T08:34:43] Starting broker [Console]: C:\Windows_software\openai whisper\whisper-keyboard\native\wkey-broker\target\release\wkey-broker.exe --run
+	broker_python_child pid=43276 job_object=true
+	python_stderr 2026-07-07 08:35:18,302 - INFO - VolumeController worker started (id=1, reason=startup)
+	python_stderr C:\Windows_software\openai whisper\openai\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+	python_stderr   import pkg_resources
+	python_stderr 2026-07-07 08:35:23,997 - INFO - Volume endpoint callback disabled; lease manager uses verify fallback
+	python_stdout 2026-07-07 08:35:23,997 - INFO - Volume endpoint callback disabled; lease manager uses verify fallback
+	python_stderr 2026-07-07 08:35:24,007 - INFO - Local GPU model is disabled in settings. CPU model will be initialized only after repeated Groq failures.
+	python_stdout 2026-07-07 08:35:24,007 - INFO - Local GPU model is disabled in settings. CPU model will be initialized only after repeated Groq failures.
+	python_stderr 2026-07-07 08:35:25,597 - INFO - [ModelRotator] Groq model catalog source=cache models=17
+	python_stdout 2026-07-07 08:35:25,597 - INFO - [ModelRotator] Groq model catalog source=cache models=17
+	python_stderr 2026-07-07 08:35:26,047 - INFO - [ModelRotator] Groq model catalog source=live models=17
+	python_stdout 2026-07-07 08:35:26,047 - INFO - [ModelRotator] Groq model catalog source=live models=17
+	python_stderr 2026-07-07 08:35:27,721 - WARNING - Another Whisper Keyboard backend is already running (pid=unknown lock=C:\Users\deletable\AppData\Local\WhisperKeyboard\runtime\wkey_runtime.lock). Exiting.
+	python_stdout 2026-07-07 08:35:27,721 - WARNING - Another Whisper Keyboard backend is already running (pid=unknown lock=C:\Users\deletable\AppData\Local\WhisperKeyboard\runtime\wkey_runtime.lock). Exiting.
+	Error: python event channel disconnected while child was still running
+	[2026-07-07T08:35:29] Broker exited with code 1
+	[2026-07-07T08:35:31] Stopping old WKEY process PID 46012: python.exe
+	[2026-07-07T08:35:32] Stopping old WKEY process PID 46400: wkey-broker.exe
+	[2026-07-07T08:35:33] Stopping old WKEY process PID 47700: python.exe
+	[2026-07-07T08:35:34] Restarting broker in 6 seconds (attempt 3 of 5)
+	[2026-07-07T08:35:40] Starting broker [Console]: C:\Windows_software\openai whisper\whisper-keyboard\native\wkey-broker\target\release\wkey-broker.exe --run
+	broker_python_child pid=48840 job_object=true
+	python_stderr 2026-07-07 08:36:17,790 - INFO - VolumeController worker started (id=1, reason=startup)
+	python_stderr C:\Windows_software\openai whisper\openai\Lib\site-packages\webrtcvad.py:1: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+	python_stderr   import pkg_resources
+	python_stderr 2026-07-07 08:36:22,940 - INFO - Volume endpoint callback disabled; lease manager uses verify fallback
+	python_stderr python_stdout 2026-07-07 08:36:22,940 - INFO - Volume endpoint callback disabled; lease manager uses verify fallback2026-07-07 08:36:22,943 - INFO - Local GPU model is disabled in settings. CPU model will be initialized only after repeated Groq failures.
+
+	python_stdout 2026-07-07 08:36:22,943 - INFO - Local GPU model is disabled in settings. CPU model will be initialized only after repeated Groq failures.
+	python_stderr 2026-07-07 08:36:24,039 - INFO - [ModelRotator] Groq model catalog source=cache models=17
+	python_stdout 2026-07-07 08:36:24,039 - INFO - [ModelRotator] Groq model catalog source=cache models=17
+	python_stderr 2026-07-07 08:36:24,509 - INFO - [ModelRotator] Groq model catalog source=live models=17
+	python_stdout 2026-07-07 08:36:24,509 - INFO - [ModelRotator] Groq model catalog source=live models=17
+	python_stderr 2026-07-07 08:36:26,100 - WARNING - Another Whisper Keyboard backend is already running (pid=unknown lock=C:\Users\deletable\AppData\Local\WhisperKeyboard\runtime\wkey_runtime.lock). Exiting.
+	python_stdout 2026-07-07 08:36:26,100 - WARNING - Another Whisper Keyboard backend is already running (pid=unknown lock=C:\Users\deletable\AppData\Local\WhisperKeyboard\runtime\wkey_runtime.lock). Exiting.
+	Error: python event channel disconnected while child was still running
+	[2026-07-07T08:36:27] Broker exited with code 1
+	[2026-07-07T08:36:29] Stopping old WKEY process PID 32212: python.exe
+	[2026-07-07T08:36:30] Stopping old WKEY process PID 46324: python.exe
+	[2026-07-07T08:36:30] Stopping old WKEY process PID 48492: wkey-broker.exe
+	[2026-07-07T08:36:32] Restarting broker in 8 seconds (attempt 4 of 5)
+	[2026-07-07T08:36:40] Starting broker [Console]: C:\Windows_software\openai whisper\whisper-keyboard\native\wkey-broker\target\release\wkey-broker.exe --run
+	broker_python_child pid=47832 job_object=true
+	----------------------------------------------------
+
+	d. can we have this feature behind the toggle and inbuilt and not this complicated bat and task scheduluar handling these issues?
+	do this with other agents under different commit!
+
+
+	e. multiple claude agents usgin multiple codex sessions!
+
+	f. codex cli  is back online! quota reset!
+
+
+
+## agent update 2026-07-07 Ask-AI rate limits
+
+Root cause found in recent logs: explicit Ask-AI commands were still going through the Groq tool-use classifier because the direct Ask-AI path was not called before classifier routing. The classifier was asking for 4096 output tokens, and unclaimed ChatGPT browser jobs silently fell back to direct Groq Ask-AI, where the SDK retried 429s after the visible 20s tool timeout.
+
+Mitigation implemented: explicit `ask chatgpt`, `ask chat gpt`, and `ask ai` now bypass the classifier; classifier output is capped at 256 tokens; unclaimed ChatGPT jobs no longer send hidden provider requests by default; direct Ask-AI now uses the Patient_Avatar-style provider chain with `ask_ai_model=auto`.
+
+Tentative live-catalog defaults from model-list smoke: simple -> `cerebras/llama-3.3-70b`; standard -> `cerebras/qwen-3-235b-a22b-instruct-2507`; complex -> `openrouter/deepseek/deepseek-r1-0528`.

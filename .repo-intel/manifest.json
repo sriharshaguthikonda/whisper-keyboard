@@ -4,7 +4,7 @@
     "id": "whisper-keyboard",
     "root": ".",
     "remoteUrl": "https://github.com/sriharshaguthikonda/whisper-keyboard.git",
-    "defaultBranch": "native-hotkey-broker",
+    "defaultBranch": "feature/ask-ai-voice",
     "localPaths": [
       ".gitignore",
       ".repo-map-ignore",
@@ -16,7 +16,6 @@
       "README.rst",
       "REFACTOR_TODO.md",
       "Start-WKeyBroker.bat",
-      "Whisper.xml",
       "benchmarking_substracting_audio.py",
       "benchmarking_substracting_audio.txt",
       "docs",
@@ -33,11 +32,11 @@
     ]
   },
   "sourceState": {
-    "commit": "cd8c63f5bead2e8c937f582a80edd36ad9f97eb7",
-    "branch": "native-hotkey-broker",
+    "commit": "0a655f570fcd8691713d4afef7c888fc7ee830aa",
+    "branch": "feature/ask-ai-voice",
     "dirty": true,
-    "generatedForCommit": "cd8c63f5bead2e8c937f582a80edd36ad9f97eb7",
-    "sourceFingerprint": "91aaa95d32c2300422c7e05ab99afb65db29780077b821901012121b5c938f5c",
+    "generatedForCommit": "0a655f570fcd8691713d4afef7c888fc7ee830aa",
+    "sourceFingerprint": "cdcd71bca26ddec48830deca59c8bbcac4a541a293f4c53f42223b8acc9d9a74",
     "dirtyReason": "uncommitted changes"
   },
   "policy": {
@@ -50,7 +49,7 @@
     "allowGraphPilots": false,
     "runOnPush": false
   },
-  "generatedAt": "2026-07-04T00:56:54.148026Z",
+  "generatedAt": "2026-07-07T18:27:25.248381Z",
   "toolRuns": [
     {
       "id": "repomix.basic",

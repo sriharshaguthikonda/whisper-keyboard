@@ -103,9 +103,7 @@ DISABLED_TOOL_NAMES = {
 
 def _filtered_tools_for_llm():
     filtered = []
-    all_tools = list(tools)
-    if _is_ask_ai_voice_enabled():
-        all_tools.extend(ASK_AI_TOOLS)
+    all_tools = list(tools) + list(ASK_AI_TOOLS)
     for tool in all_tools:
         if tool.get("type") == "function":
             name = tool.get("function", {}).get("name")
@@ -1810,34 +1808,10 @@ async def execute_command_run_with_tool(
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
         normalized_query = normalize_transcript(query)
+
         direct_ask_ai_result = await _execute_direct_ask_ai_if_requested(query)
         if direct_ask_ai_result is not None:
             return direct_ask_ai_result
-
-        split_commands = _split_compound_commands(query)
-        if _allow_compound_split and len(split_commands) > 1:
-            logging.info(
-                f"{YELLOW}Compound command detected; executing {len(split_commands)} sub-commands sequentially{RESET}"
-            )
-            sub_results = []
-            for idx, cmd in enumerate(split_commands, start=1):
-                logging.info(
-                    f"{YELLOW}Compound sub-command {idx}/{len(split_commands)}: {cmd}{RESET}"
-                )
-                sub_ok = await execute_command_run_with_tool(
-                    cmd,
-                    max_retries=max_retries,
-                    retry_delay=retry_delay,
-                    context_hint=context_hint,
-                    _allow_compound_split=False,
-                )
-                sub_results.append(bool(sub_ok))
-            last_tool_call_found = any(sub_results)
-            if not all(sub_results):
-                logging.warning(
-                    f"{YELLOW}One or more sub-commands failed in compound execution: {split_commands}{RESET}"
-                )
-            return all(sub_results)
 
         if "spotify" in normalized_query:
             if any(token in normalized_query for token in ("kill", "stop", "close", "quit", "exit")):
@@ -1926,7 +1900,7 @@ async def execute_command_run_with_tool(
                             "stream": False,
                             "tools": _filtered_tools_for_llm(),
                             "tool_choice": "auto",
-                            "max_tokens": 4096,
+                            "max_tokens": 256,
                         },
                         headers=headers,
                     ) as response:
@@ -2099,7 +2073,7 @@ async def execute_command_run_with_tool(
                 else:
                     logging.error(f"{RED}No tool calls found in the response{RESET}")
                     split_commands = _split_compound_commands(query)
-                    if len(split_commands) > 1:
+                    if _allow_compound_split and len(split_commands) > 1:
                         logging.info(
                             f"{YELLOW}Fallback: routing {len(split_commands)} sub-commands sequentially{RESET}"
                         )

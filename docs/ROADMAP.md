@@ -169,6 +169,33 @@ Status: implemented 2026-06-13.
 - `tool_use_failed` and model-specific 400/404 responses quarantine only the failing model; 429 responses use a short per-model cooldown instead of bad-model quarantine.
 - Prompt guards, `groq/compound*`, Orpheus TTS, Whisper STT, and safeguard models are excluded from normal function-tool routing.
 
+## Ask-AI Provider Routing
+
+Status: implemented 2026-07-07.
+
+Root-cause evidence from recent logs:
+
+- explicit Ask-AI prompts had a direct route in code, but it was not called before the Groq tool-use classifier;
+- the classifier used a 4096-token response budget, which made Groq 429 and 413 failures more likely;
+- unclaimed ChatGPT browser jobs silently fell back to direct Groq Ask-AI, adding hidden requests after the user-visible tool timeout;
+- the Groq SDK retried those direct requests internally, so extra POSTs could continue after the tool path timed out.
+
+Implemented policy:
+
+- explicit `ask chatgpt`, `ask chat gpt`, and `ask ai` commands bypass the Groq LLM classifier;
+- the classifier response budget is capped at 256 tokens;
+- `ask_chatgpt_fallback_to_ai` defaults to `false`, so a ChatGPT browser timeout does not send a hidden provider request;
+- direct Ask-AI uses a Patient_Avatar-style provider chain with Cerebras, SambaNova, OpenRouter, Cloudflare, Ollama Cloud, and Groq;
+- direct provider calls use stdlib HTTP without SDK auto-retry loops;
+- model catalogs are cached at runtime in `ask_ai_model_catalog.json` under `%LOCALAPPDATA%\WhisperKeyboard\runtime`;
+- `ask_ai_model=auto` selects models by task complexity while favoring non-Groq providers for simple and standard questions.
+
+Live-catalog smoke defaults from 2026-07-07:
+
+- simple: `cerebras/llama-3.3-70b`
+- standard: `cerebras/qwen-3-235b-a22b-instruct-2507`
+- complex: `openrouter/deepseek/deepseek-r1-0528`
+
 ## Open Issues From Repo TODOs
 
 | Issue | Source | Status |
