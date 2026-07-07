@@ -102,7 +102,7 @@ def _cleanup_old_jobs(jobs_dir, now=None):
             try:
                 if now - os.path.getmtime(path) > JOB_MAX_AGE_SECONDS:
                     os.remove(path)
-            except FileNotFoundError:
+            except (FileNotFoundError, PermissionError):
                 pass
             except Exception as exc:
                 logging.warning("Failed to cleanup Ask-AI job file %s: %s", path, exc)

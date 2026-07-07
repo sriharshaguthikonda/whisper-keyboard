@@ -1,6 +1,7 @@
 import importlib
 import io
 import json
+import queue
 from pathlib import Path
 import types
 import numpy as np
@@ -26,6 +27,44 @@ def clean_f23_settings(settings_manager):
     settings["record_keys"] = "f24,f23"
     settings["hotkey_profiles"] = profiles
     return settings
+
+
+class OneItemThenCancelQueue:
+    def __init__(self, item):
+        self._items = queue.Queue()
+        self._items.put(item)
+
+    def get(self):
+        if self._items.empty():
+            raise asyncio.CancelledError()
+        return self._items.get()
+
+
+def test_clean_transcript_does_not_normalize_ai_triggers_when_disabled(monkeypatch, fw_module):
+    routed = []
+    fw_module.transcript_queue = OneItemThenCancelQueue(("ask chat gpt explain", 0))
+    fw_module.is_ask_ai_enabled = lambda: False
+    monkeypatch.setattr(
+        fw_module,
+        "normalize_ai_triggers",
+        lambda transcript: (_ for _ in ()).throw(
+            AssertionError("normalize_ai_triggers should be gated")
+        ),
+    )
+
+    async def fake_execute_command_run_with_tool(transcript, context_hint=""):
+        routed.append((transcript, context_hint))
+
+    monkeypatch.setattr(
+        fw_module,
+        "execute_command_run_with_tool",
+        fake_execute_command_run_with_tool,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(fw_module.clean_transcript())
+
+    assert routed[0][0] == "ask chat gpt explain"
 
 
 def test_validate_audio_buffer(fw_module):

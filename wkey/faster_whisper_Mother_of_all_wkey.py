@@ -2852,7 +2852,8 @@ async def clean_transcript():
                     len(transcript or ""),
                 )
                 if keyword_index in (0, 1):
-                    transcript = normalize_ai_triggers(transcript)
+                    if is_ask_ai_enabled():
+                        transcript = normalize_ai_triggers(transcript)
                     logging.debug(
                         "clean_transcript routing to execute_command_run_with_tool "
                         "keyword_index=%s transcript_len=%d",

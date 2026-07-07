@@ -1,4 +1,5 @@
 import json
+import os
 import types
 
 import pytest
@@ -82,6 +83,34 @@ def test_ask_chatgpt_timeout_deletes_pending_and_falls_back(monkeypatch, tmp_pat
     assert ask_ai_bridge.ask_chatgpt("Fallback question") is True
     assert fallback_calls == ["Fallback question"]
     assert not (tmp_path / "job_20260707T000000000000Z_deadbeef.json").exists()
+
+
+def test_cleanup_old_jobs_skips_delete_race(monkeypatch, tmp_path, caplog):
+    pending = tmp_path / "job_old.json"
+    claimed = tmp_path / "job_old.claimed.browser.json"
+    pending.write_text("{}", encoding="utf-8")
+    claimed.write_text("{}", encoding="utf-8")
+    old_time = 1_000.0
+    os.utime(pending, (old_time, old_time))
+    os.utime(claimed, (old_time, old_time))
+
+    removed = []
+    original_remove = ask_ai_bridge.os.remove
+
+    def remove_with_race(path):
+        if path == str(pending):
+            raise PermissionError("claimed concurrently")
+        removed.append(path)
+        original_remove(path)
+
+    monkeypatch.setattr(ask_ai_bridge.os, "remove", remove_with_race)
+
+    ask_ai_bridge._cleanup_old_jobs(str(tmp_path), now=old_time + ask_ai_bridge.JOB_MAX_AGE_SECONDS + 1)
+
+    assert pending.exists()
+    assert removed == [str(claimed)]
+    assert not claimed.exists()
+    assert "Failed to cleanup Ask-AI job file" not in caplog.text
 
 
 @pytest.mark.parametrize(
