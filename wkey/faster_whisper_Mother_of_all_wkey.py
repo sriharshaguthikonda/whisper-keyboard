@@ -962,7 +962,11 @@ play_pause_pressed = False
 something_is_playing = False
 
 Hey_computer_STT_prompt = None
-General_gorq_system_prompt = "when outputting numbers, no spaces, no commas, no hyphens, just numbers like for example:84567945"
+General_gorq_system_prompt = (
+    "when outputting numbers, no spaces, no commas, no hyphens, just numbers "
+    "like for example:84567945. Voice command spellings: ChatGPT, ask ChatGPT, "
+    "ask AI, NICE guidelines, two-week-wait cancer referral."
+)
 COMPUTER_WAKE_GROQ_PROMPT_HINT = (
     "This audio was triggered by the wake word 'computer'. Preserve the word "
     "'computer' when it is spoken, and transcribe the wake word together with "

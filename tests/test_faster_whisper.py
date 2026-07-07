@@ -67,6 +67,19 @@ def test_clean_transcript_does_not_normalize_ai_triggers_when_disabled(monkeypat
     assert routed[0][0] == "ask chat gpt explain"
 
 
+def test_stt_prompt_includes_compact_command_vocabulary(fw_module):
+    fw_module.SETTINGS["enable_transcript_context_memory"] = False
+
+    prompt = fw_module._build_dynamic_stt_prompt(0)
+
+    assert "ChatGPT" in prompt
+    assert "ask ChatGPT" in prompt
+    assert "ask AI" in prompt
+    assert "NICE guidelines" in prompt
+    assert "two-week-wait cancer referral" in prompt
+    assert len(prompt) < 900
+
+
 def test_validate_audio_buffer(fw_module):
     sr = fw_module.sample_rate
     assert fw_module.validate_audio_buffer(None) is False

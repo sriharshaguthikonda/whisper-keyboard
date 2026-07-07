@@ -39,11 +39,50 @@ _CHATGPT_VARIANTS = (
     re.compile(r"\bchat\s*g\s*p\s*t\b", re.IGNORECASE),
     re.compile(r"\bchat\s*g(?:b|p)t\b", re.IGNORECASE),
     re.compile(r"\bchad\s*g\s*p\s*t\b", re.IGNORECASE),
+    re.compile(r"\brgpt\b", re.IGNORECASE),
 )
-_ASK_TRIGGER_RE = re.compile(
-    r"^\s*(?:please\s+)?ask\s+(?P<trigger>chatgpt|the\s+ai|ai)\s*(?:that|to|,)?\s*(?P<question>.*)$",
-    re.IGNORECASE,
-)
+_WORD_RE = re.compile(r"[A-Za-z0-9]+")
+_QUESTION_STRIP_CHARS = " \t\r\n,."
+_DROPPED_QUESTION_CONNECTORS = {"that", "to"}
+_QUESTION_STARTERS = {
+    "if",
+    "whether",
+    "what",
+    "when",
+    "where",
+    "why",
+    "how",
+    "is",
+    "are",
+    "do",
+    "does",
+    "did",
+    "can",
+    "could",
+    "should",
+    "would",
+    "will",
+    "has",
+    "have",
+    "had",
+}
+_AI_CONTEXT_HINTS = {
+    "ask",
+    "ai",
+    "chatgpt",
+    "guideline",
+    "guidelines",
+    "nice",
+    "changed",
+    "changes",
+    "current",
+    "latest",
+    "recent",
+    "months",
+    "cancer",
+    "referral",
+    "question",
+}
 
 
 def normalize_ai_triggers(transcript):
@@ -53,12 +92,121 @@ def normalize_ai_triggers(transcript):
     return text
 
 
-def extract_question_from_transcript(transcript):
-    normalized = normalize_ai_triggers(transcript)
-    match = _ASK_TRIGGER_RE.match(normalized)
-    if not match:
+def _tokenize(text):
+    return [(match.group(0).lower(), match.start(), match.end()) for match in _WORD_RE.finditer(text)]
+
+
+def _looks_like_ai_question_after(tokens, index):
+    if index >= len(tokens):
+        return False
+    if tokens[index][0] in _QUESTION_STARTERS:
+        return True
+    window = [token for token, _, _ in tokens[index : index + 8]]
+    return bool(set(window) & _AI_CONTEXT_HINTS) and any(
+        token in _QUESTION_STARTERS or token in {"changed", "changes", "latest", "current"}
+        for token in window
+    )
+
+
+def _match_chatgpt_trigger(tokens, index, allow_rgpd=False):
+    if index >= len(tokens):
+        return None
+
+    token = tokens[index][0]
+    if token in {"chatgpt", "chatgbt", "rgpt"}:
+        return index + 1
+
+    if token == "chat" and index + 1 < len(tokens):
+        next_token = tokens[index + 1][0]
+        if next_token in {"gpt", "gbt"}:
+            return index + 2
+        if (
+            next_token == "g"
+            and index + 3 < len(tokens)
+            and tokens[index + 2][0] == "p"
+            and tokens[index + 3][0] == "t"
+        ):
+            return index + 4
+
+    if token == "chad" and index + 1 < len(tokens):
+        next_token = tokens[index + 1][0]
+        if next_token == "gpt":
+            return index + 2
+        if (
+            next_token == "g"
+            and index + 3 < len(tokens)
+            and tokens[index + 2][0] == "p"
+            and tokens[index + 3][0] == "t"
+        ):
+            return index + 4
+
+    if token == "rgpd" and allow_rgpd and _looks_like_ai_question_after(tokens, index + 1):
+        return index + 1
+
+    return None
+
+
+def _match_ai_trigger(tokens, index):
+    if index >= len(tokens):
+        return None
+    if tokens[index][0] == "ai":
+        return index + 1
+    if (
+        tokens[index][0] == "the"
+        and index + 1 < len(tokens)
+        and tokens[index + 1][0] == "ai"
+    ):
+        return index + 2
+    return None
+
+
+def _question_after_trigger(text, tokens, index):
+    if index < len(tokens) and tokens[index][0] in _DROPPED_QUESTION_CONNECTORS:
+        index += 1
+    if index >= len(tokens):
         return ""
-    return match.group("question").strip(" \t\r\n,.")
+    return text[tokens[index][1] :].strip(_QUESTION_STRIP_CHARS)
+
+
+def classify_direct_ask_ai_transcript(transcript):
+    text = "" if transcript is None else str(transcript)
+    tokens = _tokenize(text)
+    if not tokens:
+        return None, ""
+
+    index = 1 if tokens[0][0] == "please" else 0
+    if index >= len(tokens):
+        return None, ""
+
+    if tokens[index][0] == "ask":
+        trigger_index = index + 1
+        chatgpt_end = _match_chatgpt_trigger(tokens, trigger_index, allow_rgpd=False)
+        if chatgpt_end is not None:
+            return "ask_chatgpt", _question_after_trigger(text, tokens, chatgpt_end)
+
+        ai_end = _match_ai_trigger(tokens, trigger_index)
+        if ai_end is not None:
+            return "ask_ai", _question_after_trigger(text, tokens, ai_end)
+
+        return None, ""
+
+    if tokens[index][0] == "search":
+        trigger_index = index + 1
+        chatgpt_end = _match_chatgpt_trigger(tokens, trigger_index, allow_rgpd=True)
+        if chatgpt_end is not None and _looks_like_ai_question_after(tokens, chatgpt_end):
+            return "ask_chatgpt", _question_after_trigger(text, tokens, chatgpt_end)
+        return None, ""
+
+    chatgpt_end = _match_chatgpt_trigger(tokens, index, allow_rgpd=True)
+    if chatgpt_end is not None and _looks_like_ai_question_after(tokens, chatgpt_end):
+        return "ask_chatgpt", _question_after_trigger(text, tokens, chatgpt_end)
+
+    return None, ""
+
+
+def extract_question_from_transcript(transcript):
+    _, question = classify_direct_ask_ai_transcript(transcript)
+    return question
 
 
 def _load_ask_ai_settings():

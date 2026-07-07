@@ -104,11 +104,7 @@ DISABLED_TOOL_NAMES = {
 def _filtered_tools_for_llm():
     filtered = []
     all_tools = list(tools)
-    try:
-        from wkey.ask_ai_bridge import is_ask_ai_enabled
-    except ImportError:
-        from ask_ai_bridge import is_ask_ai_enabled
-    if is_ask_ai_enabled():
+    if _is_ask_ai_voice_enabled():
         all_tools.extend(ASK_AI_TOOLS)
     for tool in all_tools:
         if tool.get("type") == "function":
@@ -117,6 +113,14 @@ def _filtered_tools_for_llm():
                 continue
         filtered.append(tool)
     return filtered
+
+
+def _is_ask_ai_voice_enabled():
+    try:
+        from wkey.ask_ai_bridge import is_ask_ai_enabled
+    except ImportError:
+        from ask_ai_bridge import is_ask_ai_enabled
+    return is_ask_ai_enabled()
 
 
 # ANSI Color codes
@@ -1726,6 +1730,74 @@ def _split_compound_commands(query: str):
     return commands
 
 
+async def _execute_direct_ask_ai_if_requested(query):
+    global last_tool_call_found
+
+    if not _is_ask_ai_voice_enabled():
+        return None
+
+    try:
+        from wkey.ask_ai_bridge import classify_direct_ask_ai_transcript
+    except ImportError:
+        from ask_ai_bridge import classify_direct_ask_ai_transcript
+
+    function_name, question = classify_direct_ask_ai_transcript(query)
+    if function_name is None:
+        return None
+    if not question.strip():
+        logging.error(f"{RED}Direct Ask-AI command missing question for query: {query}{RESET}")
+        last_tool_call_found = False
+        return False
+
+    tool_registry = tool_function_registry(globals())
+    if function_name not in tool_registry:
+        logging.error(f"{RED}Function {function_name} not found for direct Ask-AI route{RESET}")
+        last_tool_call_found = False
+        return False
+
+    try:
+        import inspect
+
+        func = tool_registry[function_name]
+        logging.info(
+            "%sDirect Ask-AI routing selected: function=%s question_len=%d%s",
+            CYAN,
+            function_name,
+            len(question),
+            RESET,
+        )
+        if asyncio.iscoroutinefunction(func):
+            invocation = func(question=question)
+        else:
+            sig = inspect.signature(func)
+            supports_question_keyword = "question" in sig.parameters or any(
+                param.kind == inspect.Parameter.VAR_KEYWORD
+                for param in sig.parameters.values()
+            )
+            if supports_question_keyword:
+                invocation = asyncio.to_thread(func, question=question)
+            else:
+                invocation = asyncio.to_thread(func, question)
+        result = await asyncio.wait_for(
+            invocation, timeout=TOOL_EXECUTION_TIMEOUT_SECONDS
+        )
+        last_tool_call_found = bool(result)
+        return bool(result)
+    except asyncio.TimeoutError:
+        logging.error(
+            f"{RED}Tool execution timeout ({TOOL_EXECUTION_TIMEOUT_SECONDS:.1f}s) for {function_name}{RESET}"
+        )
+        last_tool_call_found = False
+        return False
+    except Exception as e:
+        logging.error(
+            f"{RED}Error executing direct Ask-AI route {function_name}: {str(e)}{RESET}",
+            exc_info=True,
+        )
+        last_tool_call_found = False
+        return False
+
+
 async def execute_command_run_with_tool(
     query,
     max_retries=3,
@@ -1738,6 +1810,10 @@ async def execute_command_run_with_tool(
         logging.info(f"{CYAN}Executing command: {query}{RESET}")
 
         normalized_query = normalize_transcript(query)
+        direct_ask_ai_result = await _execute_direct_ask_ai_if_requested(query)
+        if direct_ask_ai_result is not None:
+            return direct_ask_ai_result
+
         split_commands = _split_compound_commands(query)
         if _allow_compound_split and len(split_commands) > 1:
             logging.info(
@@ -1794,6 +1870,13 @@ async def execute_command_run_with_tool(
                 - "minimize everything" → use minimize_all_windows()
                 - "check internet speed" → ping_google()
                 - "restart voicemeeter and open recycle bin" → call restart_voicemeeter() and launch_application(app="recycle bin")
+                - "ask chatgpt ..." or "ask chat gpt ..." → use ask_chatgpt(question=...)
+                - "ask ai ..." or "ask the ai ..." → use ask_ai(question=...)
+                - "search everything for kanata bat" → use search_everything(query="kanata bat")
+
+                search_everything is only for local Windows files and folders.
+                Never use search_everything for current facts, web research, guidelines,
+                ChatGPT/AI questions, or requests that need an online answer.
 
                 Only respond with tool calls, no conversational responses.""",
             },

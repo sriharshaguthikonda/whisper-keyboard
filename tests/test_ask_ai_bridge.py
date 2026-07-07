@@ -127,6 +127,41 @@ def test_extract_question_from_transcript(raw, expected):
     assert ask_ai_bridge.extract_question_from_transcript(raw) == expected
 
 
+@pytest.mark.parametrize(
+    ("raw", "expected_route", "expected_question"),
+    [
+        (
+            "ask chat gpt according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months.",
+            "ask_chatgpt",
+            "according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months",
+        ),
+        (
+            "ask ai if there have been any significant changes in the nice guidelines in the recent past six months.",
+            "ask_ai",
+            "if there have been any significant changes in the nice guidelines in the recent past six months",
+        ),
+        (
+            "search rgpt if any guidelines have changed significantly in the last 6 months.",
+            "ask_chatgpt",
+            "if any guidelines have changed significantly in the last 6 months",
+        ),
+        (
+            "rgpd if there are any significant nice guidelines that have changed in last 6 months.",
+            "ask_chatgpt",
+            "if there are any significant nice guidelines that have changed in last 6 months",
+        ),
+        ("search everything for kanata bat", None, ""),
+        ("search rgpd file", None, ""),
+        ("search rgpt file", None, ""),
+    ],
+)
+def test_classify_direct_ask_ai_transcript(raw, expected_route, expected_question):
+    route, question = ask_ai_bridge.classify_direct_ask_ai_transcript(raw)
+
+    assert route == expected_route
+    assert question == expected_question
+
+
 def test_ask_ai_uses_groq_and_pastes(monkeypatch):
     settings = {
         "ask_ai_enabled": True,

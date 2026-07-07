@@ -780,13 +780,13 @@ tools = [
         "type": "function",
         "function": {
             "name": "search_everything",
-            "description": "Search Windows files using Everything (focuses results)",
+            "description": "Search local Windows files and folders using Everything. Do not use for web/current facts, guidelines, ChatGPT, or AI questions.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search text to send to Everything. If omitted, opens Everything.",
+                        "description": "Local filename, folder name, or short local-file search text to send to Everything. If omitted, opens Everything.",
                     }
                 },
                 "required": [],
