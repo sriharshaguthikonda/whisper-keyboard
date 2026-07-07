@@ -38,6 +38,14 @@ def _set_alarm_wrapper(minutes, message):
         print("set_alarm function not available")
         return False
 
+
+def _call_ask_ai_bridge(name, **kwargs):
+    try:
+        from wkey import ask_ai_bridge
+    except ImportError:
+        import ask_ai_bridge
+    return getattr(ask_ai_bridge, name)(**kwargs)
+
 # ANSI Color codes
 BLUE = "\033[94m"
 GREEN = "\033[92m"
@@ -547,6 +555,8 @@ COMMAND_MAPPINGS = {
         "run grok",
     ],
     "set alarm": ["set alarm", "alarm in"],
+    "ask_chatgpt": ["ask chatgpt", "ask chat gpt"],
+    "ask_ai": ["ask ai", "ask the ai"],
 
 }
 
@@ -637,6 +647,10 @@ ACTIONS = {
     "start_whisper": start_whisper,
     "start_grok": start_grok,
     "set alarm": lambda minutes, message: _set_alarm_wrapper(minutes, message),
+    "ask_chatgpt": lambda question: _call_ask_ai_bridge(
+        "ask_chatgpt", question=question
+    ),
+    "ask_ai": lambda question: _call_ask_ai_bridge("ask_ai", question=question),
 }
 
 
@@ -669,6 +683,8 @@ def tool_function_registry(namespace=None):
         "open_task_scheduler": ACTIONS["open_task_scheduler"],
         "open_startup_folder": ACTIONS["open_startup_folder"],
         "manage_services": ACTIONS["manage_services"],
+        "ask_chatgpt": ACTIONS["ask_chatgpt"],
+        "ask_ai": ACTIONS["ask_ai"],
     }
     for item in tools:
         if item.get("type") != "function" or "function" not in item:
@@ -701,6 +717,43 @@ extra_tools = [
             "name": "minimize_all_windows",
             "description": "Minimize all windows",
             "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+]
+
+ASK_AI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_chatgpt",
+            "description": "Use ONLY when the user explicitly says 'ask chatgpt ...'. Sends the question to ChatGPT browser automation, with Groq fallback if unclaimed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Question text after the explicit 'ask chatgpt' trigger.",
+                    }
+                },
+                "required": ["question"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "ask_ai",
+            "description": "Use ONLY when the user explicitly says 'ask ai' or 'ask the ai'. Sends the question directly to the configured Groq Ask-AI model.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Question text after the explicit 'ask ai' or 'ask the ai' trigger.",
+                    }
+                },
+                "required": ["question"],
+            },
         },
     },
 ]

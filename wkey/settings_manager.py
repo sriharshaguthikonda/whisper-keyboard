@@ -175,6 +175,10 @@ DEFAULT_SETTINGS = {
     "speaker_filter_enrollment_dir": DEFAULT_SPEAKER_FILTER_ENROLLMENT_DIR,
     "speaker_filter_negative_dir": DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR,
     "speaker_filter_apply_to": "dictation",
+    "ask_ai_enabled": False,
+    "ask_ai_model": "groq/compound",
+    "ask_chatgpt_claim_timeout_sec": 12,
+    "prompt_jobs_dir": r"C:\Windows_software\openai whisper\prompt_jobs",
 }
 
 
@@ -452,6 +456,7 @@ def _validate_settings(settings, defaults):
             "enable_wakeword_detection",
             "enable_pre_recording_keyword_check",
             "enable_transcript_context_memory",
+            "ask_ai_enabled",
         ):
             merged[key] = bool(value)
         elif key in (
@@ -462,6 +467,7 @@ def _validate_settings(settings, defaults):
             "router_context_chars",
             "context_max_age_seconds",
             "max_recording_seconds",
+            "ask_chatgpt_claim_timeout_sec",
         ):
             try:
                 merged[key] = max(1, int(value))
@@ -516,6 +522,9 @@ def _validate_settings(settings, defaults):
             )
         elif key == "speaker_filter_apply_to":
             merged[key] = _normalize_speaker_filter_apply_to(value)
+        elif key in ("ask_ai_model", "prompt_jobs_dir"):
+            if str(value).strip():
+                merged[key] = str(value).strip()
         else:
             merged[key] = value
 

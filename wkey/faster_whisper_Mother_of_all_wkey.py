@@ -131,6 +131,10 @@ except ModuleNotFoundError:
         DEFAULT_SETTINGS as SETTINGS_DEFAULTS,
     )
 try:
+    from ask_ai_bridge import normalize_ai_triggers
+except ModuleNotFoundError:
+    from wkey.ask_ai_bridge import normalize_ai_triggers
+try:
     from keyboard_shortcuts import KeyboardShortcutHandler
 except ModuleNotFoundError:
     from wkey.keyboard_shortcuts import KeyboardShortcutHandler
@@ -708,6 +712,10 @@ def is_python_keyboard_listener_enabled():
 
 def is_wakeword_runtime_enabled():
     return runtime_mode in {"combined", "wakeword"}
+
+
+def is_ask_ai_enabled():
+    return bool(SETTINGS.get("ask_ai_enabled", False))
 
 
 def map_key_to_keyword_index(key):
@@ -2844,6 +2852,7 @@ async def clean_transcript():
                     len(transcript or ""),
                 )
                 if keyword_index in (0, 1):
+                    transcript = normalize_ai_triggers(transcript)
                     logging.debug(
                         "clean_transcript routing to execute_command_run_with_tool "
                         "keyword_index=%s transcript_len=%d",

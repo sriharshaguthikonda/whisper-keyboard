@@ -55,6 +55,7 @@ from commands_and_tools import (
     COMMAND_MAPPINGS,
     ACTIONS,
     tools,
+    ASK_AI_TOOLS,
     extra_tools,
     tool_function_registry,
     launch_application,
@@ -102,7 +103,14 @@ DISABLED_TOOL_NAMES = {
 
 def _filtered_tools_for_llm():
     filtered = []
-    for tool in tools:
+    all_tools = list(tools)
+    try:
+        from wkey.ask_ai_bridge import is_ask_ai_enabled
+    except ImportError:
+        from ask_ai_bridge import is_ask_ai_enabled
+    if is_ask_ai_enabled():
+        all_tools.extend(ASK_AI_TOOLS)
+    for tool in all_tools:
         if tool.get("type") == "function":
             name = tool.get("function", {}).get("name")
             if name in DISABLED_TOOL_NAMES:
@@ -1914,6 +1922,26 @@ async def execute_command_run_with_tool(
                             logging.error(
                                 f"{RED}Invalid tool call payload: {e}{RESET}",
                                 exc_info=True,
+                            )
+                            return False
+
+                        if (
+                            function_name in {"ask_chatgpt", "ask_ai"}
+                            and not str(function_args.get("question") or "").strip()
+                        ):
+                            try:
+                                from wkey.ask_ai_bridge import extract_question_from_transcript
+                            except ImportError:
+                                from ask_ai_bridge import extract_question_from_transcript
+                            extracted_question = extract_question_from_transcript(query)
+                            if extracted_question:
+                                function_args["question"] = extracted_question
+                        if (
+                            function_name in {"ask_chatgpt", "ask_ai"}
+                            and not str(function_args.get("question") or "").strip()
+                        ):
+                            logging.error(
+                                f"{RED}Ask-AI tool call missing question for query: {query}{RESET}"
                             )
                             return False
 

@@ -36,6 +36,9 @@ class SettingsWindow(QWidget):
         self.precheck_cb = QCheckBox("Validate detected wake word before command capture")
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
         self.context_memory_cb = QCheckBox("Enable transcript context memory")
+        self.ask_ai_cb = QCheckBox(
+            "Enable Ask-AI voice commands (ChatGPT browser + Groq fallback)"
+        )
 
         self.max_retries_edit = QLineEdit()
         self.max_retries_edit.setPlaceholderText("Max retries (Groq)")
@@ -60,6 +63,18 @@ class SettingsWindow(QWidget):
         self.context_max_age_edit = QLineEdit()
         self.context_max_age_edit.setPlaceholderText("15 to 3600")
         self.context_max_age_edit.setValidator(QIntValidator(15, 3600, self))
+
+        self.ask_chatgpt_claim_timeout_edit = QLineEdit()
+        self.ask_chatgpt_claim_timeout_edit.setPlaceholderText("1 to 60")
+        self.ask_chatgpt_claim_timeout_edit.setValidator(QIntValidator(1, 60, self))
+
+        self.ask_ai_model_edit = QLineEdit()
+        self.ask_ai_model_edit.setPlaceholderText("groq/compound")
+
+        self.prompt_jobs_dir_edit = QLineEdit()
+        self.prompt_jobs_dir_edit.setPlaceholderText(
+            r"C:\Windows_software\openai whisper\prompt_jobs"
+        )
 
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setPlaceholderText("GROQ_API_KEY")
@@ -160,6 +175,43 @@ class SettingsWindow(QWidget):
             )
         )
 
+        ask_ai_separator = QFrame()
+        ask_ai_separator.setFrameShape(QFrame.HLine)
+        ask_ai_separator.setFrameShadow(QFrame.Sunken)
+        self.layout.addWidget(ask_ai_separator)
+
+        ask_ai_header = QLabel("Ask AI")
+        ask_ai_header.setAlignment(Qt.AlignLeft)
+        self.layout.addWidget(ask_ai_header)
+
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.ask_ai_cb,
+                "Enables voice commands that send questions to ChatGPT browser automation with Groq fallback.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Claim Timeout (s):",
+                self.ask_chatgpt_claim_timeout_edit,
+                "Seconds to wait for the browser extension to claim a ChatGPT prompt job.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Ask-AI Model:",
+                self.ask_ai_model_edit,
+                "Groq model id used when browser claim times out or ChatGPT commands are disabled.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_labeled_edit_row(
+                "Prompt Jobs Folder:",
+                self.prompt_jobs_dir_edit,
+                "Folder shared with the browser extension for pending ChatGPT prompt jobs.",
+            )
+        )
+
         self.layout.addWidget(QLabel("Groq API Key:"))
         self.layout.addWidget(self.api_key_edit)
 
@@ -240,6 +292,17 @@ class SettingsWindow(QWidget):
             str(config.get("router_context_chars", 320))
         )
         self.context_max_age_edit.setText(str(config.get("context_max_age_seconds", 180)))
+        self.ask_ai_cb.setChecked(config.get("ask_ai_enabled", False))
+        self.ask_chatgpt_claim_timeout_edit.setText(
+            str(config.get("ask_chatgpt_claim_timeout_sec", 12))
+        )
+        self.ask_ai_model_edit.setText(config.get("ask_ai_model", "groq/compound"))
+        self.prompt_jobs_dir_edit.setText(
+            config.get(
+                "prompt_jobs_dir",
+                r"C:\Windows_software\openai whisper\prompt_jobs",
+            )
+        )
         self.api_key_edit.setText(os.environ.get("GROQ_API_KEY", ""))
         self._update_context_controls_enabled()
 
@@ -252,6 +315,7 @@ class SettingsWindow(QWidget):
         config["enable_pre_recording_keyword_check"] = self.precheck_cb.isChecked()
         config["enable_edge_selenium"] = self.edge_selenium_cb.isChecked()
         config["enable_transcript_context_memory"] = self.context_memory_cb.isChecked()
+        config["ask_ai_enabled"] = self.ask_ai_cb.isChecked()
 
         self._set_int_if_valid(config, "max_retries", self.max_retries_edit, 1, 20)
         self._set_int_if_valid(
@@ -269,6 +333,17 @@ class SettingsWindow(QWidget):
         self._set_int_if_valid(
             config, "context_max_age_seconds", self.context_max_age_edit, 15, 3600
         )
+        self._set_int_if_valid(
+            config,
+            "ask_chatgpt_claim_timeout_sec",
+            self.ask_chatgpt_claim_timeout_edit,
+            1,
+            60,
+        )
+        if self.ask_ai_model_edit.text().strip():
+            config["ask_ai_model"] = self.ask_ai_model_edit.text().strip()
+        if self.prompt_jobs_dir_edit.text().strip():
+            config["prompt_jobs_dir"] = self.prompt_jobs_dir_edit.text().strip()
 
         settings_save(SETTINGS_PATH, config)
         if self.api_key_edit.text().strip():

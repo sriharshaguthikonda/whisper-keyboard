@@ -7,7 +7,9 @@ from commands_and_tools import (
     COMMAND_MAPPINGS,
     ACTIONS,
     tools,
+    ASK_AI_TOOLS,
     extra_tools,
+    tool_function_registry,
 )
 
 
@@ -17,6 +19,14 @@ CYAN = "\033[96m"
 RESET = "\033[0m"
 GREEN = "\033[92m"
 RED = "\033[91m"
+
+
+def _tools_for_llm():
+    try:
+        from wkey.ask_ai_bridge import is_ask_ai_enabled
+    except ImportError:
+        from ask_ai_bridge import is_ask_ai_enabled
+    return tools + ASK_AI_TOOLS if is_ask_ai_enabled() else tools
 
 
 # Function to execute commands using Ollama
@@ -54,7 +64,7 @@ def execute_command_run_with_tool_local(query, max_retries=3, retry_delay=2):
         response = ollama.chat(
             model="qwen2.5-coder:0.5b",
             messages=tools_messages,
-            tools=tools,
+            tools=_tools_for_llm(),
         )
 
         # Process the response
@@ -64,11 +74,12 @@ def execute_command_run_with_tool_local(query, max_retries=3, retry_delay=2):
                 function_name = tool_call["function"]["name"]
                 function_args = tool_call["function"]["arguments"]
 
-                if function_name in globals():
+                tool_registry = tool_function_registry(globals())
+                if function_name in tool_registry:
                     logging.info(
                         f"{CYAN}Executing function: {function_name} with arguments: {function_args}{RESET}"
                     )
-                    func = globals()[function_name]
+                    func = tool_registry[function_name]
 
                     result = func(**function_args)
 
