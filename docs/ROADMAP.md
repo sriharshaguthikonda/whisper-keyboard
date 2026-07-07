@@ -179,6 +179,7 @@ Status: implemented 2026-06-13.
 | Stale isolated scripts | `wkey/faster_whisper_Mother_of_all_wkey_no_f24.py`, `wkey/faster_whisper_Mother_of_all_wkey_just_f24.py` | Updated to wrappers over current main runtime |
 | Packaging/docs mismatch | `README.md`, `README.rst`, `setup.py` | README files updated; packaging still needs separate cleanup |
 | Google Assistant legacy path | `wkey/google_assistant.py` | Open; main currently imports `google_assistant_stub` |
+| In-app wake/hibernate supervision | broker/app runtime | Future: add a setting-gated supervisor that handles Windows sleep/resume health checks inside the app/broker, then replace the fragile scheduled-task kill/restart flow after it is proven |
 
 ## Commit Plan
 
