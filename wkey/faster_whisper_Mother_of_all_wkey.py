@@ -227,9 +227,15 @@ try:
 except ModuleNotFoundError:
     from wkey.runtime_paths import ensure_runtime_dir, runtime_path
 try:
-    from faster_whisper_Mother_of_all_wkey_recovery import OverflowBurstTracker
+    from faster_whisper_Mother_of_all_wkey_recovery import (
+        OverflowBurstTracker,
+        ResumeGapDetector,
+    )
 except ModuleNotFoundError:
-    from wkey.faster_whisper_Mother_of_all_wkey_recovery import OverflowBurstTracker
+    from wkey.faster_whisper_Mother_of_all_wkey_recovery import (
+        OverflowBurstTracker,
+        ResumeGapDetector,
+    )
 
 # Set up driver reference for commands_and_tools
 try:
@@ -1086,9 +1092,11 @@ deferred_keyboard_listener_restart_reasons = set()
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
 resource_relax_until = 0.0
 
-# Recovery policy is intentionally external: Windows scheduled task restarts
-# the daemon after logon/unlock/resume instead of in-process stream healing.
-RECOVERY_POLICY = "external_restart"
+RESUME_RECOVERY_ENABLED = _env_flag_enabled("WKEY_RESUME_RECOVERY", default=True)
+RECOVERY_POLICY = "in_app" if RESUME_RECOVERY_ENABLED else "external_restart"
+AUDIO_CALLBACK_STALE_SECONDS = 10.0
+AUDIO_RECOVERY_WATCHDOG_INTERVAL_SECONDS = 5.0
+AUDIO_RECOVERY_RETRY_DELAYS = (1.0, 2.0, 4.0, 15.0)
 
 OVERFLOW_BURST_WINDOW_SECONDS = 8.0
 OVERFLOW_BURST_THRESHOLD = 6
@@ -1099,6 +1107,19 @@ overflow_burst_tracker = OverflowBurstTracker(
 )
 
 input_stream_lock = threading.RLock()
+audio_recovery_lock = threading.Lock()
+audio_recovery_requested = threading.Event()
+audio_recovery_state_lock = threading.Lock()
+audio_recovery_state = {
+    "in_progress": False,
+    "started_at": 0.0,
+    "reason": "",
+    "pending_reason": "",
+    "stuck_reported": False,
+}
+audio_stream_generation = 0
+LAST_AUDIO_CALLBACK_TS = time.monotonic()
+resume_gap_detector = ResumeGapDetector(gap_seconds=20.0)
 wake_stream_lock = threading.RLock()
 keyboard_listener_lock = threading.Lock()
 manual_recording_suppression_lock = threading.Lock()
@@ -1119,7 +1140,8 @@ def should_relax_resources():
     return time.time() < resource_relax_until
 
 def is_audio_recovery_in_progress():
-    return False
+    with audio_recovery_state_lock:
+        return bool(audio_recovery_state["in_progress"])
 
 
 def is_recording_lifecycle_active():
@@ -1128,12 +1150,8 @@ def is_recording_lifecycle_active():
 
 
 def get_audio_recovery_status():
-    return {
-        "in_progress": False,
-        "started_at": 0.0,
-        "reason": "",
-        "stuck_reported": False,
-    }
+    with audio_recovery_state_lock:
+        return dict(audio_recovery_state)
 
 
 def suppress_manual_recording(seconds=MANUAL_RECORDING_SUPPRESSION_SECONDS, reason=""):
@@ -1234,6 +1252,10 @@ def _drain_queue(q):
         pass
 
 def handle_resume_event(reason="resume"):
+    if RESUME_RECOVERY_ENABLED:
+        reset_keyboard_handler_state(reason)
+        request_audio_recovery(reason)
+        return
     logging.info(
         "resume_event_ignored recovery_policy=%s reason=%s",
         RECOVERY_POLICY,
@@ -1264,11 +1286,21 @@ def request_audio_recovery(reason):
         )
         force_release_volume_ducking(reason, level=logging.WARNING)
         return
-    logging.info(
-        "audio_recovery_ignored recovery_policy=%s reason=%s",
-        RECOVERY_POLICY,
-        reason,
-    )
+    if not RESUME_RECOVERY_ENABLED:
+        logging.info(
+            "audio_recovery_ignored recovery_policy=%s reason=%s",
+            RECOVERY_POLICY,
+            reason,
+        )
+        return False
+    with audio_recovery_state_lock:
+        pending = audio_recovery_state["pending_reason"]
+        if reason not in pending.split(" | "):
+            audio_recovery_state["pending_reason"] = (
+                f"{pending} | {reason}" if pending else reason
+            )
+    audio_recovery_requested.set()
+    return True
 
 
 def _close_input_stream_for_recovery():
@@ -1318,24 +1350,102 @@ def _perform_audio_recovery(reason):
         )
         force_release_volume_ducking(reason, level=logging.WARNING)
         return True
-    logging.info(
-        "audio_recovery_perform_ignored recovery_policy=%s reason=%s",
-        RECOVERY_POLICY,
-        reason,
-    )
-    return False
+    if not RESUME_RECOVERY_ENABLED:
+        logging.info(
+            "audio_recovery_perform_ignored recovery_policy=%s reason=%s",
+            RECOVERY_POLICY,
+            reason,
+        )
+        return False
+    global audio_stream_generation
+    with audio_recovery_lock:
+        with audio_recovery_state_lock:
+            audio_recovery_state.update(
+                in_progress=True,
+                started_at=time.monotonic(),
+                reason=str(reason),
+                stuck_reported=False,
+            )
+        try:
+            audio_stream_generation += 1
+            _close_input_stream_for_recovery()
+            success = bool(initialize_input_stream())
+            logging.log(
+                logging.INFO if success else logging.ERROR,
+                "audio_recovery_complete success=%s reason=%s generation=%d",
+                success,
+                reason,
+                audio_stream_generation,
+            )
+            return success
+        finally:
+            with audio_recovery_state_lock:
+                audio_recovery_state.update(in_progress=False, started_at=0.0)
 
 
 def audio_recovery_worker():
-    logging.info("audio_recovery_worker_disabled recovery_policy=%s", RECOVERY_POLICY)
+    if not RESUME_RECOVERY_ENABLED:
+        logging.info("audio_recovery_worker_disabled recovery_policy=%s", RECOVERY_POLICY)
+        return
+    failures = 0
+    while True:
+        audio_recovery_requested.wait()
+        audio_recovery_requested.clear()
+        with audio_recovery_state_lock:
+            reason = audio_recovery_state["pending_reason"] or "unspecified"
+            audio_recovery_state["pending_reason"] = ""
+        if _perform_audio_recovery(reason):
+            failures = 0
+            continue
+        delay = AUDIO_RECOVERY_RETRY_DELAYS[
+            min(failures, len(AUDIO_RECOVERY_RETRY_DELAYS) - 1)
+        ]
+        failures += 1
+        logging.error(
+            "audio_recovery_degraded retry_in=%.1fs failures=%d reason=%s",
+            delay,
+            failures,
+            reason,
+        )
+        time.sleep(delay)
+        request_audio_recovery("recovery_retry")
 
 
 def maybe_handle_system_resume(source):
-    logging.info(
-        "system_resume_detection_ignored recovery_policy=%s source=%s",
-        RECOVERY_POLICY,
-        source,
-    )
+    if not RESUME_RECOVERY_ENABLED:
+        logging.info(
+            "system_resume_detection_ignored recovery_policy=%s source=%s",
+            RECOVERY_POLICY,
+            source,
+        )
+        return False
+    handle_resume_event(f"system_resume:{source}")
+    return True
+
+
+def check_resume_audio_health(now=None):
+    if not RESUME_RECOVERY_ENABLED:
+        return False
+    resumed, gap = resume_gap_detector.check()
+    if resumed:
+        handle_resume_event(f"monotonic_gap {gap:.1f}s")
+        return True
+    current_time = time.monotonic() if now is None else float(now)
+    audio_expected = bool(recording or is_wakeword_runtime_enabled())
+    callback_age = current_time - LAST_AUDIO_CALLBACK_TS
+    if audio_expected and callback_age > AUDIO_CALLBACK_STALE_SECONDS:
+        request_audio_recovery(f"audio_callback_stale age={callback_age:.1f}s")
+        return True
+    return False
+
+
+def audio_recovery_watchdog():
+    while RESUME_RECOVERY_ENABLED:
+        try:
+            check_resume_audio_health()
+        except Exception as exc:
+            logging.error("resume_audio_watchdog_error: %s", exc, exc_info=True)
+        time.sleep(AUDIO_RECOVERY_WATCHDOG_INTERVAL_SECONDS)
 
 
 _volume_timeout_hook_registered = False
@@ -1453,7 +1563,19 @@ def read_shared_wake_audio(timeout=0.05):
 
 
 # Modify the audio callback for better error handling
-def audio_callback(indata, frames, time, status):
+def audio_callback(indata, frames, time, status, callback_generation=None):
+    global LAST_AUDIO_CALLBACK_TS
+    if (
+        callback_generation is not None
+        and callback_generation != audio_stream_generation
+    ):
+        logging.debug(
+            "stale_audio_callback_dropped callback_generation=%s current_generation=%s",
+            callback_generation,
+            audio_stream_generation,
+        )
+        return
+    LAST_AUDIO_CALLBACK_TS = globals()["time"].monotonic()
     try:
         with audio_operation_guard():
             global buffer_index, audio_buffer, last_audio_overflow_status
@@ -1467,7 +1589,7 @@ def audio_callback(indata, frames, time, status):
                         "external_restart_requested": bool(burst),
                     }
                     logging.warning(
-                        "%sInput overflow detected; recovery_policy=%s leaves stream for external restart.%s",
+                        "%sInput overflow detected; recovery_policy=%s.%s",
                         YELLOW,
                         RECOVERY_POLICY,
                         RESET,
@@ -1476,7 +1598,10 @@ def audio_callback(indata, frames, time, status):
                         write_backend_health_status(
                             source="input_overflow_burst", force=True
                         )
-                        request_broker_control_shutdown("input_overflow_burst")
+                        if RESUME_RECOVERY_ENABLED:
+                            request_audio_recovery("input_overflow_burst")
+                        else:
+                            request_broker_control_shutdown("input_overflow_burst")
             if recording and isinstance(indata, np.ndarray) and len(indata) > 0:
                 record_first_audio_frame()
             _enqueue_shared_wake_audio(indata, frames)
@@ -1519,9 +1644,20 @@ stream = None
 def initialize_input_stream():
     global stream
     with input_stream_lock:
+        callback_generation = audio_stream_generation
+
+        def generation_guarded_callback(indata, frames, time_info, status):
+            return audio_callback(
+                indata,
+                frames,
+                time_info,
+                status,
+                callback_generation=callback_generation,
+            )
+
         success, stream = initialize_input_stream_impl(
             stream=stream,
-            audio_callback=audio_callback,
+            audio_callback=generation_guarded_callback,
             sample_rate=sample_rate,
             log=logging,
             success_color_prefix=GREEN,
@@ -3237,6 +3373,9 @@ def main():
             else:
                 initialize_wake_stream()
             start_runtime_thread(listen_for_wake_word, "WakeWordListener")
+        if RESUME_RECOVERY_ENABLED:
+            start_runtime_thread(audio_recovery_worker, "AudioRecovery")
+            start_runtime_thread(audio_recovery_watchdog, "ResumeAudioWatchdog")
         start_watchdog()
         loop2 = asyncio.new_event_loop()
         start_runtime_thread(

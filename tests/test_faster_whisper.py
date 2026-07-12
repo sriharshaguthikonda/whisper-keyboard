@@ -498,6 +498,7 @@ def test_backend_health_status_uses_unique_temp_files(fw_module, tmp_path, monke
 
 def test_input_overflow_logs_without_scheduling_recovery(fw_module, monkeypatch):
     recoveries = []
+    fw_module.RESUME_RECOVERY_ENABLED = False
     fw_module.runtime_mode = "keyboard"
     fw_module.recording = False
     fw_module.recording_stop_in_progress = False
@@ -529,6 +530,7 @@ def test_input_overflow_logs_without_scheduling_recovery(fw_module, monkeypatch)
 def test_input_overflow_burst_marks_health_and_requests_external_restart(
     fw_module, tmp_path, monkeypatch
 ):
+    fw_module.RESUME_RECOVERY_ENABLED = False
     status_path = tmp_path / "backend_health.json"
     fw_module.runtime_mode = "keyboard"
     fw_module.recording = False
@@ -593,6 +595,7 @@ def test_volume_timeout_callback_releases_volume_without_audio_recovery(fw_modul
 
 def test_system_resume_detection_is_noop_under_external_restart_policy(fw_module, monkeypatch):
     calls = []
+    fw_module.RESUME_RECOVERY_ENABLED = False
 
     monkeypatch.setattr(fw_module, "set_pause_state", lambda value: calls.append(("pause", value)))
     monkeypatch.setattr(
@@ -618,6 +621,7 @@ def test_system_resume_detection_is_noop_under_external_restart_policy(fw_module
 
 def test_keyboard_mode_starts_no_recovery_or_wake_monitor_threads(fw_module, monkeypatch):
     started = []
+    fw_module.RESUME_RECOVERY_ENABLED = False
     fw_module.runtime_mode = "keyboard"
 
     monkeypatch.setattr(fw_module, "register_volume_timeout_recovery_hook", lambda: None)
@@ -1246,4 +1250,5 @@ def test_stop_recording_logs_manual_queue_diagnostics(fw_module, monkeypatch, ca
 
 
 def test_audio_recovery_non_volume_reason_is_noop(fw_module):
+    fw_module.RESUME_RECOVERY_ENABLED = False
     assert fw_module._perform_audio_recovery("test-cooldown") is False
