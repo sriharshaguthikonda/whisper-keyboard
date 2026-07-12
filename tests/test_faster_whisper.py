@@ -823,6 +823,25 @@ def test_runtime_singleton_blocks_when_lock_unavailable(fw_module, monkeypatch, 
     assert fw_module._runtime_lock_handle is None
 
 
+def test_runtime_singleton_retries_transient_unknown_pid_lock(fw_module, monkeypatch, tmp_path):
+    lock_path = tmp_path / "wkey_runtime.lock"
+    lock_path.write_text("not-a-pid", encoding="utf-8")
+    fw_module._runtime_lock_handle = None
+    attempts = []
+
+    def lock_after_owner_exits(handle):
+        attempts.append(True)
+        if len(attempts) == 1:
+            raise OSError("owner is exiting")
+
+    monkeypatch.setattr(fw_module, "_try_lock_runtime_file", lock_after_owner_exits)
+    monkeypatch.setattr(fw_module.time, "sleep", lambda _seconds: None)
+
+    assert fw_module.acquire_runtime_singleton(str(lock_path)) is True
+    assert len(attempts) == 2
+    fw_module.release_runtime_singleton()
+
+
 def test_runtime_singleton_acquire_and_release(fw_module, tmp_path):
     lock_path = tmp_path / "wkey_runtime.lock"
     fw_module._runtime_lock_handle = None

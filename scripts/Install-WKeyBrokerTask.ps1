@@ -7,11 +7,11 @@ $ErrorActionPreference = "Stop"
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
-$Launcher = Join-Path $RepoRoot "Start-WKeyBroker.bat"
-$LauncherArguments = "--log"
+$Launcher = Join-Path $ScriptDir "Start-WhisperKeyboard.ps1"
+$LauncherArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $Launcher + '"'
 
 if (-not (Test-Path -LiteralPath $Launcher)) {
-    throw "Broker launcher not found: $Launcher"
+    throw "Python launcher not found: $Launcher"
 }
 
 function New-WKeyBrokerTaskXml {
@@ -24,7 +24,7 @@ function New-WKeyBrokerTaskXml {
     $identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()
     $userName = [System.Security.SecurityElement]::Escape($identity.Name)
     $sid = [System.Security.SecurityElement]::Escape($identity.User.Value)
-    $command = [System.Security.SecurityElement]::Escape($Launcher)
+    $command = [System.Security.SecurityElement]::Escape("powershell.exe")
     $arguments = [System.Security.SecurityElement]::Escape($LauncherArguments)
     $author = $userName
     $now = (Get-Date).ToString("s")
@@ -39,11 +39,6 @@ function New-WKeyBrokerTaskXml {
     <URI>$uri</URI>
   </RegistrationInfo>
   <Triggers>
-    <EventTrigger>
-      <Enabled>true</Enabled>
-      <Subscription>&lt;QueryList&gt;&lt;Query Id="0" Path="System"&gt;&lt;Select Path="System"&gt;*[System[Provider[@Name='Microsoft-Windows-Power-Troubleshooter'] and EventID=1]]&lt;/Select&gt;&lt;/Query&gt;&lt;/QueryList&gt;</Subscription>
-      <Delay>PT30S</Delay>
-    </EventTrigger>
     <LogonTrigger>
       <Enabled>true</Enabled>
       <UserId>$userName</UserId>
@@ -58,13 +53,13 @@ function New-WKeyBrokerTaskXml {
     </Principal>
   </Principals>
   <Settings>
-    <MultipleInstancesPolicy>StopExisting</MultipleInstancesPolicy>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
-    <StopIfGoingOnBatteries>true</StopIfGoingOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
     <IdleSettings>
-      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <StopOnIdleEnd>false</StopOnIdleEnd>
       <RestartOnIdle>false</RestartOnIdle>
     </IdleSettings>
     <AllowStartOnDemand>true</AllowStartOnDemand>
@@ -76,6 +71,10 @@ function New-WKeyBrokerTaskXml {
     <WakeToRun>false</WakeToRun>
     <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
     <Priority>7</Priority>
+    <RestartOnFailure>
+      <Interval>PT30S</Interval>
+      <Count>3</Count>
+    </RestartOnFailure>
   </Settings>
   <Actions Context="Author">
     <Exec>
@@ -99,7 +98,7 @@ else {
 }
 
 $exportedXml = Export-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
-if ($exportedXml -notlike "*Start-WKeyBroker.bat*" -or $exportedXml -notlike "*--log*") {
+if ($exportedXml -notlike "*Start-WhisperKeyboard.ps1*" -or $exportedXml -notlike "*IgnoreNew*") {
     throw "Scheduled task XML verification failed for $TaskName"
 }
 

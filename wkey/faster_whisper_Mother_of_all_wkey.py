@@ -3358,6 +3358,33 @@ def acquire_runtime_singleton(lock_path=RUNTIME_LOCK_PATH):
         _try_lock_runtime_file(handle)
     except OSError:
         existing_pid = _read_runtime_lock_pid(lock_path)
+        # The OS file lock is itself the liveness oracle: a truly-dead owner
+        # (whatever pid it recorded, including a stale numeric pid or "unknown")
+        # releases the lock within a moment, so we can reclaim it; a live owner
+        # keeps holding it, so the retry keeps failing and we back off and exit.
+        reclaimed = False
+        for _ in range(3):
+            time.sleep(0.3)
+            try:
+                _try_lock_runtime_file(handle)
+            except OSError:
+                continue
+            reclaimed = True
+            break
+        if reclaimed:
+            logging.warning(
+                "%sreclaimed_stale_runtime_lock prev_pid=%s lock=%s%s",
+                YELLOW,
+                existing_pid,
+                lock_path,
+                RESET,
+            )
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+            _runtime_lock_handle = handle
+            return True
         handle.close()
         logging.warning(
             "%sAnother Whisper Keyboard backend is already running "
