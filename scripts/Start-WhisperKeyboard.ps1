@@ -11,8 +11,22 @@ $env:PYTHONUNBUFFERED = "1"
 
 $Python = $env:WKEY_PYTHON
 if ([string]::IsNullOrWhiteSpace($Python)) {
-    $venvPython = Join-Path $RepoRoot ".venv\Scripts\python.exe"
-    $Python = if (Test-Path -LiteralPath $venvPython) { $venvPython } else { (Get-Command python.exe -ErrorAction Stop).Source }
+    # Prefer a project venv that actually has the deps. The real one lives beside
+    # the repo at <parent>\openai\Scripts\python.exe (same as the old broker used).
+    $candidates = @(
+        (Join-Path $RepoRoot ".venv\Scripts\python.exe"),
+        (Join-Path (Split-Path -Parent $RepoRoot) "openai\Scripts\python.exe")
+    )
+    $Python = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+    if (-not $Python) {
+        # Bare PATH python only if it actually imports the app deps (avoid a silent
+        # ModuleNotFoundError crash-and-vanish).
+        $onPath = (Get-Command python.exe -ErrorAction SilentlyContinue).Source
+        if ($onPath) { & $onPath -c "import groq" 2>$null; if ($LASTEXITCODE -eq 0) { $Python = $onPath } }
+    }
+    if (-not $Python) {
+        throw "No Python with app dependencies found. Set WKEY_PYTHON, or create the venv at $((Join-Path (Split-Path -Parent $RepoRoot) 'openai\Scripts\python.exe'))."
+    }
 }
 if (-not (Test-Path -LiteralPath $EntryPoint)) { throw "Backend entry point not found: $EntryPoint" }
 
