@@ -176,8 +176,9 @@ DEFAULT_SETTINGS = {
     "speaker_filter_negative_dir": DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR,
     "speaker_filter_apply_to": "dictation",
     "ask_ai_enabled": False,
-    "ask_ai_model": "groq/compound",
+    "ask_ai_model": "auto",
     "ask_chatgpt_claim_timeout_sec": 12,
+    "ask_chatgpt_fallback_to_ai": False,
     "prompt_jobs_dir": r"C:\Windows_software\openai whisper\prompt_jobs",
 }
 
@@ -457,6 +458,7 @@ def _validate_settings(settings, defaults):
             "enable_pre_recording_keyword_check",
             "enable_transcript_context_memory",
             "ask_ai_enabled",
+            "ask_chatgpt_fallback_to_ai",
         ):
             merged[key] = bool(value)
         elif key in (

@@ -37,7 +37,10 @@ class SettingsWindow(QWidget):
         self.edge_selenium_cb = QCheckBox("Enable Edge/Selenium browser automation")
         self.context_memory_cb = QCheckBox("Enable transcript context memory")
         self.ask_ai_cb = QCheckBox(
-            "Enable Ask-AI voice commands (ChatGPT browser + Groq fallback)"
+            "Enable Ask-AI voice commands (ChatGPT browser + direct Ask-AI)"
+        )
+        self.ask_chatgpt_fallback_cb = QCheckBox(
+            "Fallback to direct Ask-AI if ChatGPT tab is not claimed"
         )
 
         self.max_retries_edit = QLineEdit()
@@ -69,7 +72,7 @@ class SettingsWindow(QWidget):
         self.ask_chatgpt_claim_timeout_edit.setValidator(QIntValidator(1, 60, self))
 
         self.ask_ai_model_edit = QLineEdit()
-        self.ask_ai_model_edit.setPlaceholderText("groq/compound")
+        self.ask_ai_model_edit.setPlaceholderText("auto")
 
         self.prompt_jobs_dir_edit = QLineEdit()
         self.prompt_jobs_dir_edit.setPlaceholderText(
@@ -187,7 +190,13 @@ class SettingsWindow(QWidget):
         self.layout.addLayout(
             self._build_checkbox_row(
                 self.ask_ai_cb,
-                "Enables voice commands that send questions to ChatGPT browser automation with Groq fallback.",
+                "Enables voice commands that send questions to ChatGPT browser automation or direct provider Ask-AI.",
+            )
+        )
+        self.layout.addLayout(
+            self._build_checkbox_row(
+                self.ask_chatgpt_fallback_cb,
+                "When off, unclaimed ChatGPT jobs fail instead of making a hidden provider request.",
             )
         )
         self.layout.addLayout(
@@ -201,7 +210,7 @@ class SettingsWindow(QWidget):
             self._build_labeled_edit_row(
                 "Ask-AI Model:",
                 self.ask_ai_model_edit,
-                "Groq model id used when browser claim times out or ChatGPT commands are disabled.",
+                "Use 'auto' for provider/model auto-selection, or provider:model for an explicit provider.",
             )
         )
         self.layout.addLayout(
@@ -296,7 +305,10 @@ class SettingsWindow(QWidget):
         self.ask_chatgpt_claim_timeout_edit.setText(
             str(config.get("ask_chatgpt_claim_timeout_sec", 12))
         )
-        self.ask_ai_model_edit.setText(config.get("ask_ai_model", "groq/compound"))
+        self.ask_ai_model_edit.setText(config.get("ask_ai_model", "auto"))
+        self.ask_chatgpt_fallback_cb.setChecked(
+            config.get("ask_chatgpt_fallback_to_ai", False)
+        )
         self.prompt_jobs_dir_edit.setText(
             config.get(
                 "prompt_jobs_dir",
@@ -316,6 +328,9 @@ class SettingsWindow(QWidget):
         config["enable_edge_selenium"] = self.edge_selenium_cb.isChecked()
         config["enable_transcript_context_memory"] = self.context_memory_cb.isChecked()
         config["ask_ai_enabled"] = self.ask_ai_cb.isChecked()
+        config["ask_chatgpt_fallback_to_ai"] = (
+            self.ask_chatgpt_fallback_cb.isChecked()
+        )
 
         self._set_int_if_valid(config, "max_retries", self.max_retries_edit, 1, 20)
         self._set_int_if_valid(

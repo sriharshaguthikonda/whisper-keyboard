@@ -290,14 +290,16 @@ function Start-BrokerOnce {
                 "2>&1"
             ) -join " "
             & $env:ComSpec /d /c $brokerCommand
+            $brokerExitCode = $LASTEXITCODE
         }
         else {
-            & $BrokerExe @brokerArgs
+            & $BrokerExe @brokerArgs | ForEach-Object { Write-Host $_ }
+            $brokerExitCode = $LASTEXITCODE
         }
-        if ($null -eq $LASTEXITCODE) {
+        if ($null -eq $brokerExitCode) {
             return 0
         }
-        return [int]$LASTEXITCODE
+        return [int]$brokerExitCode
     }
     finally {
         Pop-Location

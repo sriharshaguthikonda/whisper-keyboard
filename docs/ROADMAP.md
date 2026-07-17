@@ -50,6 +50,12 @@ Recovery:
 
 ## Native Hotkey Broker Workflow
 
+> SUPERSEDED 2026-07-12 (planning): the broker is being retired for reliability.
+> On wake the five-layer chain kills and races itself into a stale-lock loop.
+> See `docs/superpowers/specs/2026-07-12-input-owner-simplification-design.md`
+> and the "Input-Owner Simplification (Broker Retirement)" section below. The
+> notes here describe the retired design.
+
 Status: broker startup enabled 2026-06-27.
 
 Goal: move fragile Windows keyboard hook ownership out of Python while keeping Python as the transcription engine.
@@ -195,6 +201,39 @@ Live-catalog smoke defaults from 2026-07-07:
 - simple: `cerebras/llama-3.3-70b`
 - standard: `cerebras/qwen-3-235b-a22b-instruct-2507`
 - complex: `openrouter/deepseek/deepseek-r1-0528`
+
+## Input-Owner Simplification (Broker Retirement)
+
+Status: planning 2026-07-12; three decisions open in `Q and A.md`.
+
+Goal: stop letting a native process own/start/supervise Python. Move low-level
+keys to an external remapper that emits F23/F24; Python's `pynput` listener
+catches them. One app process, one logon-only scheduled task, Windows resumes
+across sleep, in-app resume health behind a toggle.
+
+Design docs:
+
+- `docs/superpowers/specs/2026-07-12-input-owner-simplification-design.md`
+- `docs/superpowers/plans/2026-07-12-broker-retirement-git-strategy.md` (git map; pending Q3)
+
+Key points:
+
+- Root cause: wake-kill scheduled task + stale `wkey_runtime.lock` race + Rust
+  5s reply timeout + no real Python restart. Confirmed in code and the
+  2026-07-07 log.
+- Recommended: option A (external remapper → F23/F24 → Python) + abandon-broker
+  in-place (forward deletion, keep history).
+- Scheduler fix applies regardless: logon-only, `IgnoreNew`, no battery-stop,
+  no wake trigger; reclaim stale PID-unknown lock.
+- Replaces the "In-app wake/hibernate supervision" future item below.
+
+## Planned UX (Future, from 2026-07-07 requests)
+
+- Cursor/center-screen visual feedback: a recording/active indicator shown near
+  the cursor or at the center of the active screen, rendered behind windows,
+  toggleable in settings/GUI.
+- Settings search bar: VS Code Ctrl+Shift+P style command/setting palette so any
+  setting can be found by typing. Belongs with the Control Center V1 work.
 
 ## Open Issues From Repo TODOs
 

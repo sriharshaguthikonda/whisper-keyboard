@@ -24,9 +24,11 @@ except Exception:  # pragma: no cover
 
 try:
     from . import clipboard_utils
+    from .ask_ai_providers import complete_ask_ai
     from .settings_manager import DEFAULT_SETTINGS, load_settings
 except ImportError:  # pragma: no cover - script-style imports
     import clipboard_utils
+    from ask_ai_providers import complete_ask_ai
     from settings_manager import DEFAULT_SETTINGS, load_settings
 
 SETTINGS_PATH = os.path.join(os.path.dirname(__file__), "transcription_config.json")
@@ -238,8 +240,9 @@ def _ask_ai_config():
     except Exception:
         timeout = 12
     jobs_dir = str(settings.get("prompt_jobs_dir") or DEFAULT_PROMPT_JOBS_DIR)
-    model = str(settings.get("ask_ai_model") or "groq/compound").strip()
-    return settings, model, timeout, jobs_dir
+    model = str(settings.get("ask_ai_model") or "auto").strip()
+    fallback_to_ai = bool(settings.get("ask_chatgpt_fallback_to_ai", False))
+    return settings, model, timeout, jobs_dir, fallback_to_ai
 
 
 def _cleanup_old_jobs(jobs_dir, now=None):
@@ -281,7 +284,7 @@ def ask_chatgpt(question):
     if not is_ask_ai_enabled():
         return ask_ai(question)
 
-    _, _, timeout, jobs_dir = _ask_ai_config()
+    _, _, timeout, jobs_dir, fallback_to_ai = _ask_ai_config()
     os.makedirs(jobs_dir, exist_ok=True)
     _cleanup_old_jobs(jobs_dir)
     job_id, pending_path, _ = _write_job_atomic(jobs_dir, question)
@@ -303,26 +306,33 @@ def ask_chatgpt(question):
             os.remove(pending_path)
     except Exception as exc:
         logging.warning("Failed to delete stale Ask-AI pending job %s: %s", pending_path, exc)
-    return ask_ai(question)
+    if fallback_to_ai:
+        logging.warning("Ask-AI ChatGPT job was not claimed; using direct provider fallback")
+        return ask_ai(question)
+    logging.warning("Ask-AI ChatGPT job was not claimed; direct provider fallback is disabled")
+    _beep(ERROR_BEEP)
+    return False
 
 
 def ask_ai(question):
-    _, model, _, _ = _ask_ai_config()
+    _, model, _, _, _ = _ask_ai_config()
     try:
         load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
-        api_key = os.getenv("GROQ_API_KEY")
-        if Groq is None:
-            raise RuntimeError("groq package is unavailable")
-        client = Groq(api_key=api_key, timeout=60)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": str(question)}],
-            timeout=60,
+        result = complete_ask_ai(
+            str(question),
+            configured_model=model,
+            timeout_seconds=18,
+            max_tokens=768,
         )
-        answer = response.choices[0].message.content
-        clipboard_utils.paste_transcript(answer)
+        logging.info(
+            "Ask-AI provider request succeeded provider=%s model=%s answer_len=%d",
+            result.provider,
+            result.model,
+            len(result.answer),
+        )
+        clipboard_utils.paste_transcript(result.answer)
         return True
     except Exception as exc:
         _beep(ERROR_BEEP)
-        logging.error("Ask-AI Groq request failed: %s", exc, exc_info=True)
+        logging.error("Ask-AI provider request failed: %s", exc, exc_info=True)
         return False

@@ -40,34 +40,34 @@
     },
     "pause_resume": {
       "label": "Pause / Resume",
-      "trigger": "ctrl+shift+p",
+      "trigger": "ctrl_r+shift+p",
       "triggers": [
         "ctrl_r+shift+p"
       ],
       "action": "pause_resume",
-      "enabled": true,
+      "enabled": false,
       "diagnostic": false
     },
     "pause_15m": {
       "label": "Timed Pause 15m",
-      "trigger": "ctrl+shift+1",
+      "trigger": "ctrl_r+shift+1",
       "triggers": [
         "ctrl_r+shift+1"
       ],
       "action": "timed_pause",
       "duration_minutes": 15,
-      "enabled": true,
+      "enabled": false,
       "diagnostic": false
     },
     "pause_60m": {
       "label": "Timed Pause 60m",
-      "trigger": "ctrl+shift+2",
+      "trigger": "ctrl_r+shift+2",
       "triggers": [
         "ctrl_r+shift+2"
       ],
       "action": "timed_pause",
       "duration_minutes": 60,
-      "enabled": true,
+      "enabled": false,
       "diagnostic": false
     },
     "wake_mode_toggle": {
@@ -98,5 +98,17 @@
     }
   },
   "ui_theme": "system",
-  "minimize_to_tray": true
+  "minimize_to_tray": true,
+  "speaker_filter_enabled": false,
+  "speaker_filter_mode": "analysis",
+  "speaker_filter_threshold": 0.72,
+  "speaker_filter_profile_path": "wkey/speaker_filter_profile.json",
+  "speaker_filter_enrollment_dir": "I:\\Record_only_by_harsha",
+  "speaker_filter_negative_dir": "I:\\Record_others_16k_wav",
+  "speaker_filter_apply_to": "dictation",
+  "ask_ai_enabled": true,
+  "ask_ai_model": "auto",
+  "ask_chatgpt_claim_timeout_sec": 12,
+  "ask_chatgpt_fallback_to_ai": false,
+  "prompt_jobs_dir": "C:\\Windows_software\\openai whisper\\prompt_jobs"
 }

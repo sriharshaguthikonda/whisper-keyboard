@@ -64,11 +64,36 @@ def test_ask_chatgpt_claim_success_does_not_fallback(monkeypatch, tmp_path):
     assert beeps == [ask_ai_bridge.SUCCESS_BEEP]
 
 
-def test_ask_chatgpt_timeout_deletes_pending_and_falls_back(monkeypatch, tmp_path):
+def test_ask_chatgpt_timeout_deletes_pending_without_hidden_fallback_by_default(
+    monkeypatch, tmp_path
+):
     settings = {
         "ask_ai_enabled": True,
         "ask_ai_model": "groq/compound",
         "ask_chatgpt_claim_timeout_sec": 1,
+        "prompt_jobs_dir": str(tmp_path),
+    }
+    fallback_calls = []
+    monotonic_values = iter([0.0, 0.1, 1.1])
+
+    monkeypatch.setattr(ask_ai_bridge, "_load_ask_ai_settings", lambda: settings)
+    monkeypatch.setattr(ask_ai_bridge, "_new_job_id", lambda: "20260707T000000000000Z_deadbeef")
+    monkeypatch.setattr(ask_ai_bridge.time, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(ask_ai_bridge.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(ask_ai_bridge, "ask_ai", lambda question: fallback_calls.append(question) or True)
+    monkeypatch.setattr(ask_ai_bridge, "_beep", lambda pattern: None)
+
+    assert ask_ai_bridge.ask_chatgpt("Fallback question") is False
+    assert fallback_calls == []
+    assert not (tmp_path / "job_20260707T000000000000Z_deadbeef.json").exists()
+
+
+def test_ask_chatgpt_timeout_can_fallback_when_enabled(monkeypatch, tmp_path):
+    settings = {
+        "ask_ai_enabled": True,
+        "ask_ai_model": "auto",
+        "ask_chatgpt_claim_timeout_sec": 1,
+        "ask_chatgpt_fallback_to_ai": True,
         "prompt_jobs_dir": str(tmp_path),
     }
     fallback_calls = []
@@ -162,39 +187,25 @@ def test_classify_direct_ask_ai_transcript(raw, expected_route, expected_questio
     assert question == expected_question
 
 
-def test_ask_ai_uses_groq_and_pastes(monkeypatch):
+def test_ask_ai_uses_provider_router_and_pastes(monkeypatch):
     settings = {
         "ask_ai_enabled": True,
-        "ask_ai_model": "groq/compound",
+        "ask_ai_model": "auto",
         "ask_chatgpt_claim_timeout_sec": 12,
         "prompt_jobs_dir": "unused",
     }
     pasted = []
-    beeps = []
 
-    class FakeCompletions:
-        def create(self, **kwargs):
-            assert kwargs["model"] == "groq/compound"
-            assert kwargs["messages"] == [{"role": "user", "content": "Question?"}]
-            assert kwargs["timeout"] == 60
-            return types.SimpleNamespace(
-                choices=[
-                    types.SimpleNamespace(
-                        message=types.SimpleNamespace(content="Answer.")
-                    )
-                ]
-            )
-
-    class FakeGroq:
-        def __init__(self, api_key=None, timeout=None):
-            assert timeout == 60
-            self.chat = types.SimpleNamespace(completions=FakeCompletions())
+    def complete_ask_ai(question, *, configured_model, timeout_seconds, max_tokens):
+        assert question == "Question?"
+        assert configured_model == "auto"
+        assert timeout_seconds <= 20
+        assert max_tokens <= 1024
+        return types.SimpleNamespace(answer="Answer.", provider="cerebras", model="test-model")
 
     monkeypatch.setattr(ask_ai_bridge, "_load_ask_ai_settings", lambda: settings)
-    monkeypatch.setattr(ask_ai_bridge, "Groq", FakeGroq)
+    monkeypatch.setattr(ask_ai_bridge, "complete_ask_ai", complete_ask_ai)
     monkeypatch.setattr(ask_ai_bridge.clipboard_utils, "paste_transcript", lambda text: pasted.append(text))
-    monkeypatch.setattr(ask_ai_bridge, "_beep", lambda pattern: beeps.append(pattern))
 
     assert ask_ai_bridge.ask_ai("Question?") is True
     assert pasted == ["Answer."]
-    assert beeps == []

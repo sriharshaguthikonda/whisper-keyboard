@@ -726,7 +726,7 @@ ASK_AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "ask_chatgpt",
-            "description": "Use ONLY when the user explicitly says 'ask chatgpt ...'. Sends the question to ChatGPT browser automation, with Groq fallback if unclaimed.",
+            "description": "Use when user asks a question. Sends the question to ChatGPT browser automation; direct fallback only runs if enabled in settings.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -743,7 +743,7 @@ ASK_AI_TOOLS = [
         "type": "function",
         "function": {
             "name": "ask_ai",
-            "description": "Use ONLY when the user explicitly says 'ask ai' or 'ask the ai'. Sends the question directly to the configured Groq Ask-AI model.",
+            "description": "Use when the user says 'ask ai'. Sends the question directly through the configured Ask-AI provider/model router.",
             "parameters": {
                 "type": "object",
                 "properties": {

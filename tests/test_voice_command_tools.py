@@ -32,6 +32,49 @@ def _prepare_voice_commands_import(monkeypatch):
     return voice_commands
 
 
+def _fake_tool_call_session(captured_messages, function_name, arguments):
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "tool_calls": [
+                                {
+                                    "function": {
+                                        "name": function_name,
+                                        "arguments": json.dumps(arguments),
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            captured_messages.append(kwargs["json"]["messages"][-1]["content"])
+            return FakeResponse()
+
+    return FakeSession
+
+
 def test_advertised_voice_tools_have_executor_registry_entries():
     from wkey.commands_and_tools import tools, tool_function_registry
 
@@ -105,6 +148,7 @@ def test_ask_ai_tool_call_runs_in_worker_thread(monkeypatch):
 
     monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", FakeSession)
     monkeypatch.setattr(voice_commands, "_filtered_tools_for_llm", lambda: [])
+    monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: False)
     monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
     monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
     monkeypatch.setattr(voice_commands, "tool_function_registry", lambda namespace=None: {"ask_ai": ask_ai})
@@ -117,9 +161,57 @@ def test_ask_ai_tool_call_runs_in_worker_thread(monkeypatch):
     assert to_thread_calls == [(ask_ai, (), {"question": "Question?"})]
 
 
-def test_direct_ask_chatgpt_bypasses_llm_and_compound_split(monkeypatch):
+def test_direct_ask_chatgpt_bypasses_llm_classifier(monkeypatch):
     voice_commands = _prepare_voice_commands_import(monkeypatch)
     calls = []
+
+    class BombSession:
+        def __init__(self, *args, **kwargs):
+            raise AssertionError("LLM classifier should not run for direct Ask-AI")
+
+    def ask_chatgpt(question):
+        calls.append(question)
+        return True
+
+    monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", BombSession)
+    monkeypatch.setattr(
+        voice_commands,
+        "tool_function_registry",
+        lambda namespace=None: {"ask_chatgpt": ask_chatgpt},
+    )
+
+    assert asyncio.run(
+        voice_commands.execute_command_run_with_tool(
+            "ask chat gpt do I need a new PowerShell to see PATH changes?",
+            max_retries=1,
+        )
+    )
+    assert calls == ["do I need a new PowerShell to see PATH changes?"]
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_ask_ai_tools_are_advertised_to_llm_classifier(monkeypatch, enabled):
+    voice_commands = _prepare_voice_commands_import(monkeypatch)
+
+    monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: enabled)
+
+    advertised = {
+        item["function"]["name"]
+        for item in voice_commands._filtered_tools_for_llm()
+        if item.get("type") == "function"
+    }
+
+    assert "ask_chatgpt" in advertised
+    assert "ask_ai" in advertised
+
+
+def test_ask_chatgpt_routes_directly_before_llm_tool_call(monkeypatch):
+    voice_commands = _prepare_voice_commands_import(monkeypatch)
+    calls = []
+    captured_messages = []
+    raw = "ask chat gpt according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months."
+    expected_question = "according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months"
 
     def ask_chatgpt(question):
         calls.append(("ask_chatgpt", question))
@@ -131,29 +223,27 @@ def test_direct_ask_chatgpt_bypasses_llm_and_compound_split(monkeypatch):
         lambda namespace=None: {"ask_chatgpt": ask_chatgpt},
     )
     monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
-    monkeypatch.setattr(
-        voice_commands,
-        "_filtered_tools_for_llm",
-        lambda: (_ for _ in ()).throw(AssertionError("LLM router should not run")),
-    )
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", _fake_tool_call_session(
+        captured_messages,
+        "ask_chatgpt",
+        {"question": expected_question},
+    ))
+    monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
+    monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
 
     assert asyncio.run(
-        voice_commands.execute_command_run_with_tool(
-            "ask chat gpt according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months.",
-            max_retries=1,
-        )
+        voice_commands.execute_command_run_with_tool(raw, max_retries=1)
     )
-    assert calls == [
-        (
-            "ask_chatgpt",
-            "according to nice guidelines, what is the status of 2 week weight cancer referral pathway? no cancel that, ask this, see if there are any changes in the nice guidelines that are significant in the recent 6 months",
-        )
-    ]
+    assert captured_messages == []
+    assert calls == [("ask_chatgpt", expected_question)]
 
 
-def test_direct_ask_ai_bypasses_llm(monkeypatch):
+def test_ask_ai_routes_directly_before_llm_tool_call(monkeypatch):
     voice_commands = _prepare_voice_commands_import(monkeypatch)
     calls = []
+    captured_messages = []
+    raw = "ask ai if there have been any significant changes in the nice guidelines in the recent past six months."
+    expected_question = "if there have been any significant changes in the nice guidelines in the recent past six months"
 
     def ask_ai(question):
         calls.append(("ask_ai", question))
@@ -165,29 +255,27 @@ def test_direct_ask_ai_bypasses_llm(monkeypatch):
         lambda namespace=None: {"ask_ai": ask_ai},
     )
     monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
-    monkeypatch.setattr(
-        voice_commands,
-        "_filtered_tools_for_llm",
-        lambda: (_ for _ in ()).throw(AssertionError("LLM router should not run")),
-    )
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", _fake_tool_call_session(
+        captured_messages,
+        "ask_ai",
+        {"question": expected_question},
+    ))
+    monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
+    monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
 
     assert asyncio.run(
-        voice_commands.execute_command_run_with_tool(
-            "ask ai if there have been any significant changes in the nice guidelines in the recent past six months.",
-            max_retries=1,
-        )
+        voice_commands.execute_command_run_with_tool(raw, max_retries=1)
     )
-    assert calls == [
-        (
-            "ask_ai",
-            "if there have been any significant changes in the nice guidelines in the recent past six months",
-        )
-    ]
+    assert captured_messages == []
+    assert calls == [("ask_ai", expected_question)]
 
 
-def test_rgpt_search_phrase_bypasses_everything_when_ai_intent(monkeypatch):
+def test_rgpt_search_phrase_can_route_to_ask_chatgpt_tool(monkeypatch):
     voice_commands = _prepare_voice_commands_import(monkeypatch)
     calls = []
+    captured_messages = []
+    raw = "search rgpt if any guidelines have changed significantly in the last 6 months."
+    expected_question = "if any guidelines have changed significantly in the last 6 months"
 
     def ask_chatgpt(question):
         calls.append(("ask_chatgpt", question))
@@ -206,24 +294,101 @@ def test_rgpt_search_phrase_bypasses_everything_when_ai_intent(monkeypatch):
         },
     )
     monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
-    monkeypatch.setattr(
-        voice_commands,
-        "_filtered_tools_for_llm",
-        lambda: (_ for _ in ()).throw(AssertionError("LLM router should not run")),
-    )
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", _fake_tool_call_session(
+        captured_messages,
+        "ask_chatgpt",
+        {"question": expected_question},
+    ))
+    monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
+    monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
 
     assert asyncio.run(
-        voice_commands.execute_command_run_with_tool(
-            "search rgpt if any guidelines have changed significantly in the last 6 months.",
-            max_retries=1,
-        )
+        voice_commands.execute_command_run_with_tool(raw, max_retries=1)
     )
-    assert calls == [
-        (
-            "ask_chatgpt",
-            "if any guidelines have changed significantly in the last 6 months",
-        )
-    ]
+    assert captured_messages == []
+    assert calls == [("ask_chatgpt", expected_question)]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "search at chatgpt, how to add adp devices to the path.",
+        "sir, chatgpt, if there are any significant changes in the nice guidelines in the past six months?",
+    ],
+)
+def test_log_chatgpt_phrases_go_to_llm_classifier_before_compound_split(monkeypatch, raw):
+    voice_commands = _prepare_voice_commands_import(monkeypatch)
+    calls = []
+
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def json(self):
+            return {"choices": [{"message": {"content": ""}}]}
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            calls.append(kwargs["json"]["messages"][-1]["content"])
+            return FakeResponse()
+
+    monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", FakeSession)
+    monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
+    monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
+
+    asyncio.run(voice_commands.execute_command_run_with_tool(raw, max_retries=1))
+    assert calls[0] == raw
+
+
+def test_llm_classifier_uses_small_completion_budget(monkeypatch):
+    voice_commands = _prepare_voice_commands_import(monkeypatch)
+    budgets = []
+
+    class FakeResponse:
+        status = 200
+        reason = "OK"
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def json(self):
+            return {"choices": [{"message": {"content": ""}}]}
+
+    class FakeSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, *args, **kwargs):
+            budgets.append(kwargs["json"]["max_tokens"])
+            return FakeResponse()
+
+    monkeypatch.setattr(voice_commands, "_is_ask_ai_voice_enabled", lambda: True)
+    monkeypatch.setattr(voice_commands.aiohttp, "ClientSession", FakeSession)
+    monkeypatch.setattr(voice_commands, "refresh_groq_model_rotators", lambda *a, **k: None)
+    monkeypatch.setattr(voice_commands, "next_tool_use_model", lambda: "test-model")
+
+    asyncio.run(voice_commands.execute_command_run_with_tool("open notepad", max_retries=1))
+
+    assert budgets == [256]
 
 
 @pytest.mark.parametrize(
