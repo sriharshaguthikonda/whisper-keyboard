@@ -968,11 +968,17 @@ play_pause_pressed = False
 something_is_playing = False
 
 Hey_computer_STT_prompt = None
+
 General_gorq_system_prompt = (
-    "when outputting numbers, no spaces, no commas, no hyphens, just numbers "
-    "like for example:84567945. Voice command spellings: ChatGPT, ask ChatGPT, "
-    "ask AI, NICE guidelines, two-week-wait cancer referral."
+    "English dictation about AI coding tools, Windows software, and programming. "
+    "Preferred spellings: Claude, Claude Code, Anthropic, OpenAI, ChatGPT, Codex, "
+    "GitHub, Groq, Kanata, Whisper Keyboard, AutoHotkey, PowerShell, PySide6, Qt, "
+    "CUDA, and PyTorch. "
+    "Voice command spellings: ask ChatGPT, ask AI. "
+    "Medical spellings: NICE guidelines, two-week-wait cancer referral. "
+    "Format spoken digit sequences as continuous digits, for example: 84567945."
 )
+
 COMPUTER_WAKE_GROQ_PROMPT_HINT = (
     "This audio was triggered by the wake word 'computer'. Preserve the word "
     "'computer' when it is spoken, and transcribe the wake word together with "
