@@ -30,15 +30,20 @@ if ([string]::IsNullOrWhiteSpace($Python)) {
 }
 if (-not (Test-Path -LiteralPath $EntryPoint)) { throw "Backend entry point not found: $EntryPoint" }
 
+$LogPath = Join-Path $RuntimeDir "whisper-keyboard-startup.log"
+
 Push-Location $RepoRoot
 try {
     if ($Console) {
         & $Python $EntryPoint
     } else {
-        $LogPath = Join-Path $RuntimeDir "whisper-keyboard-startup.log"
         & $Python $EntryPoint *>> $LogPath
     }
-    exit $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
+    $ExitCode = $(if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE })
+    $ExitLine = "[{0}] Whisper Keyboard python exited with code {1}" -f (Get-Date).ToString("s"), $ExitCode
+    Write-Host $ExitLine
+    Add-Content -LiteralPath $LogPath -Value $ExitLine -Encoding UTF8
+    exit $ExitCode
 } finally {
     Pop-Location
 }

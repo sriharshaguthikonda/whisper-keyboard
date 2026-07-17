@@ -1,4 +1,3 @@
-import subprocess
 from pathlib import Path
 
 
@@ -9,59 +8,9 @@ def read_script(name: str) -> str:
     return (REPO_ROOT / "scripts" / name).read_text(encoding="utf-8")
 
 
-def test_launcher_uses_localappdata_runtime_dir():
-    script = read_script("Start-WKeyBroker.ps1")
-
-    assert "$RuntimeDir" in script
-    assert "WhisperKeyboard" in script
-    assert "backend_health_status.json" in script
-    assert "wkey\\backend_health_status.json" not in script
-    assert "wkey\\wkey_runtime.lock" not in script
-    assert '"WKEY_RUNTIME_DIR"' in script
-
-
-def test_launcher_supervises_broker_with_backoff():
-    script = read_script("Start-WKeyBroker.ps1")
-
-    assert "$ShouldSupervise" in script
-    assert "MaxRestarts" in script
-    assert "RestartDelaySeconds" in script
-    assert "Start-BrokerOnce" in script
-    assert "Restarting broker" in script
-
-
-def test_launcher_streams_console_broker_output_without_exit_code_pollution():
-    script = read_script("Start-WKeyBroker.ps1")
-    start = script.index("function Start-BrokerOnce")
-    end = script.index('if (-not (Test-Path -LiteralPath $BrokerManifest))', start)
-    start_broker_once = script[start:end]
-
-    assert "& $BrokerExe @brokerArgs | ForEach-Object { Write-Host $_ }" in start_broker_once
-    assert "$brokerExitCode = $LASTEXITCODE" in start_broker_once
-    assert "return [int]$brokerExitCode" in start_broker_once
-    assert "return [int]$LASTEXITCODE" not in start_broker_once
-
-
-def test_launcher_console_stream_pattern_preserves_native_exit_code(tmp_path):
-    broker = tmp_path / "fake-broker.cmd"
-    broker.write_text("@echo broker_python_child pid=123\n@exit /b 7\n", encoding="utf-8")
-
-    command = (
-        f'$BrokerExe = "{broker}"; '
-        "$brokerArgs = @(); "
-        '& $BrokerExe @brokerArgs | ForEach-Object { Write-Host $_ }; '
-        "$brokerExitCode = $LASTEXITCODE; "
-        "exit [int]$brokerExitCode"
-    )
-    result = subprocess.run(
-        ["powershell", "-NoProfile", "-Command", command],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 7
-    assert "broker_python_child pid=123" in result.stdout
+def test_broker_launcher_files_removed():
+    assert not (REPO_ROOT / "Start-WKeyBroker.bat").exists()
+    assert not (REPO_ROOT / "scripts" / "Start-WKeyBroker.ps1").exists()
 
 
 def test_task_installer_reconciles_full_task_xml_and_verifies_action():
@@ -78,6 +27,11 @@ def test_task_installer_reconciles_full_task_xml_and_verifies_action():
     assert "Export-ScheduledTask" in script
     assert "Set-ScheduledTask" not in script
     assert "Start-WKeyBroker.bat" not in script
+    assert "-WindowStyle Hidden" in script
+    assert '-File "' in script
+    assert '$exportedXml -notlike "*-WindowStyle Hidden*"' in script
+    assert '$exportedXml -like "*-Console*"' in script
+    assert '$exportedXml -like "*EventTrigger*"' in script
 
 
 def test_direct_python_launcher_has_no_broker_or_process_killing():
@@ -89,3 +43,13 @@ def test_direct_python_launcher_has_no_broker_or_process_killing():
     assert "wkey-broker" not in script.lower()
     assert "Stop-Process" not in script
     assert "taskkill" not in script.lower()
+
+
+def test_direct_python_launcher_logs_both_streams_and_exit_code():
+    script = read_script("Start-WhisperKeyboard.ps1")
+
+    assert "whisper-keyboard-startup.log" in script
+    assert "*>> $LogPath" in script
+    assert "$ExitCode" in script
+    assert "Add-Content -LiteralPath $LogPath -Value $ExitLine" in script
+    assert "exited with code" in script

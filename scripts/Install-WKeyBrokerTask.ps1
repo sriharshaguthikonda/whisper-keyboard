@@ -1,3 +1,6 @@
+# File name is legacy (from the retired Rust wkey-broker). It installs the
+# direct-python scheduled task (scripts\Start-WhisperKeyboard.ps1, hidden) —
+# the broker is retired; input ownership is Kanata (F23/F24) -> Python pynput.
 param(
     [string]$TaskName = "Whisper",
     [switch]$RunAfterInstall
@@ -8,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptDir
 $Launcher = Join-Path $ScriptDir "Start-WhisperKeyboard.ps1"
-$LauncherArguments = '-NoProfile -ExecutionPolicy Bypass -File "' + $Launcher + '"'
+$LauncherArguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $Launcher + '"'
 
 if (-not (Test-Path -LiteralPath $Launcher)) {
     throw "Python launcher not found: $Launcher"
@@ -98,7 +101,11 @@ else {
 }
 
 $exportedXml = Export-ScheduledTask -TaskName $TaskName -TaskPath "\" -ErrorAction Stop
-if ($exportedXml -notlike "*Start-WhisperKeyboard.ps1*" -or $exportedXml -notlike "*IgnoreNew*") {
+if ($exportedXml -notlike "*Start-WhisperKeyboard.ps1*" -or
+    $exportedXml -notlike "*IgnoreNew*" -or
+    $exportedXml -notlike "*-WindowStyle Hidden*" -or
+    $exportedXml -like "*-Console*" -or
+    $exportedXml -like "*EventTrigger*") {
     throw "Scheduled task XML verification failed for $TaskName"
 }
 
