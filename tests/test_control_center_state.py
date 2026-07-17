@@ -142,6 +142,21 @@ def test_apply_settings_values_persists_ask_ai_fields():
     assert fallback["ask_chatgpt_claim_timeout_sec"] == 60
 
 
+def test_apply_settings_values_persists_ask_ai_tts_fields():
+    updated = apply_settings_values(
+        {},
+        {"ask_ai_tts_enabled": False, "ask_ai_tts_max_chars": "9999"},
+    )
+
+    assert updated["ask_ai_tts_enabled"] is False
+    assert updated["ask_ai_tts_max_chars"] == 4000
+
+    snapshot = build_settings_snapshot(
+        {"ask_ai_tts_enabled": True, "ask_ai_tts_max_chars": 250}
+    )
+    assert snapshot["advanced"]["ask_ai_tts_max_chars"] == 250
+
+
 def test_settings_snapshot_includes_speaker_filter_state():
     snapshot = build_settings_snapshot(
         {

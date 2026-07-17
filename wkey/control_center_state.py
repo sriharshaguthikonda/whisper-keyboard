@@ -40,6 +40,7 @@ BOOLEAN_SETTING_FIELDS = (
     "enable_transcript_context_memory",
     "ask_ai_enabled",
     "ask_chatgpt_fallback_to_ai",
+    "ask_ai_tts_enabled",
 )
 
 SPEAKER_FILTER_PATH_FIELDS = (
@@ -57,6 +58,7 @@ INTEGER_SETTING_LIMITS = {
     "context_max_age_seconds": (15, 3600),
     "max_recording_seconds": (1, 600),
     "ask_chatgpt_claim_timeout_sec": (1, 60),
+    "ask_ai_tts_max_chars": (0, 4000),
 }
 
 FLOAT_SETTING_LIMITS = {

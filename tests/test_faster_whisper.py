@@ -142,6 +142,34 @@ def test_clean_transcript_ask_keyword_uses_ai_provider_when_configured(monkeypat
     assert calls == [("ask_ai", "summarize the referral pathway")]
 
 
+def test_ask_tts_generation_guard_drops_stale_utterance(monkeypatch, fw_module):
+    queued = []
+    monkeypatch.setattr(fw_module.voice_commands_module, "TTS_queue", types.SimpleNamespace(put=queued.append), raising=False)
+
+    first_gen = fw_module._bump_ask_tts_generation()
+    fw_module._bump_ask_tts_generation()  # a newer dispatch starts before the first speaks
+
+    fw_module._enqueue_ask_tts_speech(first_gen, "stale answer")
+    assert queued == []
+
+    current_gen = fw_module._current_ask_tts_generation()
+    fw_module._enqueue_ask_tts_speech(current_gen, "fresh answer")
+    assert queued == ["fresh answer"]
+
+
+def test_dispatch_ask_hotkey_bumps_generation(monkeypatch, fw_module):
+    import wkey.ask_ai_bridge as ask_ai_bridge_module
+
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_chatgpt", lambda question: True)
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_ai", lambda question: True)
+
+    before = fw_module._current_ask_tts_generation()
+    fw_module._dispatch_ask_hotkey("does this bump")
+    after = fw_module._current_ask_tts_generation()
+
+    assert after == before + 1
+
+
 def test_clean_transcript_ask_keyword_pastes_when_ask_ai_disabled(monkeypatch, fw_module):
     pasted = []
 

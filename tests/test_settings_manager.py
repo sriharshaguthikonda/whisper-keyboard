@@ -103,6 +103,52 @@ def test_default_speaker_filter_settings_start_in_analysis_mode():
     assert loaded["speaker_filter_apply_to"] == "dictation"
 
 
+def test_ask_ai_tts_settings_default_and_clamp(tmp_path):
+    assert DEFAULT_SETTINGS["ask_ai_tts_enabled"] is True
+    assert DEFAULT_SETTINGS["ask_ai_tts_max_chars"] == 400
+
+    defaults = load_settings("missing-transcription-config.json")
+    assert defaults["ask_ai_tts_enabled"] is True
+    assert defaults["ask_ai_tts_max_chars"] == 400
+
+    config_path = tmp_path / "transcription_config.json"
+    config_path.write_text(
+        """
+{
+  "ask_ai_tts_enabled": false,
+  "ask_ai_tts_max_chars": 99999
+}
+""",
+        encoding="utf-8",
+    )
+    loaded = load_settings(str(config_path))
+    assert loaded["ask_ai_tts_enabled"] is False
+    assert loaded["ask_ai_tts_max_chars"] == 4000
+
+    config_path.write_text(
+        """
+{
+  "ask_ai_tts_enabled": true,
+  "ask_ai_tts_max_chars": -5
+}
+""",
+        encoding="utf-8",
+    )
+    clamped_low = load_settings(str(config_path))
+    assert clamped_low["ask_ai_tts_max_chars"] == 0
+
+    config_path.write_text(
+        """
+{
+  "ask_ai_tts_max_chars": 0
+}
+""",
+        encoding="utf-8",
+    )
+    unlimited = load_settings(str(config_path))
+    assert unlimited["ask_ai_tts_max_chars"] == 0
+
+
 def test_prerecording_duration_settings_default_and_clamp(tmp_path):
     config_path = tmp_path / "transcription_config.json"
     config_path.write_text(

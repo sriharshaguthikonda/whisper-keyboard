@@ -3052,8 +3052,56 @@ def monitor_state():
 """
 
 
+# Ask-AI TTS generation guard: each _dispatch_ask_hotkey call bumps the counter so
+# that if a second F13 question comes in before the first one's answer is ready to
+# speak, the stale (first) answer is dropped instead of being spoken late/out of order.
+_ask_tts_generation_lock = threading.Lock()
+_ask_tts_generation = 0
+_ask_tts_local = threading.local()
+
+
+def _bump_ask_tts_generation():
+    global _ask_tts_generation
+    with _ask_tts_generation_lock:
+        _ask_tts_generation += 1
+        gen = _ask_tts_generation
+    _ask_tts_local.generation = gen
+    return gen
+
+
+def _current_ask_tts_generation():
+    with _ask_tts_generation_lock:
+        return _ask_tts_generation
+
+
+def _enqueue_ask_tts_speech(generation, text):
+    """Queue `text` for playback on the existing TTS_queue unless a newer ask-AI
+    dispatch has started since `generation` was captured."""
+    current = _current_ask_tts_generation()
+    if generation != current:
+        logging.info(
+            "ask_tts_stale_dropped generation=%d current=%d", generation, current
+        )
+        return
+    voice_commands_module.TTS_queue.put(text)
+
+
+def _speak_ask_ai_answer(text):
+    generation = getattr(_ask_tts_local, "generation", _current_ask_tts_generation())
+    _enqueue_ask_tts_speech(generation, text)
+
+
+def _register_ask_ai_tts_speaker():
+    try:
+        from wkey import ask_ai_bridge
+    except ImportError:
+        import ask_ai_bridge
+    ask_ai_bridge.tts_speaker = _speak_ask_ai_answer
+
+
 def _dispatch_ask_hotkey(question):
     """Route an F13 ask-AI question to ChatGPT (via job broker) or the direct AI provider."""
+    _bump_ask_tts_generation()
     provider = str(SETTINGS.get("ask_hotkey_provider", "chatgpt")).strip().lower()
     thread_name = threading.current_thread().name
     logging.info(
@@ -3474,6 +3522,7 @@ def main():
 
     try:
         register_volume_timeout_recovery_hook()
+        _register_ask_ai_tts_speaker()
         if is_python_keyboard_listener_enabled():
             init_keyboard_handler()
         start_settings_watch()

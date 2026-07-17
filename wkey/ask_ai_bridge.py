@@ -37,6 +37,20 @@ SUCCESS_BEEP = (1060, 100)
 ERROR_BEEP = (440, 180)
 JOB_MAX_AGE_SECONDS = 10 * 60
 
+# Injected by the runtime (faster_whisper_Mother_of_all_wkey) at startup: a callable
+# tts_speaker(text) that queues text for playback on the existing TTS stack. Stays
+# None (no-op) when the runtime hasn't wired it up yet, e.g. in isolated tests.
+tts_speaker = None
+
+_CODE_FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+_INLINE_CODE_RE = re.compile(r"`([^`]+)`")
+_HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s*", re.MULTILINE)
+_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*|__([^_]+)__")
+_ITALIC_RE = re.compile(r"\*([^*]+)\*|_([^_]+)_")
+_URL_RE = re.compile(r"(?:https?://|www\.)\S+", re.IGNORECASE)
+_WHITESPACE_RE = re.compile(r"\s+")
+_SENTENCE_END_RE = re.compile(r"[.!?]")
+
 _CHATGPT_VARIANTS = (
     re.compile(r"\bchat\s*g\s*p\s*t\b", re.IGNORECASE),
     re.compile(r"\bchat\s*g(?:b|p)t\b", re.IGNORECASE),
@@ -314,6 +328,53 @@ def ask_chatgpt(question):
     return False
 
 
+def _prepare_speech(text, max_chars=0):
+    """Convert an answer into plain speech text: strip markdown/URLs, then
+    truncate to max_chars (0 = unlimited) at the last sentence boundary."""
+    speech = "" if text is None else str(text)
+    speech = _CODE_FENCE_RE.sub("", speech)
+    speech = _INLINE_CODE_RE.sub(r"\1", speech)
+    speech = _HEADING_RE.sub("", speech)
+    speech = _BOLD_RE.sub(lambda m: m.group(1) or m.group(2) or "", speech)
+    # ponytail: single-star/underscore italic regex can misfire inside snake_case
+    # words; acceptable for spoken-answer cleanup, tighten if it mangles real answers.
+    speech = _ITALIC_RE.sub(lambda m: m.group(1) or m.group(2) or "", speech)
+    speech = _URL_RE.sub("link", speech)
+    speech = _WHITESPACE_RE.sub(" ", speech).strip()
+
+    try:
+        max_chars = int(max_chars)
+    except Exception:
+        max_chars = 0
+    if max_chars > 0 and len(speech) > max_chars:
+        window = speech[:max_chars]
+        boundary = -1
+        for match in _SENTENCE_END_RE.finditer(window):
+            boundary = match.end()
+        speech = (speech[:boundary] if boundary > 0 else window).strip()
+        speech = f"{speech}…"
+    return speech
+
+
+def _maybe_speak(answer):
+    try:
+        settings = _load_ask_ai_settings()
+        if not bool(settings.get("ask_ai_tts_enabled", True)):
+            return
+        if tts_speaker is None:
+            return
+        max_chars = settings.get("ask_ai_tts_max_chars", 400)
+        try:
+            max_chars = max(0, min(4000, int(max_chars)))
+        except Exception:
+            max_chars = 400
+        speech = _prepare_speech(answer, max_chars)
+        if speech:
+            tts_speaker(speech)
+    except Exception:
+        logging.warning("Ask-AI TTS speak failed", exc_info=True)
+
+
 def ask_ai(question):
     _, model, _, _, _ = _ask_ai_config()
     try:
@@ -331,6 +392,7 @@ def ask_ai(question):
             len(result.answer),
         )
         clipboard_utils.paste_transcript(result.answer)
+        _maybe_speak(result.answer)
         return True
     except Exception as exc:
         _beep(ERROR_BEEP)

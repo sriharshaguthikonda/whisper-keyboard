@@ -198,6 +198,8 @@ DEFAULT_SETTINGS = {
     "ask_chatgpt_fallback_to_ai": False,
     "ask_hotkey_provider": "chatgpt",
     "prompt_jobs_dir": r"C:\Windows_software\openai whisper\prompt_jobs",
+    "ask_ai_tts_enabled": True,
+    "ask_ai_tts_max_chars": 400,
 }
 
 
@@ -488,6 +490,7 @@ def _validate_settings(settings, defaults):
             "enable_transcript_context_memory",
             "ask_ai_enabled",
             "ask_chatgpt_fallback_to_ai",
+            "ask_ai_tts_enabled",
         ):
             merged[key] = bool(value)
         elif key in (
@@ -559,6 +562,11 @@ def _validate_settings(settings, defaults):
         elif key == "ask_hotkey_provider":
             provider = str(value or "chatgpt").strip().lower()
             merged[key] = provider if provider in ASK_HOTKEY_PROVIDERS else "chatgpt"
+        elif key == "ask_ai_tts_max_chars":
+            try:
+                merged[key] = max(0, min(4000, int(value)))
+            except Exception:
+                pass
         else:
             merged[key] = value
 

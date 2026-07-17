@@ -651,6 +651,17 @@ class WhisperControlCenter(QMainWindow):
         ask_layout.addWidget(QLabel("ChatGPT claim timeout (s)"), 3, 0)
         ask_layout.addWidget(claim_timeout, 3, 1)
 
+        speak_check = QCheckBox("Speak AI answers")
+        self.setting_widgets["ask_ai_tts_enabled"] = speak_check
+        ask_layout.addWidget(speak_check, 4, 0, 1, 2)
+
+        max_chars = QSpinBox()
+        minimum, maximum = INTEGER_SETTING_LIMITS["ask_ai_tts_max_chars"]
+        max_chars.setRange(minimum, maximum)
+        self.setting_widgets["ask_ai_tts_max_chars"] = max_chars
+        ask_layout.addWidget(QLabel("Max spoken chars (0 = unlimited)"), 5, 0)
+        ask_layout.addWidget(max_chars, 5, 1)
+
         layout.addWidget(ask_group)
         layout.addStretch(1)
         return page

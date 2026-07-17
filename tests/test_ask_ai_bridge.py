@@ -193,6 +193,7 @@ def test_ask_ai_uses_provider_router_and_pastes(monkeypatch):
         "ask_ai_model": "auto",
         "ask_chatgpt_claim_timeout_sec": 12,
         "prompt_jobs_dir": "unused",
+        "ask_ai_tts_enabled": False,
     }
     pasted = []
 
@@ -209,3 +210,155 @@ def test_ask_ai_uses_provider_router_and_pastes(monkeypatch):
 
     assert ask_ai_bridge.ask_ai("Question?") is True
     assert pasted == ["Answer."]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Here is `code` inline", "Here is code inline"),
+        ("```\nblock code\nshould vanish\n```after", "after"),
+        ("**bold** and *italic* and __also bold__ and _also italic_", "bold and italic and also bold and also italic"),
+        ("# Heading\nBody text", "Heading Body text"),
+        ("See https://example.com/path for docs", "See link for docs"),
+        ("See www.example.com for docs", "See link for docs"),
+        ("too   many\n\nspaces", "too many spaces"),
+    ],
+)
+def test_prepare_speech_strips_markdown_and_urls(raw, expected):
+    assert ask_ai_bridge._prepare_speech(raw, max_chars=0) == expected
+
+
+def test_prepare_speech_zero_max_chars_is_unlimited():
+    text = "Sentence one. " * 50
+    assert ask_ai_bridge._prepare_speech(text, max_chars=0) == text.strip()
+
+
+def test_prepare_speech_truncates_at_sentence_boundary():
+    text = "First sentence. Second sentence. Third sentence runs long."
+    result = ask_ai_bridge._prepare_speech(text, max_chars=32)
+
+    assert result == "First sentence. Second sentence.…"
+    assert result.startswith("First sentence. Second sentence")
+    assert result.endswith("…")
+    assert "Third sentence" not in result
+
+
+def test_prepare_speech_hard_cuts_when_no_sentence_boundary():
+    text = "onereallylongwordwithnopunctuationatallanywhereinit"
+    result = ask_ai_bridge._prepare_speech(text, max_chars=10)
+
+    assert result == "onereallyl…"
+
+
+def test_maybe_speak_calls_speaker_when_enabled(monkeypatch):
+    spoken = []
+    monkeypatch.setattr(
+        ask_ai_bridge,
+        "_load_ask_ai_settings",
+        lambda: {"ask_ai_tts_enabled": True, "ask_ai_tts_max_chars": 400},
+    )
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", lambda text: spoken.append(text))
+
+    ask_ai_bridge._maybe_speak("Spoken answer.")
+
+    assert spoken == ["Spoken answer."]
+
+
+def test_maybe_speak_skips_speaker_when_disabled(monkeypatch):
+    spoken = []
+    monkeypatch.setattr(
+        ask_ai_bridge,
+        "_load_ask_ai_settings",
+        lambda: {"ask_ai_tts_enabled": False, "ask_ai_tts_max_chars": 400},
+    )
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", lambda text: spoken.append(text))
+
+    ask_ai_bridge._maybe_speak("Spoken answer.")
+
+    assert spoken == []
+
+
+def test_maybe_speak_noop_when_no_speaker_registered(monkeypatch):
+    monkeypatch.setattr(
+        ask_ai_bridge,
+        "_load_ask_ai_settings",
+        lambda: {"ask_ai_tts_enabled": True, "ask_ai_tts_max_chars": 400},
+    )
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", None)
+
+    ask_ai_bridge._maybe_speak("Spoken answer.")  # must not raise
+
+
+def test_ask_ai_speaks_direct_provider_answer(monkeypatch):
+    spoken = []
+    settings = {
+        "ask_ai_enabled": True,
+        "ask_ai_model": "auto",
+        "ask_chatgpt_claim_timeout_sec": 12,
+        "prompt_jobs_dir": "unused",
+        "ask_ai_tts_enabled": True,
+        "ask_ai_tts_max_chars": 400,
+    }
+
+    def complete_ask_ai(question, *, configured_model, timeout_seconds, max_tokens):
+        return types.SimpleNamespace(answer="Spoken answer.", provider="cerebras", model="test-model")
+
+    monkeypatch.setattr(ask_ai_bridge, "_load_ask_ai_settings", lambda: settings)
+    monkeypatch.setattr(ask_ai_bridge, "complete_ask_ai", complete_ask_ai)
+    monkeypatch.setattr(ask_ai_bridge.clipboard_utils, "paste_transcript", lambda text: None)
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", lambda text: spoken.append(text))
+
+    assert ask_ai_bridge.ask_ai("Question?") is True
+    assert spoken == ["Spoken answer."]
+
+
+def test_ask_ai_return_value_unaffected_by_speaker_error(monkeypatch):
+    settings = {
+        "ask_ai_enabled": True,
+        "ask_ai_model": "auto",
+        "ask_chatgpt_claim_timeout_sec": 12,
+        "prompt_jobs_dir": "unused",
+        "ask_ai_tts_enabled": True,
+        "ask_ai_tts_max_chars": 400,
+    }
+
+    def complete_ask_ai(question, *, configured_model, timeout_seconds, max_tokens):
+        return types.SimpleNamespace(answer="Spoken answer.", provider="cerebras", model="test-model")
+
+    def broken_speaker(text):
+        raise RuntimeError("tts backend exploded")
+
+    monkeypatch.setattr(ask_ai_bridge, "_load_ask_ai_settings", lambda: settings)
+    monkeypatch.setattr(ask_ai_bridge, "complete_ask_ai", complete_ask_ai)
+    monkeypatch.setattr(ask_ai_bridge.clipboard_utils, "paste_transcript", lambda text: None)
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", broken_speaker)
+
+    assert ask_ai_bridge.ask_ai("Question?") is True
+
+
+def test_ask_chatgpt_claimed_success_does_not_speak(monkeypatch, tmp_path):
+    settings = {
+        "ask_ai_enabled": True,
+        "ask_ai_model": "groq/compound",
+        "ask_chatgpt_claim_timeout_sec": 12,
+        "prompt_jobs_dir": str(tmp_path),
+        "ask_ai_tts_enabled": True,
+        "ask_ai_tts_max_chars": 400,
+    }
+    spoken = []
+    original_write = ask_ai_bridge._write_job_atomic
+
+    def write_and_claim(jobs_dir, question, job_id=None):
+        result = original_write(jobs_dir, question, job_id="20260707T000000000000Z_deadbeef")
+        (tmp_path / "job_20260707T000000000000Z_deadbeef.claimed.browser.json").write_text(
+            "{}", encoding="utf-8"
+        )
+        return result
+
+    monkeypatch.setattr(ask_ai_bridge, "_load_ask_ai_settings", lambda: settings)
+    monkeypatch.setattr(ask_ai_bridge, "_write_job_atomic", write_and_claim)
+    monkeypatch.setattr(ask_ai_bridge, "_beep", lambda pattern: None)
+    monkeypatch.setattr(ask_ai_bridge, "tts_speaker", lambda text: spoken.append(text))
+
+    assert ask_ai_bridge.ask_chatgpt("What is next?") is True
+    assert spoken == []
