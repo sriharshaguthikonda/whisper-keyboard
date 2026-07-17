@@ -155,6 +155,9 @@ def _overlay_loop(cmd_queue):
         _destroy_current()
         toplevel = tk.Toplevel(root)
         current["toplevel"] = toplevel
+        # Keep hidden until the no-activate ex-styles are applied so the toast
+        # can never grab focus even for one frame (worst bug in a keyboard tool).
+        toplevel.withdraw()
         toplevel.overrideredirect(True)
         toplevel.attributes("-topmost", True)
         try:
@@ -179,8 +182,8 @@ def _overlay_loop(cmd_queue):
         y = root.winfo_pointery() + offset_px
         x, y = _clamp_position(root, x, y, width, height)
         toplevel.geometry(f"+{x}+{y}")
-        toplevel.deiconify()
         _apply_no_activate(toplevel)
+        toplevel.deiconify()
 
         steps = 10
 

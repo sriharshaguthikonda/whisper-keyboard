@@ -39,6 +39,12 @@ CLIPBOARD_RETRY_MAX_SECONDS = _env_float(
 )
 CLIPBOARD_LOCK = threading.Lock()
 COPYQ_RESTART_LOCK = threading.Lock()
+# Serializes the whole save->set->paste->restore transaction. Without it, two
+# concurrent paste_transcript calls (e.g. an ask-AI answer thread and the
+# dictation pipeline) can save each other's transcript as the "original"
+# clipboard and cross-restore. All paste callers route through paste_transcript,
+# so one lock here fixes every path.
+PASTE_TRANSACTION_LOCK = threading.Lock()
 COPYQ_RESTART_COOLDOWN_SECONDS = 5.0
 COPYQ_RETRY_WAIT_SECONDS = 1.0
 COPYQ_SERVER_DOWN_TEXT = "cannot connect to server"
@@ -339,29 +345,30 @@ def paste_transcript(
         if not cleaned:
             return
 
-        # Save original clipboard content
-        original_clipboard = get_clipboard_content()
+        with PASTE_TRANSACTION_LOCK:
+            # Save original clipboard content
+            original_clipboard = get_clipboard_content()
 
-        # Set transcript to clipboard and paste using CopyQ if available
-        set_clipboard_content(cleaned)
+            # Set transcript to clipboard and paste using CopyQ if available
+            set_clipboard_content(cleaned)
 
-        # Try to use CopyQ paste first, fallback to Ctrl+V
-        paste_result = _copyq_paste(
-            status_callback=status_callback,
-            beep_func=beep_func,
-            recovery_beep=recovery_beep,
-        )
-        if not paste_result.success:
-            _emit_status(status_callback, "CopyQ unavailable; using standard paste")
-            _send_ctrl_v()
+            # Try to use CopyQ paste first, fallback to Ctrl+V
+            paste_result = _copyq_paste(
+                status_callback=status_callback,
+                beep_func=beep_func,
+                recovery_beep=recovery_beep,
+            )
+            if not paste_result.success:
+                _emit_status(status_callback, "CopyQ unavailable; using standard paste")
+                _send_ctrl_v()
 
-        # Add transcript to CopyQ history (as second item so it's accessible but not active)
-        if original_clipboard:
-            set_clipboard_content(original_clipboard)
-            history_result = _copyq_insert_second_item(cleaned)
-        else:
-            # If clipboard was empty, just add transcript to CopyQ history
-            history_result = _copyq_insert_second_item(cleaned)
+            # Add transcript to CopyQ history (as second item so it's accessible but not active)
+            if original_clipboard:
+                set_clipboard_content(original_clipboard)
+                history_result = _copyq_insert_second_item(cleaned)
+            else:
+                # If clipboard was empty, just add transcript to CopyQ history
+                history_result = _copyq_insert_second_item(cleaned)
 
         if not paste_result.success:
             logging.info("pasted via fallback after CopyQ restart failure")
