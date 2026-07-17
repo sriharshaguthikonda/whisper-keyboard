@@ -23,11 +23,12 @@ except Exception:  # pragma: no cover
     Groq = None
 
 try:
-    from . import clipboard_utils
+    from . import clipboard_utils, overlay_notify
     from .ask_ai_providers import complete_ask_ai
     from .settings_manager import DEFAULT_SETTINGS, load_settings
 except ImportError:  # pragma: no cover - script-style imports
     import clipboard_utils
+    import overlay_notify
     from ask_ai_providers import complete_ask_ai
     from settings_manager import DEFAULT_SETTINGS, load_settings
 
@@ -310,6 +311,7 @@ def ask_chatgpt(question):
             for name in os.listdir(jobs_dir):
                 if name.startswith(claim_prefix):
                     _beep(SUCCESS_BEEP)
+                    overlay_notify.notify("ChatGPT answering…")
                     return True
         except FileNotFoundError:
             os.makedirs(jobs_dir, exist_ok=True)
@@ -322,9 +324,11 @@ def ask_chatgpt(question):
         logging.warning("Failed to delete stale Ask-AI pending job %s: %s", pending_path, exc)
     if fallback_to_ai:
         logging.warning("Ask-AI ChatGPT job was not claimed; using direct provider fallback")
+        overlay_notify.notify("ChatGPT unavailable — using AI provider")
         return ask_ai(question)
     logging.warning("Ask-AI ChatGPT job was not claimed; direct provider fallback is disabled")
     _beep(ERROR_BEEP)
+    overlay_notify.notify("ChatGPT did not answer", kind="error")
     return False
 
 
@@ -392,9 +396,11 @@ def ask_ai(question):
             len(result.answer),
         )
         clipboard_utils.paste_transcript(result.answer)
+        overlay_notify.notify("AI answered")
         _maybe_speak(result.answer)
         return True
     except Exception as exc:
         _beep(ERROR_BEEP)
         logging.error("Ask-AI provider request failed: %s", exc, exc_info=True)
+        overlay_notify.notify("AI request failed", kind="error")
         return False

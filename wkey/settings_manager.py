@@ -200,6 +200,11 @@ DEFAULT_SETTINGS = {
     "prompt_jobs_dir": r"C:\Windows_software\openai whisper\prompt_jobs",
     "ask_ai_tts_enabled": True,
     "ask_ai_tts_max_chars": 400,
+    "overlay_enabled": True,
+    "overlay_duration_ms": 1500,
+    "overlay_opacity": 0.85,
+    "overlay_font_size": 11,
+    "overlay_offset_px": 24,
 }
 
 
@@ -491,6 +496,7 @@ def _validate_settings(settings, defaults):
             "ask_ai_enabled",
             "ask_chatgpt_fallback_to_ai",
             "ask_ai_tts_enabled",
+            "overlay_enabled",
         ):
             merged[key] = bool(value)
         elif key in (
@@ -565,6 +571,26 @@ def _validate_settings(settings, defaults):
         elif key == "ask_ai_tts_max_chars":
             try:
                 merged[key] = max(0, min(4000, int(value)))
+            except Exception:
+                pass
+        elif key == "overlay_duration_ms":
+            try:
+                merged[key] = max(200, min(10000, int(value)))
+            except Exception:
+                pass
+        elif key == "overlay_font_size":
+            try:
+                merged[key] = max(8, min(24, int(value)))
+            except Exception:
+                pass
+        elif key == "overlay_offset_px":
+            try:
+                merged[key] = max(0, min(200, int(value)))
+            except Exception:
+                pass
+        elif key == "overlay_opacity":
+            try:
+                merged[key] = max(0.2, min(1.0, float(value)))
             except Exception:
                 pass
         else:

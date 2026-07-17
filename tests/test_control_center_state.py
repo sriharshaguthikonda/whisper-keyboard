@@ -157,6 +157,38 @@ def test_apply_settings_values_persists_ask_ai_tts_fields():
     assert snapshot["advanced"]["ask_ai_tts_max_chars"] == 250
 
 
+def test_apply_settings_values_persists_overlay_fields():
+    updated = apply_settings_values(
+        {},
+        {
+            "overlay_enabled": False,
+            "overlay_duration_ms": "99999",
+            "overlay_opacity": "5.0",
+            "overlay_font_size": "999",
+            "overlay_offset_px": "-50",
+        },
+    )
+
+    assert updated["overlay_enabled"] is False
+    assert updated["overlay_duration_ms"] == 10000
+    assert updated["overlay_opacity"] == 1.0
+    assert updated["overlay_font_size"] == 24
+    assert updated["overlay_offset_px"] == 0
+
+    snapshot = build_settings_snapshot(
+        {
+            "overlay_duration_ms": 900,
+            "overlay_opacity": 0.5,
+            "overlay_font_size": 14,
+            "overlay_offset_px": 30,
+        }
+    )
+    assert snapshot["advanced"]["overlay_duration_ms"] == 900
+    assert snapshot["advanced"]["overlay_opacity"] == 0.5
+    assert snapshot["advanced"]["overlay_font_size"] == 14
+    assert snapshot["advanced"]["overlay_offset_px"] == 30
+
+
 def test_settings_snapshot_includes_speaker_filter_state():
     snapshot = build_settings_snapshot(
         {

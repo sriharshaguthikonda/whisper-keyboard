@@ -6,6 +6,11 @@ from queue import Empty as QueueEmpty
 
 from scipy.io.wavfile import write as wav_write
 
+try:
+    from . import overlay_notify
+except ImportError:  # pragma: no cover - script-style imports
+    import overlay_notify
+
 
 DEFAULT_GROQ_FAILURES_BEFORE_CPU = 3
 
@@ -252,6 +257,7 @@ class TranscriptionPipeline:
 
                 if transcript is None:
                     self.log.error("All transcription attempts failed")
+                    overlay_notify.notify("Transcription failed", kind="error")
                     continue
 
                 if not str(transcript).strip():
@@ -301,6 +307,10 @@ class TranscriptionPipeline:
                         len(transcript or ""),
                         len(transcript_stripped),
                     )
+                    preview = transcript_stripped[:40]
+                    if len(transcript_stripped) > 40:
+                        preview += "…"
+                    overlay_notify.notify(f"Pasted: {preview}")
                     self.paste_transcript(transcript, self.beep)
                     continue
                 if keyword_index == 1 and "computer" in transcript_lower:

@@ -103,6 +103,55 @@ def test_default_speaker_filter_settings_start_in_analysis_mode():
     assert loaded["speaker_filter_apply_to"] == "dictation"
 
 
+def test_overlay_settings_default_and_clamp(tmp_path):
+    assert DEFAULT_SETTINGS["overlay_enabled"] is True
+    assert DEFAULT_SETTINGS["overlay_duration_ms"] == 1500
+    assert DEFAULT_SETTINGS["overlay_opacity"] == 0.85
+    assert DEFAULT_SETTINGS["overlay_font_size"] == 11
+    assert DEFAULT_SETTINGS["overlay_offset_px"] == 24
+
+    defaults = load_settings("missing-transcription-config.json")
+    assert defaults["overlay_enabled"] is True
+    assert defaults["overlay_duration_ms"] == 1500
+
+    config_path = tmp_path / "transcription_config.json"
+    config_path.write_text(
+        """
+{
+  "overlay_enabled": false,
+  "overlay_duration_ms": 99999,
+  "overlay_opacity": 5.0,
+  "overlay_font_size": 999,
+  "overlay_offset_px": -50
+}
+""",
+        encoding="utf-8",
+    )
+    loaded = load_settings(str(config_path))
+    assert loaded["overlay_enabled"] is False
+    assert loaded["overlay_duration_ms"] == 10000
+    assert loaded["overlay_opacity"] == 1.0
+    assert loaded["overlay_font_size"] == 24
+    assert loaded["overlay_offset_px"] == 0
+
+    config_path.write_text(
+        """
+{
+  "overlay_duration_ms": 1,
+  "overlay_opacity": -1.0,
+  "overlay_font_size": 1,
+  "overlay_offset_px": -1
+}
+""",
+        encoding="utf-8",
+    )
+    clamped_low = load_settings(str(config_path))
+    assert clamped_low["overlay_duration_ms"] == 200
+    assert clamped_low["overlay_opacity"] == 0.2
+    assert clamped_low["overlay_font_size"] == 8
+    assert clamped_low["overlay_offset_px"] == 0
+
+
 def test_ask_ai_tts_settings_default_and_clamp(tmp_path):
     assert DEFAULT_SETTINGS["ask_ai_tts_enabled"] is True
     assert DEFAULT_SETTINGS["ask_ai_tts_max_chars"] == 400

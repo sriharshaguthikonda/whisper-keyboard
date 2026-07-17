@@ -2173,6 +2173,18 @@ def start_recording(keyword_index=None):
             last_key_injected,
             rearm_state,
         )
+        try:
+            from wkey import overlay_notify
+        except ImportError:
+            import overlay_notify
+        if keyword_index is None:
+            overlay_notify.notify("Listening — dictation")
+        elif keyword_index == 0:
+            overlay_notify.notify("Listening — command")
+        elif keyword_index == 4:
+            overlay_notify.notify("Listening — ask AI")
+        else:
+            overlay_notify.notify("Listening")
 
         if not initialize_input_stream():
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
@@ -2315,6 +2327,11 @@ def stop_recording(keyword_index):
             claimed_session_id,
             keyword_index,
         )
+        try:
+            from wkey import overlay_notify
+        except ImportError:
+            import overlay_notify
+        overlay_notify.notify("Processing…")
 
         if keyword_index in (1, 2, 3) and not keyword_validation_event.is_set():
             keyword_validation_event.wait(timeout=KEYWORD_VALIDATION_TIMEOUT)
@@ -2373,6 +2390,11 @@ def stop_recording(keyword_index):
                     manual_duration_seconds,
                     MIN_MANUAL_RECORDING_SECONDS,
                 )
+                try:
+                    from wkey import overlay_notify
+                except ImportError:
+                    import overlay_notify
+                overlay_notify.notify("Too short — dropped")
                 _restore_volume_all_async(delay_seconds=restore_delay_seconds)
                 audio_buffer = []
 
@@ -3112,9 +3134,11 @@ def _dispatch_ask_hotkey(question):
     )
     try:
         try:
-            from wkey import ask_ai_bridge
+            from wkey import ask_ai_bridge, overlay_notify
         except ImportError:
             import ask_ai_bridge
+            import overlay_notify
+        overlay_notify.notify("Asking ChatGPT…" if provider != "ai" else "Asking AI…")
         if provider == "ai":
             result = ask_ai_bridge.ask_ai(question)
         else:
@@ -3126,6 +3150,8 @@ def _dispatch_ask_hotkey(question):
             result,
             thread_name,
         )
+        if not result:
+            overlay_notify.notify("Ask AI failed", kind="error")
     except Exception:
         logging.error(
             "ask_hotkey_dispatch_exception provider=%s question_len=%d thread=%s",

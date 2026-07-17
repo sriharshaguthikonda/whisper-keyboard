@@ -668,6 +668,45 @@ class WhisperControlCenter(QMainWindow):
 
     def _diagnostics_section(self):
         page, layout = self._page("Diagnostics")
+
+        overlay_group = QGroupBox("Overlay")
+        overlay_layout = QGridLayout(overlay_group)
+        overlay_enabled = QCheckBox("Show cursor-adjacent feedback toast")
+        self.setting_widgets["overlay_enabled"] = overlay_enabled
+        overlay_layout.addWidget(overlay_enabled, 0, 0, 1, 2)
+
+        duration = QSpinBox()
+        minimum, maximum = INTEGER_SETTING_LIMITS["overlay_duration_ms"]
+        duration.setRange(minimum, maximum)
+        self.setting_widgets["overlay_duration_ms"] = duration
+        overlay_layout.addWidget(QLabel("Duration (ms)"), 1, 0)
+        overlay_layout.addWidget(duration, 1, 1)
+
+        opacity = QDoubleSpinBox()
+        opacity.setDecimals(2)
+        opacity.setSingleStep(0.05)
+        minimum, maximum = FLOAT_SETTING_LIMITS["overlay_opacity"]
+        opacity.setRange(minimum, maximum)
+        self.setting_widgets["overlay_opacity"] = opacity
+        overlay_layout.addWidget(QLabel("Opacity"), 2, 0)
+        overlay_layout.addWidget(opacity, 2, 1)
+
+        font_size = QSpinBox()
+        minimum, maximum = INTEGER_SETTING_LIMITS["overlay_font_size"]
+        font_size.setRange(minimum, maximum)
+        self.setting_widgets["overlay_font_size"] = font_size
+        overlay_layout.addWidget(QLabel("Font size"), 3, 0)
+        overlay_layout.addWidget(font_size, 3, 1)
+
+        offset_px = QSpinBox()
+        minimum, maximum = INTEGER_SETTING_LIMITS["overlay_offset_px"]
+        offset_px.setRange(minimum, maximum)
+        self.setting_widgets["overlay_offset_px"] = offset_px
+        overlay_layout.addWidget(QLabel("Cursor offset (px)"), 4, 0)
+        overlay_layout.addWidget(offset_px, 4, 1)
+
+        layout.addWidget(overlay_group)
+
         controls = QHBoxLayout()
         self.diagnostic_seconds = QSpinBox()
         self.diagnostic_seconds.setRange(1, 300)

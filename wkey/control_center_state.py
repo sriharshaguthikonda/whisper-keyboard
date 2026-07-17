@@ -41,6 +41,7 @@ BOOLEAN_SETTING_FIELDS = (
     "ask_ai_enabled",
     "ask_chatgpt_fallback_to_ai",
     "ask_ai_tts_enabled",
+    "overlay_enabled",
 )
 
 SPEAKER_FILTER_PATH_FIELDS = (
@@ -59,12 +60,16 @@ INTEGER_SETTING_LIMITS = {
     "max_recording_seconds": (1, 600),
     "ask_chatgpt_claim_timeout_sec": (1, 60),
     "ask_ai_tts_max_chars": (0, 4000),
+    "overlay_duration_ms": (200, 10000),
+    "overlay_font_size": (8, 24),
+    "overlay_offset_px": (0, 200),
 }
 
 FLOAT_SETTING_LIMITS = {
     "google_wake_volume_hold_seconds": (0.0, 30.0),
     "manual_pre_recording_seconds": (0.0, 5.0),
     "wake_pre_recording_seconds": (0.0, 10.0),
+    "overlay_opacity": (0.2, 1.0),
 }
 
 ADVANCED_SETTING_FIELDS = tuple(INTEGER_SETTING_LIMITS) + tuple(FLOAT_SETTING_LIMITS)
