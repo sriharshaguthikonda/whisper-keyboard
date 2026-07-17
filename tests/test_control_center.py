@@ -4,7 +4,15 @@ import sys
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtWidgets import QApplication, QCheckBox, QComboBox, QDoubleSpinBox, QLineEdit
+from PyQt6.QtCore import QRect
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QLineEdit,
+    QScrollArea,
+)
 
 from wkey.backend_process import RuntimeStatus
 from wkey.settings_manager import DEFAULT_SETTINGS, save_settings
@@ -17,6 +25,34 @@ def qt_app():
     global _QT_APP
     _QT_APP = QApplication.instance() or QApplication(sys.argv)
     return _QT_APP
+
+
+def _build_window(tmp_path, monkeypatch, settings_overrides=None):
+    import wkey.control_center as control_center
+
+    monkeypatch.setattr(
+        control_center,
+        "get_runtime_status",
+        lambda settings, config_path: RuntimeStatus(
+            backend_pids=(),
+            running=False,
+            runtime_mode="keyboard",
+            active_keys="F24, Right Ctrl",
+            pause_state="RUNNING",
+            config_path=str(config_path),
+            last_launch_command="python backend",
+        ),
+    )
+    monkeypatch.setattr(
+        control_center.WhisperControlCenter,
+        "_scheduled_task_summary",
+        lambda self: "not checked",
+    )
+    config_path = tmp_path / "settings.json"
+    settings = dict(DEFAULT_SETTINGS)
+    settings.update(settings_overrides or {})
+    save_settings(config_path, settings)
+    return control_center.WhisperControlCenter(config_path=config_path)
 
 
 def test_control_center_exposes_speaker_filter_controls(tmp_path, monkeypatch):
@@ -146,6 +182,53 @@ def test_control_center_updates_speaker_filter_status_labels(tmp_path, monkeypat
         assert window.speaker_filter_last_duration_label.text() == "accepted 1.25s / rejected 0.75s"
     finally:
         window.close()
+
+
+def test_control_center_stack_pages_are_scrollable(tmp_path, monkeypatch):
+    qt_app()
+    window = _build_window(tmp_path, monkeypatch)
+    try:
+        assert window.stack.count() == 7
+        for index in range(window.stack.count()):
+            page = window.stack.widget(index)
+            assert isinstance(page, QScrollArea)
+            assert page.widget() is not None
+    finally:
+        window.close()
+
+
+def test_control_center_minimum_size_fits_small_screens(tmp_path, monkeypatch):
+    qt_app()
+    window = _build_window(tmp_path, monkeypatch)
+    try:
+        min_size = window.minimumSize()
+        assert min_size.width() <= 640
+        assert min_size.height() <= 480
+    finally:
+        window.close()
+
+
+def test_control_center_resize_small_does_not_raise(tmp_path, monkeypatch):
+    app = qt_app()
+    window = _build_window(tmp_path, monkeypatch)
+    try:
+        window.resize(700, 500)
+        window.show()
+        app.processEvents()
+    finally:
+        window.close()
+
+
+def test_geometry_needs_recenter_guard():
+    from wkey.control_center import geometry_needs_recenter
+
+    screen_rects = [QRect(0, 0, 1920, 1080)]
+    onscreen = QRect(100, 100, 800, 600)
+    offscreen = QRect(5000, 5000, 800, 600)
+
+    assert geometry_needs_recenter(onscreen, screen_rects) is False
+    assert geometry_needs_recenter(offscreen, screen_rects) is True
+    assert geometry_needs_recenter(onscreen, []) is True
 
 
 def test_control_center_shows_backend_health_summary(tmp_path, monkeypatch):

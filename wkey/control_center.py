@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import os
 from pathlib import Path
 import subprocess
 import threading
+from typing import Iterable
 
-from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QAction, QFont, QIcon, QPalette
+from PyQt6.QtCore import QEvent, QLockFile, QRect, QSettings, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QAction, QFont, QGuiApplication, QIcon, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -28,6 +30,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QMenu,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
@@ -58,6 +61,7 @@ try:
     )
     from .pause_control import set_pause_state, toggle_pause_state
     from .pause_flag_path import get_pause_flag_path
+    from .runtime_paths import ensure_runtime_dir
     from .settings_manager import (
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
@@ -86,6 +90,7 @@ except ImportError:
     )
     from pause_control import set_pause_state, toggle_pause_state
     from pause_flag_path import get_pause_flag_path
+    from runtime_paths import ensure_runtime_dir
     from settings_manager import (
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
@@ -148,6 +153,21 @@ SETTING_LABELS = {
 }
 
 
+def _wrap_scroll(widget: QWidget) -> QScrollArea:
+    """Wrap a section page in a scroll area so small windows never clip content."""
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.Shape.NoFrame)
+    scroll.setWidget(widget)
+    return scroll
+
+
+def geometry_needs_recenter(rect: QRect, screen_rects: Iterable[QRect]) -> bool:
+    """True when rect does not intersect any given screen rect (e.g. stale geometry
+    from a monitor/DPI setup that's no longer attached)."""
+    return not any(rect.intersects(screen_rect) for screen_rect in screen_rects)
+
+
 class WhisperControlCenter(QMainWindow):
     diagnostic_finished = pyqtSignal(str)
 
@@ -166,8 +186,9 @@ class WhisperControlCenter(QMainWindow):
         self.speaker_filter_status_path = REPO_ROOT / "wkey" / "speaker_filter_status.json"
 
         self.setWindowTitle("Whisper Keyboard Control Center")
-        self.setMinimumSize(960, 640)
+        self.setMinimumSize(640, 480)
         self.resize(1120, 720)
+        self._restore_geometry()
 
         self.diagnostic_finished.connect(self._diagnostic_complete)
         self._build_ui()
@@ -202,14 +223,36 @@ class WhisperControlCenter(QMainWindow):
         self.stack = QStackedWidget()
         layout.addWidget(self.stack, 1)
 
-        self.stack.addWidget(self._dashboard_section())
-        self.stack.addWidget(self._hotkeys_section())
-        self.stack.addWidget(self._transcription_section())
-        self.stack.addWidget(self._voice_commands_section())
-        self.stack.addWidget(self._diagnostics_section())
-        self.stack.addWidget(self._startup_section())
-        self.stack.addWidget(self._logs_section())
+        self.stack.addWidget(_wrap_scroll(self._dashboard_section()))
+        self.stack.addWidget(_wrap_scroll(self._hotkeys_section()))
+        self.stack.addWidget(_wrap_scroll(self._transcription_section()))
+        self.stack.addWidget(_wrap_scroll(self._voice_commands_section()))
+        self.stack.addWidget(_wrap_scroll(self._diagnostics_section()))
+        self.stack.addWidget(_wrap_scroll(self._startup_section()))
+        self.stack.addWidget(_wrap_scroll(self._logs_section()))
         self.sidebar.setCurrentRow(0)
+
+    def _restore_geometry(self):
+        settings = QSettings("WhisperKeyboard", "ControlCenter")
+        saved = settings.value("geometry")
+        if not saved or not self.restoreGeometry(saved):
+            self._center_on_primary()
+            return
+        screen_rects = [screen.availableGeometry() for screen in QGuiApplication.screens()]
+        if geometry_needs_recenter(self.frameGeometry(), screen_rects):
+            self._center_on_primary()
+
+    def _center_on_primary(self):
+        screen = QGuiApplication.primaryScreen()
+        if screen is None:
+            return
+        frame = self.frameGeometry()
+        frame.moveCenter(screen.availableGeometry().center())
+        self.move(frame.topLeft())
+
+    def _save_geometry(self):
+        settings = QSettings("WhisperKeyboard", "ControlCenter")
+        settings.setValue("geometry", self.saveGeometry())
 
     def _connect_system_theme_updates(self):
         app = QApplication.instance()
@@ -1028,6 +1071,7 @@ class WhisperControlCenter(QMainWindow):
             QTimer.singleShot(0, self.hide)
 
     def closeEvent(self, event):
+        self._save_geometry()
         if self._should_minimize_to_tray():
             event.ignore()
             self.hide()
@@ -1042,11 +1086,50 @@ class WhisperControlCenter(QMainWindow):
         super().closeEvent(event)
 
 
+def _configure_gui_logging() -> Path:
+    runtime_dir = ensure_runtime_dir()
+    log_path = runtime_dir / "gui-startup.log"
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    root_logger.addHandler(file_handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    root_logger.addHandler(console_handler)
+    return log_path
+
+
+def _acquire_single_instance_lock() -> QLockFile | None:
+    """Return a held QLockFile, or None if another instance already holds it.
+    setStaleLockTime lets a crashed GUI's stale lock be reclaimed automatically."""
+    runtime_dir = ensure_runtime_dir()
+    lock = QLockFile(str(runtime_dir / "control_center.lock"))
+    lock.setStaleLockTime(30000)
+    if not lock.tryLock(100):
+        return None
+    return lock
+
+
 def main():
-    app = QApplication([])
-    window = WhisperControlCenter()
-    window.show()
-    return app.exec()
+    _configure_gui_logging()
+    logger = logging.getLogger(__name__)
+    try:
+        lock = _acquire_single_instance_lock()
+        if lock is None:
+            logger.info("Whisper Control Center already running; exiting")
+            return 0
+        logger.info("Starting Whisper Control Center")
+        app = QApplication([])
+        window = WhisperControlCenter()
+        window.show()
+        exit_code = app.exec()
+        lock.unlock()
+        return exit_code
+    except Exception:
+        logger.exception("Control center crashed during startup")
+        raise
 
 
 if __name__ == "__main__":
