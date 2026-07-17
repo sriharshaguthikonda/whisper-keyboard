@@ -63,6 +63,7 @@ try:
     from .pause_flag_path import get_pause_flag_path
     from .runtime_paths import ensure_runtime_dir
     from .settings_manager import (
+        ASK_HOTKEY_PROVIDERS,
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
         load_settings,
@@ -92,6 +93,7 @@ except ImportError:
     from pause_flag_path import get_pause_flag_path
     from runtime_paths import ensure_runtime_dir
     from settings_manager import (
+        ASK_HOTKEY_PROVIDERS,
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
         load_settings,
@@ -113,6 +115,7 @@ SECTION_NAMES = (
 HOTKEY_PROFILE_ORDER = (
     "dictation",
     "command",
+    "ask_ai",
     "pause_resume",
     "pause_15m",
     "pause_60m",
@@ -124,6 +127,7 @@ HOTKEY_PROFILE_ORDER = (
 TRIGGER_PRESETS = {
     "dictation": ("ctrl_r", "f23", "ctrl_r+shift+a", ""),
     "command": ("f24", "ctrl_r+shift+f24", ""),
+    "ask_ai": ("f13", ""),
     "pause_resume": ("ctrl+shift+p", ""),
     "pause_15m": ("ctrl+shift+1", ""),
     "pause_60m": ("ctrl+shift+2", ""),
@@ -622,6 +626,32 @@ class WhisperControlCenter(QMainWindow):
         grid.addWidget(QLabel("Groq"), 2, 0)
         grid.addWidget(self.voice_groq_label, 2, 1)
         layout.addWidget(group)
+
+        ask_group = QGroupBox("Ask AI")
+        ask_layout = QGridLayout(ask_group)
+        ask_enabled = QCheckBox("Enabled")
+        self.setting_widgets["ask_ai_enabled"] = ask_enabled
+        ask_layout.addWidget(ask_enabled, 0, 0, 1, 2)
+
+        provider_combo = QComboBox()
+        for provider in ASK_HOTKEY_PROVIDERS:
+            provider_combo.addItem(provider, provider)
+        self.setting_widgets["ask_hotkey_provider"] = provider_combo
+        ask_layout.addWidget(QLabel("Provider"), 1, 0)
+        ask_layout.addWidget(provider_combo, 1, 1)
+
+        fallback_check = QCheckBox("Fall back to direct AI if ChatGPT job unclaimed")
+        self.setting_widgets["ask_chatgpt_fallback_to_ai"] = fallback_check
+        ask_layout.addWidget(fallback_check, 2, 0, 1, 2)
+
+        claim_timeout = QSpinBox()
+        minimum, maximum = INTEGER_SETTING_LIMITS["ask_chatgpt_claim_timeout_sec"]
+        claim_timeout.setRange(minimum, maximum)
+        self.setting_widgets["ask_chatgpt_claim_timeout_sec"] = claim_timeout
+        ask_layout.addWidget(QLabel("ChatGPT claim timeout (s)"), 3, 0)
+        ask_layout.addWidget(claim_timeout, 3, 1)
+
+        layout.addWidget(ask_group)
         layout.addStretch(1)
         return page
 

@@ -8,6 +8,7 @@ from typing import Mapping
 
 try:
     from .settings_manager import (
+        ASK_HOTKEY_PROVIDERS,
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
         normalize_hotkey_profiles,
@@ -18,6 +19,7 @@ try:
     )
 except ImportError:
     from settings_manager import (
+        ASK_HOTKEY_PROVIDERS,
         DEFAULT_SETTINGS,
         SPEAKER_FILTER_MODES,
         normalize_hotkey_profiles,
@@ -36,6 +38,8 @@ BOOLEAN_SETTING_FIELDS = (
     "enable_wakeword_detection",
     "enable_pre_recording_keyword_check",
     "enable_transcript_context_memory",
+    "ask_ai_enabled",
+    "ask_chatgpt_fallback_to_ai",
 )
 
 SPEAKER_FILTER_PATH_FIELDS = (
@@ -52,6 +56,7 @@ INTEGER_SETTING_LIMITS = {
     "router_context_chars": (80, 1200),
     "context_max_age_seconds": (15, 3600),
     "max_recording_seconds": (1, 600),
+    "ask_chatgpt_claim_timeout_sec": (1, 60),
 }
 
 FLOAT_SETTING_LIMITS = {
@@ -80,6 +85,11 @@ def _normalize_theme_mode(value):
 def _normalize_speaker_filter_mode(value):
     mode = str(value or "analysis").strip().lower()
     return mode if mode in SPEAKER_FILTER_MODES else "analysis"
+
+
+def _normalize_ask_hotkey_provider(value):
+    provider = str(value or "chatgpt").strip().lower()
+    return provider if provider in ASK_HOTKEY_PROVIDERS else "chatgpt"
 
 
 def _clamp_int(value, minimum, maximum):
@@ -157,6 +167,11 @@ def apply_settings_values(settings: Mapping[str, object], values: Mapping[str, o
 
     if "speaker_filter_apply_to" in values:
         updated["speaker_filter_apply_to"] = "dictation"
+
+    if "ask_hotkey_provider" in values:
+        updated["ask_hotkey_provider"] = _normalize_ask_hotkey_provider(
+            values["ask_hotkey_provider"]
+        )
 
     profile_source = values.get("hotkey_profiles", updated.get("hotkey_profiles"))
     updated["hotkey_profiles"] = normalize_hotkey_profiles(

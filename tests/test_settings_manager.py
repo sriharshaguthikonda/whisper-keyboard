@@ -10,6 +10,7 @@ from wkey.settings_manager import (
     record_keys_from_hotkey_profiles,
     runtime_mode_for_settings,
     save_settings,
+    trigger_routes_from_hotkey_profiles,
 )
 
 
@@ -128,6 +129,7 @@ def test_f23_dictation_profile_derives_active_record_keys():
     profiles["dictation"]["enabled"] = True
     profiles["command"]["triggers"] = ["f24", "ctrl_r+shift+f24"]
     profiles["command"]["enabled"] = True
+    profiles["ask_ai"]["enabled"] = False
 
     normalized = normalize_hotkey_profiles(profiles)
 
@@ -176,6 +178,7 @@ def test_hotkey_profile_save_load_roundtrip_keeps_advanced_settings(tmp_path):
     settings_path = tmp_path / "transcription_config.json"
     profiles = normalize_hotkey_profiles(DEFAULT_HOTKEY_PROFILES)
     profiles["dictation"]["enabled"] = False
+    profiles["ask_ai"]["enabled"] = False
 
     assert save_settings(
         settings_path,
@@ -212,3 +215,51 @@ def test_speaker_filter_enabled_toggle_roundtrip(tmp_path):
 
     assert save_settings(settings_path, {"speaker_filter_enabled": False})
     assert load_settings(settings_path)["speaker_filter_enabled"] is False
+
+
+def test_f13_ask_ai_key_normalizes():
+    assert normalize_record_key_label("F13") == "f13"
+    assert normalize_record_keys("f13") == "f13"
+    assert "f13" in normalize_record_keys("f24,f13,ctrl_r").split(",")
+
+
+def test_default_ask_ai_profile_shape():
+    profile = DEFAULT_HOTKEY_PROFILES["ask_ai"]
+    assert profile["trigger"] == "f13"
+    assert profile["triggers"] == ["f13"]
+    assert profile["action"] == "ask_ai"
+    assert profile["diagnostic"] is False
+
+
+def test_trigger_routes_map_ask_ai_to_ask_route():
+    profiles = normalize_hotkey_profiles(DEFAULT_HOTKEY_PROFILES)
+    profiles["ask_ai"]["enabled"] = True
+
+    routes = trigger_routes_from_hotkey_profiles(profiles)
+
+    assert routes["f13"] == "ask"
+    assert routes.get("f24") == "command"
+
+
+def test_ask_ai_enabled_derives_f13_into_record_keys():
+    profiles = normalize_hotkey_profiles(None, record_keys="f24,f13,ctrl_r")
+
+    assert profiles["ask_ai"]["enabled"] is True
+    assert profiles["ask_ai"]["trigger"] == "f13"
+    assert record_keys_from_hotkey_profiles(profiles) == "f24,f13,ctrl_r"
+
+    disabled_profiles = normalize_hotkey_profiles(None, record_keys="f24,ctrl_r")
+    assert disabled_profiles["ask_ai"]["enabled"] is False
+    assert "f13" not in record_keys_from_hotkey_profiles(disabled_profiles).split(",")
+
+
+def test_ask_hotkey_provider_setting_validates(tmp_path):
+    settings_path = tmp_path / "transcription_config.json"
+
+    assert save_settings(settings_path, {"ask_hotkey_provider": "ai"})
+    assert load_settings(settings_path)["ask_hotkey_provider"] == "ai"
+
+    assert save_settings(settings_path, {"ask_hotkey_provider": "not-a-provider"})
+    assert load_settings(settings_path)["ask_hotkey_provider"] == "chatgpt"
+
+    assert DEFAULT_SETTINGS["ask_hotkey_provider"] == "chatgpt"

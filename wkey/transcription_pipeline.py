@@ -289,6 +289,12 @@ class TranscriptionPipeline:
                     )
                     self.transcript_queue.put((transcript_stripped, 0))
                     continue
+                if keyword_index == 4:
+                    self.log.info(
+                        "Routing F13 transcript directly to the ask-AI pathway"
+                    )
+                    self.transcript_queue.put((transcript_stripped, 4))
+                    continue
                 if keyword_index is None:
                     self.log.info(
                         "manual_dictation_paste transcript_len=%d paste_len=%d",

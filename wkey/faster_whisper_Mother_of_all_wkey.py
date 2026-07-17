@@ -486,9 +486,13 @@ key_label = os.environ.get("WKEY", "ctrl_r").lower()
 SUPPORTED_RECORD_KEYS = {
     'f24': Key.f24,
     'f23': Key.f23,
+    'f13': Key.f13,
     'ctrl_l': Key.ctrl_l,
     'ctrl_r': Key.ctrl_r,
 }
+
+# keyword_index used for the F13 "ask AI" hotkey pathway (bypasses the Groq command router).
+ASK_KEYWORD_INDEX = 4
 if key_label not in SUPPORTED_RECORD_KEYS:
     print(f"Warning: WKEY '{key_label}' is not supported. Defaulting to 'ctrl_r'")
     key_label = 'ctrl_r'
@@ -731,6 +735,8 @@ def map_key_to_keyword_index(key):
             route = TRIGGER_ROUTES.get(label)
             if route == "command" or (route is None and label == "f24"):
                 return 0  # Route directly to execute_command_run_with_tool
+            if route == "ask":
+                return ASK_KEYWORD_INDEX  # Route directly to the ask-AI pathway
             return None
     return None  # Default manual (paste) pathway
 
@@ -1044,6 +1050,7 @@ def _record_recent_transcript(transcript, keyword_index):
         1: "wake_computer",
         2: "wake_lama",
         3: "wake_google",
+        4: "ask",
     }
     source = source_map.get(keyword_index, "unknown")
     add_recent_transcript(transcript, source=source)
@@ -1978,7 +1985,9 @@ def _run_start_feedback_async(recording_session_id, keyword_index, duck_playback
 
 
 def _is_manual_recording_keyword(keyword_index):
-    return keyword_index in (None, 0)
+    # None=dictation, 0=command, ASK_KEYWORD_INDEX=ask-AI: all three are manual
+    # key-hold triggers (as opposed to wake-word keyword_index 1/2/3).
+    return keyword_index in (None, 0, ASK_KEYWORD_INDEX)
 
 
 def _mark_manual_recording_cancel_pending(reason):
@@ -2066,13 +2075,13 @@ def start_recording(keyword_index=None):
     """
     try:
         if is_audio_recovery_in_progress():
-            request_type = "manual" if keyword_index in (None, 0) else "wake-word"
+            request_type = "manual" if _is_manual_recording_keyword(keyword_index) else "wake-word"
             logging.info(
                 f"{YELLOW}Audio recovery in progress. Ignoring {request_type} recording request.{RESET}"
             )
             return
 
-        if keyword_index in (None, 0):
+        if _is_manual_recording_keyword(keyword_index):
             cancel_pending, cancel_reason = _consume_manual_recording_cancel_pending(
                 keyword_index
             )
@@ -2097,7 +2106,7 @@ def start_recording(keyword_index=None):
                 return
 
         # Only block wake-word triggers while paused; manual keys still work
-        if keyword_index not in (None, 0) and check_pause_status():
+        if not _is_manual_recording_keyword(keyword_index) and check_pause_status():
             logging.info(f"{YELLOW}Voice recognition is paused. Ignoring wake word recording request.{RESET}")
             return
 
@@ -2323,7 +2332,7 @@ def stop_recording(keyword_index):
             stop_delay_threshold = 1
         elif keyword_index == 3:
             stop_delay_threshold = 1
-        elif keyword_index in (None, 0):
+        elif _is_manual_recording_keyword(keyword_index):
             manual_duration_seconds = max(0.0, time.time() - recording_start_time)
             if manual_duration_seconds < MIN_MANUAL_RECORDING_SECONDS:
                 logging.info(
@@ -2631,7 +2640,12 @@ def save_manual_recording_if_configured(
         if not os.path.isdir(target_dir):
             return None
 
-        key_label_local = "f24" if keyword_index == 0 else "dictation"
+        if keyword_index == 0:
+            key_label_local = "f24"
+        elif keyword_index == ASK_KEYWORD_INDEX:
+            key_label_local = "f13_ask"
+        else:
+            key_label_local = "dictation"
         duration_ms = int((len(audio_data) / sample_rate) * 1000)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         base_name = f"manual_{key_label_local}_{timestamp}_{duration_ms}ms.wav"
@@ -2985,6 +2999,42 @@ def monitor_state():
 """
 
 
+def _dispatch_ask_hotkey(question):
+    """Route an F13 ask-AI question to ChatGPT (via job broker) or the direct AI provider."""
+    provider = str(SETTINGS.get("ask_hotkey_provider", "chatgpt")).strip().lower()
+    thread_name = threading.current_thread().name
+    logging.info(
+        "ask_hotkey_dispatch_start provider=%s question_len=%d thread=%s",
+        provider,
+        len(question),
+        thread_name,
+    )
+    try:
+        try:
+            from wkey import ask_ai_bridge
+        except ImportError:
+            import ask_ai_bridge
+        if provider == "ai":
+            result = ask_ai_bridge.ask_ai(question)
+        else:
+            result = ask_ai_bridge.ask_chatgpt(question)
+        logging.info(
+            "ask_hotkey_dispatch_end provider=%s question_len=%d success=%s thread=%s",
+            provider,
+            len(question),
+            result,
+            thread_name,
+        )
+    except Exception:
+        logging.error(
+            "ask_hotkey_dispatch_exception provider=%s question_len=%d thread=%s",
+            provider,
+            len(question),
+            thread_name,
+            exc_info=True,
+        )
+
+
 async def clean_transcript():
     try:
         while True:
@@ -2997,7 +3047,18 @@ async def clean_transcript():
                     keyword_index,
                     len(transcript or ""),
                 )
-                if keyword_index in (0, 1):
+                if keyword_index == ASK_KEYWORD_INDEX:
+                    question = (transcript or "").strip()
+                    if question and is_ask_ai_enabled():
+                        threading.Thread(
+                            target=_dispatch_ask_hotkey,
+                            args=(question,),
+                            name="AskHotkeyDispatch",
+                            daemon=True,
+                        ).start()
+                    elif question:
+                        paste_transcript(question, beep)
+                elif keyword_index in (0, 1):
                     if is_ask_ai_enabled():
                         transcript = normalize_ai_triggers(transcript)
                     logging.debug(

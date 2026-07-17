@@ -60,6 +60,19 @@ def test_dispatch_start_command_route_maps_to_keyword_zero():
     assert event.ok is True
 
 
+def test_dispatch_start_ask_route_maps_to_keyword_four():
+    calls = []
+    deps = _deps(calls)
+
+    event = dispatch_command(
+        BrokerCommand(id="2b", command="start", route="ask", reason=None),
+        deps,
+    )
+
+    assert calls == [("start", 4)]
+    assert event.ok is True
+
+
 def test_dispatch_unknown_command_returns_error_event():
     calls = []
     deps = _deps(calls)

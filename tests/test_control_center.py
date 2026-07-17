@@ -119,6 +119,38 @@ def test_control_center_exposes_speaker_filter_controls(tmp_path, monkeypatch):
         window.close()
 
 
+def test_control_center_exposes_ask_ai_controls(tmp_path, monkeypatch):
+    qt_app()
+    window = _build_window(
+        tmp_path,
+        monkeypatch,
+        settings_overrides={
+            "ask_ai_enabled": True,
+            "ask_hotkey_provider": "ai",
+            "ask_chatgpt_fallback_to_ai": True,
+            "ask_chatgpt_claim_timeout_sec": 20,
+        },
+    )
+    try:
+        assert isinstance(window.setting_widgets["ask_ai_enabled"], QCheckBox)
+        assert isinstance(window.setting_widgets["ask_hotkey_provider"], QComboBox)
+        assert isinstance(window.setting_widgets["ask_chatgpt_fallback_to_ai"], QCheckBox)
+        assert window.setting_widgets["ask_ai_enabled"].isChecked() is True
+        assert window.setting_widgets["ask_hotkey_provider"].currentData() == "ai"
+        assert window.setting_widgets["ask_chatgpt_fallback_to_ai"].isChecked() is True
+        assert window.setting_widgets["ask_chatgpt_claim_timeout_sec"].value() == 20
+
+        window.setting_widgets["ask_hotkey_provider"].setCurrentIndex(
+            window.setting_widgets["ask_hotkey_provider"].findData("chatgpt")
+        )
+        collected = window._collect_settings_values()
+        assert collected["ask_hotkey_provider"] == "chatgpt"
+
+        assert "ask_ai" in window.hotkey_widgets
+    finally:
+        window.close()
+
+
 def test_control_center_updates_speaker_filter_status_labels(tmp_path, monkeypatch):
     qt_app()
     import wkey.control_center as control_center

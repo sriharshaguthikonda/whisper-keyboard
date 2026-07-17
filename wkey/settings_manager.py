@@ -17,7 +17,8 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 DEFAULT_RECORD_KEYS = "f24,ctrl_r"
-SUPPORTED_RECORD_KEY_LABELS = ("f24", "f23", "ctrl_l", "ctrl_r")
+SUPPORTED_RECORD_KEY_LABELS = ("f24", "f23", "f13", "ctrl_l", "ctrl_r")
+ASK_HOTKEY_PROVIDERS = ("chatgpt", "ai")
 TRIGGER_MODIFIER_LABELS = {
     "ctrl",
     "ctrl_l",
@@ -36,12 +37,14 @@ DEFAULT_SPEAKER_FILTER_NEGATIVE_DIR = r"I:\Record_others_16k_wav"
 RECORD_KEY_DISPLAY_NAMES = {
     "f24": "F24",
     "f23": "F23",
+    "f13": "F13",
     "ctrl_l": "Left Ctrl",
     "ctrl_r": "Right Ctrl",
 }
 RECORD_KEY_ALIASES = {
     "f24": "f24",
     "f23": "f23",
+    "f13": "f13",
     "left ctrl": "ctrl_r",
     "left control": "ctrl_r",
     "lctrl": "ctrl_r",
@@ -92,6 +95,20 @@ DEFAULT_HOTKEY_PROFILES = {
         "triggers": ["f24"],
         "action": "command",
         "enabled": True,
+        "diagnostic": False,
+    },
+    "ask_ai": {
+        "label": "Ask AI",
+        "trigger": "f13",
+        "triggers": ["f13"],
+        "action": "ask_ai",
+        # ponytail: default False (opt-in), unlike command/dictation. F13 shares the
+        # SUPPORTED_RECORD_KEY_LABELS derivation with command/dictation, so a raw
+        # enabled=True default would silently pull "f13" into every hotkey_profiles=None
+        # / record-keys-less call path (module init with no config, apply_settings(None
+        # profiles) tests, etc.), unlike pause/wake toggles whose triggers aren't record
+        # keys. Enable via record_keys containing "f13" or the Control Center checkbox.
+        "enabled": False,
         "diagnostic": False,
     },
     "pause_resume": {
@@ -179,6 +196,7 @@ DEFAULT_SETTINGS = {
     "ask_ai_model": "auto",
     "ask_chatgpt_claim_timeout_sec": 12,
     "ask_chatgpt_fallback_to_ai": False,
+    "ask_hotkey_provider": "chatgpt",
     "prompt_jobs_dir": r"C:\Windows_software\openai whisper\prompt_jobs",
 }
 
@@ -338,10 +356,11 @@ def normalize_hotkey_profiles(value, record_keys=None):
         record_labels = normalize_record_keys(record_keys, allow_empty=True).split(",")
         selected = {label for label in record_labels if label}
         profiles["command"]["enabled"] = "f24" in selected
+        profiles["ask_ai"]["enabled"] = "f13" in selected
         dictation_labels = [
             label
             for label in SUPPORTED_RECORD_KEY_LABELS
-            if label != "f24" and label in selected
+            if label not in ("f24", "f13") and label in selected
         ]
         profiles["dictation"]["enabled"] = bool(dictation_labels)
         if dictation_labels:
@@ -397,6 +416,13 @@ def record_keys_from_hotkey_profiles(profiles, fallback=DEFAULT_RECORD_KEYS):
             if trigger in SUPPORTED_RECORD_KEY_LABELS and trigger not in selected:
                 selected.append(trigger)
 
+    ask_ai = normalized_profiles.get("ask_ai", {})
+    if ask_ai.get("enabled", False):
+        for trigger_value in ask_ai.get("triggers", [ask_ai.get("trigger")]):
+            trigger = normalize_record_key_label(trigger_value)
+            if trigger in SUPPORTED_RECORD_KEY_LABELS and trigger not in selected:
+                selected.append(trigger)
+
     dictation = normalized_profiles.get("dictation", {})
     if dictation.get("enabled", False):
         for trigger_value in dictation.get("triggers", [dictation.get("trigger")]):
@@ -413,14 +439,17 @@ def hotkey_profiles_for_environment(profiles):
     return json.dumps(normalize_hotkey_profiles(profiles), separators=(",", ":"), sort_keys=True)
 
 
+_PROFILE_ACTION_ROUTES = {"command": "command", "ask_ai": "ask"}
+
+
 def trigger_routes_from_hotkey_profiles(profiles):
     normalized_profiles = normalize_hotkey_profiles(profiles)
     routes = {}
-    for profile_id in ("dictation", "command"):
+    for profile_id in ("dictation", "command", "ask_ai"):
         profile = normalized_profiles.get(profile_id, {})
         if not profile.get("enabled", False):
             continue
-        route = "command" if profile.get("action") == "command" else "dictation"
+        route = _PROFILE_ACTION_ROUTES.get(profile.get("action"), "dictation")
         for trigger in profile.get("triggers", [profile.get("trigger")]):
             normalized = normalize_profile_trigger(trigger)
             if normalized and normalized not in routes:
@@ -527,6 +556,9 @@ def _validate_settings(settings, defaults):
         elif key in ("ask_ai_model", "prompt_jobs_dir"):
             if str(value).strip():
                 merged[key] = str(value).strip()
+        elif key == "ask_hotkey_provider":
+            provider = str(value or "chatgpt").strip().lower()
+            merged[key] = provider if provider in ASK_HOTKEY_PROVIDERS else "chatgpt"
         else:
             merged[key] = value
 

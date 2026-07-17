@@ -117,6 +117,31 @@ def test_apply_settings_values_persists_speaker_filter_controls():
     assert updated["speaker_filter_apply_to"] == "dictation"
 
 
+def test_apply_settings_values_persists_ask_ai_fields():
+    updated = apply_settings_values(
+        {},
+        {
+            "ask_ai_enabled": True,
+            "ask_hotkey_provider": "ai",
+            "ask_chatgpt_fallback_to_ai": True,
+            "ask_chatgpt_claim_timeout_sec": "45",
+        },
+    )
+
+    assert updated["ask_ai_enabled"] is True
+    assert updated["ask_hotkey_provider"] == "ai"
+    assert updated["ask_chatgpt_fallback_to_ai"] is True
+    assert updated["ask_chatgpt_claim_timeout_sec"] == 45
+
+    fallback = apply_settings_values(
+        {},
+        {"ask_hotkey_provider": "not-a-provider", "ask_chatgpt_claim_timeout_sec": "999"},
+    )
+
+    assert fallback["ask_hotkey_provider"] == "chatgpt"
+    assert fallback["ask_chatgpt_claim_timeout_sec"] == 60
+
+
 def test_settings_snapshot_includes_speaker_filter_state():
     snapshot = build_settings_snapshot(
         {

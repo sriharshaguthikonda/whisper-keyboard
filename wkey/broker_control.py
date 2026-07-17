@@ -7,7 +7,7 @@ from typing import Any, Callable
 
 EVENT_PREFIX = "WKEY_CONTROL_EVENT "
 PARSE_ERROR_COMMAND = "parse_error"
-ROUTE_KEYWORD_INDEX = {"dictation": None, "command": 0}
+ROUTE_KEYWORD_INDEX = {"dictation": None, "command": 0, "ask": 4}
 
 
 @dataclass(frozen=True)

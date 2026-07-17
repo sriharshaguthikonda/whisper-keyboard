@@ -2,6 +2,7 @@ import importlib
 import io
 import json
 import queue
+import threading
 from pathlib import Path
 import types
 import numpy as np
@@ -65,6 +66,106 @@ def test_clean_transcript_does_not_normalize_ai_triggers_when_disabled(monkeypat
         asyncio.run(fw_module.clean_transcript())
 
     assert routed[0][0] == "ask chat gpt explain"
+
+
+def test_clean_transcript_ask_keyword_dispatches_to_chatgpt_by_default(monkeypatch, fw_module):
+    import wkey.ask_ai_bridge as ask_ai_bridge_module
+
+    calls = []
+    done = threading.Event()
+
+    def fake_ask_chatgpt(question):
+        calls.append(("ask_chatgpt", question))
+        done.set()
+        return True
+
+    def fake_ask_ai(question):
+        calls.append(("ask_ai", question))
+        done.set()
+        return True
+
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_chatgpt", fake_ask_chatgpt)
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_ai", fake_ask_ai)
+
+    fw_module.transcript_queue = OneItemThenCancelQueue(
+        ("what changed in the NICE guidelines", fw_module.ASK_KEYWORD_INDEX)
+    )
+    fw_module.is_ask_ai_enabled = lambda: True
+    fw_module.SETTINGS = dict(fw_module.SETTINGS)
+    fw_module.SETTINGS["ask_hotkey_provider"] = "chatgpt"
+
+    monkeypatch.setattr(
+        fw_module,
+        "execute_command_run_with_tool",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("ask keyword must not reach the command router")
+        ),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(fw_module.clean_transcript())
+
+    assert done.wait(timeout=5)
+    assert calls == [("ask_chatgpt", "what changed in the NICE guidelines")]
+
+
+def test_clean_transcript_ask_keyword_uses_ai_provider_when_configured(monkeypatch, fw_module):
+    import wkey.ask_ai_bridge as ask_ai_bridge_module
+
+    calls = []
+    done = threading.Event()
+
+    def fake_ask_chatgpt(question):
+        calls.append(("ask_chatgpt", question))
+        done.set()
+        return True
+
+    def fake_ask_ai(question):
+        calls.append(("ask_ai", question))
+        done.set()
+        return True
+
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_chatgpt", fake_ask_chatgpt)
+    monkeypatch.setattr(ask_ai_bridge_module, "ask_ai", fake_ask_ai)
+
+    fw_module.transcript_queue = OneItemThenCancelQueue(
+        ("summarize the referral pathway", fw_module.ASK_KEYWORD_INDEX)
+    )
+    fw_module.is_ask_ai_enabled = lambda: True
+    fw_module.SETTINGS = dict(fw_module.SETTINGS)
+    fw_module.SETTINGS["ask_hotkey_provider"] = "ai"
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(fw_module.clean_transcript())
+
+    assert done.wait(timeout=5)
+    assert calls == [("ask_ai", "summarize the referral pathway")]
+
+
+def test_clean_transcript_ask_keyword_pastes_when_ask_ai_disabled(monkeypatch, fw_module):
+    pasted = []
+
+    fw_module.transcript_queue = OneItemThenCancelQueue(
+        ("just paste this please", fw_module.ASK_KEYWORD_INDEX)
+    )
+    fw_module.is_ask_ai_enabled = lambda: False
+    monkeypatch.setattr(
+        fw_module,
+        "paste_transcript",
+        lambda transcript, beep_func=None: pasted.append(transcript),
+    )
+    monkeypatch.setattr(
+        fw_module,
+        "_dispatch_ask_hotkey",
+        lambda question: (_ for _ in ()).throw(
+            AssertionError("ask-AI dispatch must not run when ask_ai is disabled")
+        ),
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(fw_module.clean_transcript())
+
+    assert pasted == ["just paste this please"]
 
 
 def test_stt_prompt_includes_compact_command_vocabulary(fw_module):
@@ -383,6 +484,35 @@ def test_apply_settings_uses_hotkey_profile_trigger_for_f23(fw_module):
     }
     assert fw_module.map_key_to_keyword_index(fw_module.Key.f24) == 0
     assert fw_module.map_key_to_keyword_index(fw_module.Key.f23) is None
+
+
+def test_apply_settings_uses_hotkey_profile_trigger_for_f13_ask(fw_module):
+    settings = dict(fw_module.SETTINGS)
+    profiles = dict(settings["hotkey_profiles"])
+    profiles["dictation"] = dict(profiles["dictation"])
+    profiles["command"] = dict(profiles["command"])
+    profiles["ask_ai"] = dict(profiles["ask_ai"])
+    profiles["dictation"]["enabled"] = False
+    profiles["command"]["enabled"] = True
+    profiles["command"]["trigger"] = "f24"
+    profiles["command"]["triggers"] = ["f24"]
+    profiles["ask_ai"]["enabled"] = True
+    profiles["ask_ai"]["trigger"] = "f13"
+    profiles["ask_ai"]["triggers"] = ["f13"]
+    settings["record_keys"] = "f24,f13"
+    settings["hotkey_profiles"] = profiles
+
+    fw_module.apply_settings(settings)
+
+    assert fw_module.RECORD_KEYS == {
+        "f24": fw_module.Key.f24,
+        "f13": fw_module.Key.f13,
+    }
+    assert fw_module.map_key_to_keyword_index(fw_module.Key.f24) == 0
+    assert (
+        fw_module.map_key_to_keyword_index(fw_module.Key.f13)
+        == fw_module.ASK_KEYWORD_INDEX
+    )
 
 
 def test_apply_settings_rebuilds_prerecord_buffers_when_idle(fw_module):
