@@ -6,7 +6,15 @@ The active runtime is `wkey/faster_whisper_Mother_of_all_wkey.py`. It keeps a mi
 
 ## Entry Points
 
-Run from the repo root:
+Production entry point (same path the scheduled task runs, just hidden):
+
+```text
+..\Whisper.bat -> Start-WhisperKeyboard.bat -> scripts\Start-WhisperKeyboard.ps1
+```
+
+Keep those paths `%~dp0`/script-relative — the SSD this repo lives on roams between machines.
+
+Run the runtime directly instead (for debugging):
 
 ```powershell
 python .\wkey\faster_whisper_Mother_of_all_wkey.py
@@ -22,14 +30,17 @@ python .\wkey\faster_whisper_Mother_of_all_wkey_no_f24.py
 - `faster_whisper_Mother_of_all_wkey.py`: main runtime; defaults to keyboard-only and can run wake-word mode when enabled in settings.
 - `faster_whisper_Mother_of_all_wkey_just_f24.py`: keyboard-only F24 runtime.
 - `faster_whisper_Mother_of_all_wkey_no_f24.py`: wake-word-only runtime.
-- `wkey/Whisper_GUI.py`: main user-facing settings GUI.
+- `wkey/Whisper_GUI.py`: thin shim, delegates straight to `wkey/control_center.py` (the settings GUI).
 
 ## Activation
 
-Manual keys:
+Hotkeys reach the app as synthetic function keys emitted by an external remapper (Kanata, or the HID remapper dongle on desktop) — see `AGENTS.md` before changing any of these:
 
-- `F24`: routes transcript to tool-use command execution.
-- `Left Ctrl`: default clipboard-paste trigger. Release it alone to submit; pressing any other key while held cancels and drops the recording so normal Ctrl shortcuts still work.
+| Trigger | Synthetic key | Route |
+| --- | --- | --- |
+| `d+f` hold (Kanata chord, 100ms) | `F23` | Dictation/paste |
+| backtick hold (HID remapper / legacy) | `F24` | Command/tool-use |
+| `s+d` hold (Kanata chord, 100ms) | `F13` | Ask-AI (ChatGPT/AI pathway), opt-in — disabled unless `f13` is in `record_keys`/`ask_hotkey_profiles.ask_ai.enabled` |
 
 Wake words are handled by `wkey/wakeword.py` using local OpenWakeWord models under `wkey/openwakeword_models/`.
 
@@ -40,106 +51,9 @@ Optional environment variables:
 - `WKEY_RECORD_KEYS`: comma-separated enabled manual keys. Default: `f24,ctrl_l`. Stale `ctrl_r` config is migrated to `ctrl_l`. Example: `f24`.
 - `WKEY_ALLOW_ENV_OVERRIDES`: set to `1` to allow `WKEY_RUNTIME_MODE` and `WKEY_RECORD_KEYS` to override settings/defaults.
 
-## Native Broker Prototype
+## Native Broker (Deleted)
 
-The Rust broker lives under `native/wkey-broker`.
-
-`wkey-broker.exe` is a generated Cargo artifact, not source. Build it with:
-
-```powershell
-cargo build --manifest-path native\wkey-broker\Cargo.toml --release
-```
-
-The release binary is written to:
-
-```text
-native\wkey-broker\target\release\wkey-broker.exe
-```
-
-The broker owns native Windows hotkeys and supervises the Python runtime. Python still owns microphone capture, Groq/Faster-Whisper transcription, transcript cleanup, paste, wake-word commands, and tool-use routing. In broker mode the broker starts Python as a child process and Python disables its own manual keyboard listener.
-
-Useful smoke commands from the repo root:
-
-```powershell
-cargo run --manifest-path native\wkey-broker\Cargo.toml -- --engine-smoke
-cargo run --manifest-path native\wkey-broker\Cargo.toml -- --broker-smoke --seconds 20
-cargo run --manifest-path native\wkey-broker\Cargo.toml -- --diagnose-keys --seconds 30
-```
-
-- `--engine-smoke` starts the Python engine in stdio-control mode, requests status, and shuts it down.
-- `--broker-smoke` keeps the broker-managed Python child alive for the requested seconds, verifies Python's own keyboard listener is disabled, then shuts down.
-- `--diagnose-keys` installs the low-level Windows keyboard hook and prints broker decisions only; it does not suppress normal typing.
-- `--run` starts the production broker loop and forwards configured hotkeys to the Python child.
-
-Broker-managed Python uses:
-
-- `WKEY_BROKER_CONTROL=stdio`
-- `WKEY_INPUT_OWNER=broker`
-
-## Broker Startup
-
-Production startup uses the tracked launcher:
-
-```powershell
-.\Start-WKeyBroker.bat
-```
-
-The batch file calls `scripts\Start-WKeyBroker.ps1`, which builds `wkey-broker.exe` when missing or stale, stops old WKEY Python/broker processes for this checkout, and runs:
-
-```powershell
-native\wkey-broker\target\release\wkey-broker.exe --run
-```
-
-Manual starts default to live console output, like the old direct Python launcher:
-
-```powershell
-.\Start-WKeyBroker.bat --console
-.\scripts\Start-WKeyBroker.ps1 -OutputMode Console
-```
-
-Background starts can append broker and Python output to `logs\wkey-broker-startup.log`:
-
-```powershell
-.\Start-WKeyBroker.bat --log
-.\scripts\Start-WKeyBroker.ps1 -OutputMode Log
-```
-
-The existing Windows scheduled task may continue to point to:
-
-```text
-C:\Windows_software\openai whisper\Whisper.bat
-```
-
-That parent batch file delegates to `whisper-keyboard\Start-WKeyBroker.bat` when present, so Task Scheduler elevation and wake/logon triggers stay unchanged. Run it without arguments for live output, or with `--log` for scheduled/background output.
-
-Timed smoke:
-
-```powershell
-.\scripts\Start-WKeyBroker.ps1 -Seconds 20 -OutputMode Console
-.\scripts\Start-WKeyBroker.ps1 -Seconds 20 -OutputMode Log
-```
-
-If the scheduled task action itself should be changed to the repo launcher, run this from an elevated shell:
-
-```powershell
-.\scripts\Install-WKeyBrokerTask.ps1
-```
-
-The installer writes the task action as `Start-WKeyBroker.bat --log`.
-
-Start it immediately after install:
-
-```powershell
-.\scripts\Install-WKeyBrokerTask.ps1 -RunAfterInstall
-```
-
-Rollback options:
-
-```powershell
-Set-ScheduledTask -TaskName Whisper -TaskPath "\" -Action (New-ScheduledTaskAction -Execute "C:\Windows_software\openai whisper\Whisper.bat")
-```
-
-Or edit `C:\Windows_software\openai whisper\Whisper.bat` and remove the broker delegation block.
+The Rust broker (`native/wkey-broker`) that used to own native Windows hotkeys and supervise the Python runtime is retired and its source was deleted 2026-07-17 (recoverable from git history). Input ownership today is Kanata/HID remapper -> synthetic function keys -> Python's own `pynput` listener; see the Activation table above and `AGENTS.md`. The scheduled task and `Whisper.bat`/`Start-WhisperKeyboard.bat` launch the direct-Python path (`scripts\Start-WhisperKeyboard.ps1`), not the old broker binary. `scripts\Install-WKeyBrokerTask.ps1` still exists to (re)point the Windows scheduled task at the current launcher — the "Broker" in its name is legacy naming only.
 
 ## Settings
 
@@ -210,6 +124,19 @@ Current live-catalog smoke defaults on 2026-07-07:
 - simple: `cerebras/llama-3.3-70b`
 - standard: `cerebras/qwen-3-235b-a22b-instruct-2507`
 - complex: `openrouter/deepseek/deepseek-r1-0528`
+
+Ask-AI hotkey, TTS, and cursor-overlay settings (all in `wkey/transcription_config.json`, defaults in `wkey/settings_manager.py`):
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ask_hotkey_provider` | `chatgpt` | Which provider the F13 ask-AI hotkey routes to |
+| `ask_ai_tts_enabled` | `true` | Speak direct-provider Ask-AI answers back through the TTS engine |
+| `ask_ai_tts_max_chars` | `400` | Truncate Ask-AI answers before they are queued for TTS |
+| `overlay_enabled` | `true` | Show the cursor-adjacent feedback toast |
+| `overlay_duration_ms` | `1500` | How long the toast stays on screen |
+| `overlay_opacity` | `0.85` | Toast opacity |
+| `overlay_font_size` | `11` | Toast font size |
+| `overlay_offset_px` | `24` | Toast offset from the cursor, in pixels |
 
 ## Recovery Policy
 

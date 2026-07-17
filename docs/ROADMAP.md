@@ -6,17 +6,20 @@ Generated: 2026-05-18
 
 Primary runtime: `wkey/faster_whisper_Mother_of_all_wkey.py`.
 
-User-facing GUI: `wkey/Whisper_GUI.py`.
+Entry points: `..\Whisper.bat` -> `Start-WhisperKeyboard.bat` -> `scripts\Start-WhisperKeyboard.ps1` (also the scheduled-task action, hidden). Paths stay `%~dp0`/script-relative since the SSD roams machines.
+
+User-facing GUI: `wkey/Whisper_GUI.py` (thin shim, delegates to `wkey/control_center.py`).
 
 Settings:
 
 - `wkey/transcription_config.json`
 - `wkey/settings_manager.py`
 
-Activation surfaces:
+Activation surfaces (hotkeys arrive as synthetic function keys from an external remapper — Kanata or the HID dongle — see `AGENTS.md`):
 
-- Manual `F24`: command/tool-use route.
-- Manual `ctrl_r`: default dictation/paste route; release alone submits, any chord cancels and drops audio.
+- `d+f` hold (Kanata chord) -> `F23`: dictation/paste route.
+- backtick hold (HID remapper / legacy) -> `F24`: command/tool-use route.
+- `s+d` hold (Kanata chord) -> `F13`: ask-AI route, opt-in.
 - Wake words: OpenWakeWord route through `wkey/wakeword.py`.
 
 Runtime modes:
@@ -55,6 +58,11 @@ Recovery:
 > See `docs/superpowers/specs/2026-07-12-input-owner-simplification-design.md`
 > and the "Input-Owner Simplification (Broker Retirement)" section below. The
 > notes here describe the retired design.
+
+> DELETED 2026-07-17 (Phase 6 cleanup): `native/wkey-broker` source was removed
+> (`git rm -r`, recoverable from history). The Control Center's D+F diagnostic
+> button that shelled out to it now reports itself unavailable instead of
+> failing. Everything below describes a design that no longer has code.
 
 Status: broker startup enabled 2026-06-27.
 
@@ -116,7 +124,7 @@ Sections:
 - Hotkeys: structured per-action profile cards for dictation, command/tool-use, pause/resume, timed pause, wake mode, restart backend, and `D+F` diagnostic.
 - Transcription: local/Groq/wake/context toggles plus context sizes, context age, max recording seconds, wake-volume hold timing, and retry count.
 - Voice Commands: provider/status view only; no API-key editing.
-- Diagnostics: command-based Rust broker key diagnostic, summary output only.
+- Diagnostics: D+F key diagnostic button; reports unavailable since the Rust broker it depended on was deleted 2026-07-17.
 - Startup: current `Whisper.bat` and scheduled-task status display only.
 - Logs: tail view for repo log files.
 
@@ -262,3 +270,24 @@ Key points:
 - Bounded primary-script smoke starts without immediate import/config errors and is stopped.
 - README files describe the current Windows/Groq/Faster-Whisper implementation.
 - Mode launchers do not carry stale forked runtime code.
+
+## Ask-AI / TTS / Overlay Settings (2026-07-17)
+
+New settings in `wkey/transcription_config.json` (defaults in `wkey/settings_manager.py`):
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ask_hotkey_provider` | `chatgpt` | Provider the F13 ask-AI hotkey routes to |
+| `ask_ai_tts_enabled` | `true` | Speak direct-provider Ask-AI answers through TTS |
+| `ask_ai_tts_max_chars` | `400` | Truncate Ask-AI answers before queuing for TTS |
+| `overlay_enabled` | `true` | Show the cursor-adjacent feedback toast |
+| `overlay_duration_ms` | `1500` | Toast on-screen duration |
+| `overlay_opacity` | `0.85` | Toast opacity |
+| `overlay_font_size` | `11` | Toast font size |
+| `overlay_offset_px` | `24` | Toast offset from cursor, px |
+
+## TTS priority (2026-07-17, user directive)
+
+- Primary voice: server-side edge-tts `en-US-AvaNeural` (`EDGE_TTS_PRIMARY_VOICE`). Local CPU TTS (Kokoro/pyttsx4) is fallback only — never primary.
+- Distant roadmap: add the user's voicelink server as an additional TTS fallback tier when available.
+- Overlay niceties (future): per-event colors, symbols/icons in the cursor toast (user request 2026-07-17).

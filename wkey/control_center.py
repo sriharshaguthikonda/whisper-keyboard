@@ -8,7 +8,6 @@ import logging
 import os
 from pathlib import Path
 import subprocess
-import threading
 from typing import Iterable
 
 from PyQt6.QtCore import QEvent, QLockFile, QRect, QSettings, Qt, QTimer, pyqtSignal
@@ -1019,38 +1018,13 @@ class WhisperControlCenter(QMainWindow):
         return result.stdout.strip()
 
     def run_key_diagnostic(self):
-        seconds = int(self.diagnostic_seconds.value())
-        manifest = REPO_ROOT / "native" / "wkey-broker" / "Cargo.toml"
-        command = [
-            "cargo",
-            "run",
-            "--manifest-path",
-            str(manifest),
-            "--",
-            "--diagnose-keys",
-            "--seconds",
-            str(seconds),
-        ]
-        self.diagnostic_output.setPlainText("Running diagnostic...")
-
-        def _worker():
-            try:
-                result = subprocess.run(
-                    command,
-                    cwd=str(REPO_ROOT),
-                    capture_output=True,
-                    text=True,
-                    timeout=seconds + 90,
-                    check=False,
-                )
-                output = "\n".join(
-                    part for part in (result.stdout.strip(), result.stderr.strip()) if part
-                )
-                self.diagnostic_finished.emit(output or f"exit code {result.returncode}")
-            except Exception as exc:
-                self.diagnostic_finished.emit(str(exc))
-
-        threading.Thread(target=_worker, daemon=True).start()
+        # ponytail: the Rust wkey-broker crate this shelled out to was deleted
+        # (Phase 6 cleanup); no replacement diagnostic exists yet.
+        self.diagnostic_output.setPlainText(
+            "D+F diagnostic unavailable: the Rust broker (native/wkey-broker) "
+            "it depended on was retired and deleted. Input ownership is now "
+            "Kanata -> Python pynput; use the runtime log for key diagnostics."
+        )
 
     def _diagnostic_complete(self, output: str):
         summary_lines = []

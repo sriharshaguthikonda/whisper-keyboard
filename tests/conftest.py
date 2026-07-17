@@ -1,7 +1,28 @@
 import sys
 import types
 import os
+import atexit
+import shutil
+import tempfile
 import pytest
+
+# Keep WKEY runtime logs/locks inside a pytest tmp dir, never
+# %LOCALAPPDATA%\WhisperKeyboard\runtime. This must happen at conftest
+# IMPORT time (module level), not merely inside a fixture body: some wkey
+# modules (e.g. backend_process.DEFAULT_HEALTH_STATUS_PATH) compute a
+# runtime path as a module-level constant the moment they are first
+# imported, and pytest can trigger that import during collection - before
+# any fixture, even an autouse session one, has run.
+_WKEY_TEST_RUNTIME_DIR = tempfile.mkdtemp(prefix="wkey-pytest-runtime-")
+os.environ.setdefault("WKEY_RUNTIME_DIR", _WKEY_TEST_RUNTIME_DIR)
+atexit.register(shutil.rmtree, _WKEY_TEST_RUNTIME_DIR, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def wkey_test_runtime_dir():
+    """Expose the pytest-scoped WKEY_RUNTIME_DIR (set above at import time)."""
+    yield _WKEY_TEST_RUNTIME_DIR
+
 
 class DummyStream:
     def __init__(self, *args, **kwargs):
