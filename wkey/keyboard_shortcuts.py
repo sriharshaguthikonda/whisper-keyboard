@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from pynput.keyboard import Key
 
@@ -166,12 +167,13 @@ class KeyboardShortcutHandler:
     def _log_record_key_event(self, action, key, recording, now):
         try:
             self.log.info(
-                "record_key_event action=%s key=%s recording=%s "
+                "record_key_event action=%s key=%s recording=%s pid=%s "
                 "suppressed_remaining=%.3f suppression_reason=%s "
                 "active_keys=%s pressed_keys=%s",
                 action,
                 str(key) if key is not None else "none",
                 bool(recording),
+                os.getpid(),
                 self._record_suppression_remaining(now),
                 self._record_suppression_reason,
                 ",".join(sorted(str(item) for item in self._active_record_keys)) or "none",
@@ -179,6 +181,21 @@ class KeyboardShortcutHandler:
             )
         except Exception:
             pass
+
+    def describe_trigger_state(self, now=None):
+        """Return (trigger_key_label, rearm_state_label) for start_recording's
+        diagnostic log -- best-effort snapshot of what this handler currently
+        thinks the active trigger key and rearm status are."""
+        if now is None:
+            now = self.clock()
+        trigger_key_label = (
+            ",".join(sorted(str(item) for item in self._active_record_keys)) or "none"
+        )
+        rearm_gap = now - self._last_record_release_time
+        rearm_state = (
+            "armed" if rearm_gap > self.record_rearm_delay else f"rearming({rearm_gap:.3f}s)"
+        )
+        return trigger_key_label, rearm_state
 
     def reset_state(self, preserve_rearm=False):
         last_press_time = self._last_record_press_time if preserve_rearm else 0.0

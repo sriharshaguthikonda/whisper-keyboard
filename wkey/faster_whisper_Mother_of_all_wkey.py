@@ -1101,6 +1101,11 @@ active_recording_session_id = 0
 recording_stop_in_progress = False
 deferred_keyboard_listener_restart_reasons = set()
 
+# Per-process diagnostic id: one grep on SESSION_ID ties every log line from
+# this backend run together (see docs/investigations/2026-07-17-untriggered-transcriptions.md).
+# ponytail: time-based hex, no uuid import needed for a short per-process tag.
+SESSION_ID = format(int(time.time() * 1000) & 0xFFFFFFF, "x")
+
 # Resource throttling state
 RESOURCE_RELAX_SECONDS_ON_OVERFLOW = 2.0
 resource_relax_until = 0.0
@@ -1139,6 +1144,15 @@ manual_recording_suppression_lock = threading.Lock()
 manual_recording_cancel_lock = threading.Lock()
 keyboard_listener_restart_requested = threading.Event()
 keyboard_listener = None
+
+# Set by _win32_event_filter (observation-only, see start_listener). Records
+# whether the most recent raw key event carried Windows' SendInput-injected
+# flag -- kanata synthesizes every F23/F24/F13 this way, so this rules out a
+# second, non-kanata source rather than distinguishing intentional vs
+# misfired chords.
+# ponytail: single scalar, no lock -- a race only widens the window by one event.
+LLKHF_INJECTED = 0x10
+last_key_injected = "unknown"
 
 _fault_log_handle = None
 
@@ -2142,7 +2156,23 @@ def start_recording(keyword_index=None):
         with audio_data_lock:
             audio_buffer = []
 
-        logging.info(f"{GREEN}Starting recording...{RESET}")
+        trigger_key_label, rearm_state = "none", "unknown"
+        if keyboard_handler is not None:
+            try:
+                trigger_key_label, rearm_state = keyboard_handler.describe_trigger_state()
+            except Exception:
+                pass
+        logging.info(
+            f"{GREEN}recording_start session=%s pid=%s session_id=%s keyword_index=%s "
+            f"trigger_key=%s injected=%s rearm_state=%s{RESET}",
+            SESSION_ID,
+            os.getpid(),
+            current_recording_session_id,
+            keyword_index,
+            trigger_key_label,
+            last_key_injected,
+            rearm_state,
+        )
 
         if not initialize_input_stream():
             logging.info(f"{RED}No microphone detected. Recording canceled.{RESET}")
@@ -2238,7 +2268,8 @@ def stop_recording(keyword_index):
             if not recording:
                 if recording_stop_in_progress:
                     logging.info(
-                        "duplicate_stop_ignored pid=%s session_id=%s keyword_index=%s",
+                        "duplicate_stop_ignored session=%s pid=%s session_id=%s keyword_index=%s",
+                        SESSION_ID,
                         os.getpid(),
                         active_recording_session_id,
                         keyword_index,
@@ -2278,7 +2309,8 @@ def stop_recording(keyword_index):
             beep(STOP_BEEP)
             return
         logging.info(
-            "stop_recording_claimed pid=%s session_id=%s keyword_index=%s",
+            "stop_recording_claimed session=%s pid=%s session_id=%s keyword_index=%s",
+            SESSION_ID,
             os.getpid(),
             claimed_session_id,
             keyword_index,
@@ -2918,11 +2950,32 @@ async def process_transcript(transcript, keyword_index, audio_buffer):
     except Exception as e:
         logging.error(f"{RED}Error processing transcript: {e}{RESET}", exc_info=True)
 
+def _win32_event_filter(msg, data):
+    """Record the raw LLKHF_INJECTED flag of the most recent key event.
+
+    Observation only: never calls listener.suppress_event(), so event
+    delivery/suppression is unchanged from having no filter installed at all.
+    ponytail: no caps-lock (or other) win32_event_filter exists anywhere else
+    in this codebase today, so there is nothing to compose with. If one is
+    added later, run this injected-capture first, then the new logic, so
+    both observe every event.
+    """
+    global last_key_injected
+    try:
+        last_key_injected = bool(getattr(data, "flags", 0) & LLKHF_INJECTED)
+    except Exception:
+        pass
+
+
 def start_listener():
     global keyboard_listener
     listener = None
     try:
-        listener = Listener(on_press=on_press, on_release=on_release)
+        listener = Listener(
+            on_press=on_press,
+            on_release=on_release,
+            win32_event_filter=_win32_event_filter,
+        )
         with keyboard_listener_lock:
             keyboard_listener = listener
         with listener:
@@ -3390,11 +3443,12 @@ def main():
         RESET,
     )
     logging.info(
-        "Startup diagnostics: pid=%s runtime_mode=%s wakeword_enabled=%s "
+        "Startup diagnostics: pid=%s session=%s runtime_mode=%s wakeword_enabled=%s "
         "precheck_enabled=%s keyboard_runtime_enabled=%s "
         "python_keyboard_listener_enabled=%s enabled_record_keys=%s "
         "env_overrides_enabled=%s recovery_policy=%s",
         os.getpid(),
+        SESSION_ID,
         runtime_mode,
         is_wakeword_runtime_enabled(),
         is_pre_recording_keyword_check_enabled(),

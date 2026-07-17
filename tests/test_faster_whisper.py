@@ -282,7 +282,7 @@ def test_python_input_owner_keeps_keyboard_listener(monkeypatch):
     assert mod.is_python_keyboard_listener_enabled() is True
 
 
-def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
+def test_start_listener_installs_injected_capture_filter(fw_module, monkeypatch):
     captured = {}
 
     class FakeListener:
@@ -307,7 +307,31 @@ def test_start_listener_uses_plain_key_callbacks(fw_module, monkeypatch):
 
     fw_module.start_listener()
 
-    assert "event_filter" not in captured["kwargs"]
+    assert captured["kwargs"]["on_press"] is fw_module.on_press
+    assert captured["kwargs"]["on_release"] is fw_module.on_release
+    assert captured["kwargs"]["win32_event_filter"] is fw_module._win32_event_filter
+
+
+def test_win32_event_filter_records_injected_flag_without_suppressing(fw_module):
+    fake_data_injected = types.SimpleNamespace(flags=fw_module.LLKHF_INJECTED)
+    fake_data_physical = types.SimpleNamespace(flags=0)
+
+    result = fw_module._win32_event_filter(0, fake_data_injected)
+
+    assert fw_module.last_key_injected is True
+    assert result is None  # never suppresses -- no listener.suppress_event() call
+
+    fw_module._win32_event_filter(0, fake_data_physical)
+    assert fw_module.last_key_injected is False
+
+
+def test_win32_event_filter_tolerates_missing_flags_attribute(fw_module):
+    # No pre-existing caps-lock (or other) win32_event_filter exists in this
+    # codebase to compose with; this just confirms the injected-capture
+    # filter alone survives a data object that doesn't look like a real
+    # KBDLLHOOKSTRUCT wrapper (e.g. a conftest pynput stub swap).
+    fw_module._win32_event_filter(0, object())
+    assert fw_module.last_key_injected in (True, False)
 
 
 def test_broker_input_owner_skips_python_listener_in_main(fw_module, monkeypatch):
@@ -912,6 +936,46 @@ def test_start_recording_initializes_stream_before_feedback_thread(fw_module, mo
     assert "beep" not in order
 
 
+def test_start_recording_logs_structured_recording_start(fw_module, monkeypatch, caplog):
+    from pynput.keyboard import Key
+
+    fw_module.runtime_mode = "keyboard"
+    fw_module.something_is_playing = False
+    fw_module.recording = False
+    fw_module.recording_stop_in_progress = False
+    fw_module.active_recording_session_id = 0
+    fw_module.last_key_injected = True
+
+    handler = fw_module.KeyboardShortcutHandler(
+        record_keys={Key.f23},
+        map_key_to_keyword_index=lambda key: None,
+        start_recording=lambda keyword_index: None,
+        stop_recording=lambda keyword_index: None,
+        toggle_pause=lambda: None,
+    )
+    handler.on_press(Key.f23, recording=False)
+    fw_module.keyboard_handler = handler
+
+    monkeypatch.setattr(fw_module.threading, "Thread", lambda *a, **k: types.SimpleNamespace(start=lambda: None))
+    monkeypatch.setattr(fw_module, "_schedule_recording_timeout", lambda *a, **k: None)
+    monkeypatch.setattr(fw_module, "check_pause_status", lambda: False)
+    monkeypatch.setattr(fw_module, "initialize_input_stream", lambda: True)
+    monkeypatch.setattr(fw_module, "decrease_volume_all", lambda: None)
+    monkeypatch.setattr(fw_module, "beep", lambda *a, **k: None)
+
+    caplog.set_level(fw_module.logging.INFO)
+    fw_module.start_recording(None)
+
+    messages = "\n".join(record.getMessage() for record in caplog.records)
+    assert f"session={fw_module.SESSION_ID}" in messages
+    assert f"pid={fw_module.os.getpid()}" in messages
+    assert "recording_start" in messages
+    assert "keyword_index=None" in messages
+    assert "trigger_key=f23" in messages
+    assert "injected=True" in messages
+    assert "rearm_state=" in messages
+
+
 def test_start_recording_runs_prerecord_validation_once_when_enabled(fw_module, monkeypatch):
     started_targets = []
     settings = dict(fw_module.SETTINGS)
@@ -1374,6 +1438,7 @@ def test_stop_recording_logs_manual_queue_diagnostics(fw_module, monkeypatch, ca
     assert "keyword_index=None" in messages
     assert "samples=6" in messages
     assert "duration=0.600s" in messages
+    assert f"session={fw_module.SESSION_ID}" in messages
     assert "pre_samples=4" in messages
     assert "live_samples=2" in messages
     assert "saved_path=I:/Record_harsha/test.wav" in messages

@@ -234,3 +234,61 @@ def test_record_key_release_during_suppression_only_stops_active_recording():
     handler.on_release(Key.ctrl_l, recording=True)
 
     assert events == [("stop", None)]
+
+
+def test_record_key_event_log_includes_pid():
+    import os
+    from pynput.keyboard import Key
+    from wkey.keyboard_shortcuts import KeyboardShortcutHandler
+
+    class FakeLog:
+        def __init__(self):
+            self.messages = []
+
+        def info(self, fmt, *args):
+            self.messages.append(fmt % args)
+
+    fake_log = FakeLog()
+    handler = KeyboardShortcutHandler(
+        record_keys={Key.f23},
+        map_key_to_keyword_index=lambda key: None,
+        start_recording=lambda keyword_index: None,
+        stop_recording=lambda keyword_index: None,
+        toggle_pause=lambda: None,
+        clock=lambda: 100.0,
+        log=fake_log,
+    )
+
+    handler.on_press(Key.f23, recording=False)
+
+    assert any(f"pid={os.getpid()}" in msg for msg in fake_log.messages)
+
+
+def test_describe_trigger_state_reports_active_key_and_rearm_status():
+    from pynput.keyboard import Key
+    from wkey.keyboard_shortcuts import KeyboardShortcutHandler
+
+    now = [100.0]
+    handler = KeyboardShortcutHandler(
+        record_keys={Key.f23},
+        map_key_to_keyword_index=lambda key: None,
+        start_recording=lambda keyword_index: None,
+        stop_recording=lambda keyword_index: None,
+        toggle_pause=lambda: None,
+        record_rearm_delay=1.0,
+        clock=lambda: now[0],
+    )
+
+    trigger_key_label, rearm_state = handler.describe_trigger_state()
+    assert trigger_key_label == "none"
+    assert rearm_state == "armed"  # never released yet -> rearm gap is +inf
+
+    handler.on_press(Key.f23, recording=False)
+    trigger_key_label, rearm_state = handler.describe_trigger_state()
+    assert trigger_key_label == str(Key.f23)
+
+    now[0] += 0.1
+    handler.on_release(Key.f23, recording=True)
+    trigger_key_label, rearm_state = handler.describe_trigger_state()
+    assert trigger_key_label == "none"
+    assert rearm_state.startswith("rearming(")
